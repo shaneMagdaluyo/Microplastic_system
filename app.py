@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from sklearn.preprocessing import LabelEncoder
 from ml_pipeline import load_data, train_models, save_model
 
 
@@ -11,7 +12,7 @@ from ml_pipeline import load_data, train_models, save_model
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Advanced Dashboard with Analytics & Machine Learning")
+st.caption("Full Dashboard • Analysis • Machine Learning")
 
 
 # =========================
@@ -22,7 +23,7 @@ file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 
 # =========================
-# MAIN APP
+# MAIN
 # =========================
 if file:
 
@@ -36,7 +37,7 @@ if file:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Rows", df.shape[0])
     c2.metric("Columns", df.shape[1])
-    c3.metric("Missing Values", int(df.isnull().sum().sum()))
+    c3.metric("Missing", int(df.isnull().sum().sum()))
     c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
 
     st.divider()
@@ -45,10 +46,10 @@ if file:
     target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
 
     # TABS
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML"])
 
     # ==================================================
-    # TAB 1: DASHBOARD
+    # DASHBOARD
     # ==================================================
     with tab1:
 
@@ -58,13 +59,11 @@ if file:
         st.subheader("🌊 Risk Distribution")
 
         target_data = df[target]
-
         col1, col2 = st.columns(2)
 
         if target_data.dtype == "object":
 
             counts = target_data.value_counts()
-
             col1.bar_chart(counts)
 
             fig, ax = plt.subplots()
@@ -83,11 +82,14 @@ if file:
             col2.pyplot(fig2)
 
     # ==================================================
-    # TAB 2: ANALYSIS (🔥 FULLY FUNCTIONAL)
+    # ANALYSIS
     # ==================================================
     with tab2:
 
-        st.subheader("🔬 Feature Comparison by Risk")
+        # =========================
+        # FEATURE COMPARISON
+        # =========================
+        st.subheader("🔬 Feature Comparison")
 
         cols = df.columns.tolist()
         cols.remove(target)
@@ -96,16 +98,16 @@ if file:
 
         col1, col2 = st.columns(2)
 
-        # NUMERIC
         if pd.api.types.is_numeric_dtype(df[feature]):
 
             agg = st.selectbox("Aggregation", ["Mean", "Median"])
 
             try:
-                if agg == "Mean":
-                    grouped = df.groupby(target)[feature].mean()
-                else:
-                    grouped = df.groupby(target)[feature].median()
+                grouped = (
+                    df.groupby(target)[feature].mean()
+                    if agg == "Mean"
+                    else df.groupby(target)[feature].median()
+                )
 
                 col1.bar_chart(grouped)
 
@@ -113,100 +115,90 @@ if file:
                 df.boxplot(column=feature, by=target, ax=ax)
                 col2.pyplot(fig)
 
-                st.markdown(f"""
-                ### 📌 Insights
-                - Highest: **{grouped.idxmax()}**
-                - Lowest: **{grouped.idxmin()}**
-                """)
-
             except Exception as e:
                 st.warning(str(e))
 
-        # CATEGORICAL
         else:
 
             try:
                 cross = pd.crosstab(df[target], df[feature])
                 col1.bar_chart(cross)
-
-                st.markdown(f"""
-                ### 📌 Insights
-                - Most common: **{df[feature].value_counts().idxmax()}**
-                - Categories: **{df[feature].nunique()}**
-                """)
-
             except Exception as e:
                 st.warning(str(e))
 
         st.divider()
 
-        # ==================================================
-        # 🔥 CORRELATION MATRIX (ENHANCED)
-        # ==================================================
-        st.subheader("🔥 Correlation Matrix")
+        # =========================
+        # 🔥 CORRELATION MATRIX (AUTO FIX)
+        # =========================
+        st.subheader("🔥 Correlation Matrix (Auto-Working)")
 
-        num_df = df.select_dtypes(include="number").copy()
+        corr_df = df.copy()
+        le = LabelEncoder()
 
-        if num_df.shape[1] < 2:
-            st.warning("Not enough numeric features")
+        # Encode categorical columns
+        for col in corr_df.columns:
+            if corr_df[col].dtype == "object":
+                try:
+                    corr_df[col] = le.fit_transform(corr_df[col].astype(str))
+                except:
+                    pass
+
+        # Fill missing values
+        corr_df = corr_df.fillna(corr_df.mean(numeric_only=True))
+
+        if corr_df.select_dtypes(include="number").shape[1] < 2:
+            st.error("Still not enough numeric data")
         else:
 
             method = st.selectbox(
-                "Correlation Method",
+                "Method",
                 ["pearson", "spearman", "kendall"]
             )
 
-            num_df = num_df.fillna(num_df.mean())
-            corr = num_df.corr(method=method)
+            corr = corr_df.corr(method=method)
 
             fig, ax = plt.subplots(figsize=(10, 6))
             cax = ax.imshow(corr)
-
             plt.colorbar(cax)
 
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
-
             ax.set_xticklabels(corr.columns, rotation=45, ha="right")
             ax.set_yticklabels(corr.columns)
 
-            ax.set_title(f"{method.capitalize()} Correlation")
-
             st.pyplot(fig)
 
-            # STRONG RELATIONSHIPS
+            # Strong relationships
             st.subheader("📌 Strong Relationships")
 
-            threshold = st.slider("Threshold", 0.5, 1.0, 0.7)
+            threshold = st.slider("Threshold", 0.3, 1.0, 0.6)
 
-            strong = []
+            found = False
             for i in range(len(corr.columns)):
                 for j in range(i + 1, len(corr.columns)):
                     val = corr.iloc[i, j]
                     if abs(val) >= threshold:
-                        strong.append((corr.columns[i], corr.columns[j], val))
+                        st.write(f"{corr.columns[i]} ↔ {corr.columns[j]} = {val:.2f}")
+                        found = True
 
-            if strong:
-                for f1, f2, val in strong:
-                    st.write(f"{f1} ↔ {f2} = {val:.2f}")
-            else:
+            if not found:
                 st.info("No strong correlations")
 
-            # TOP CORRELATIONS
+            # Top correlations
             st.subheader("🏆 Top Correlations")
 
-            top_corr = (
+            top = (
                 corr.abs()
                 .unstack()
                 .sort_values(ascending=False)
             )
 
-            top_corr = top_corr[top_corr < 1].drop_duplicates().head(5)
-
-            st.write(top_corr)
+            top = top[top < 1].drop_duplicates().head(5)
+            st.write(top)
 
     # ==================================================
-    # TAB 3: ML
+    # ML
     # ==================================================
     with tab3:
 
@@ -242,4 +234,4 @@ if file:
                     st.error(str(e))
 
 else:
-    st.info("⬅️ Upload a CSV file to begin")
+    st.info("⬅️ Upload a dataset to begin")
