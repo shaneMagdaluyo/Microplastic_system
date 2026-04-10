@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 import matplotlib.pyplot as plt
 
 from ml_pipeline import load_data, train_models, save_model
@@ -10,11 +9,11 @@ from ml_pipeline import load_data, train_models, save_model
 # =========================
 st.set_page_config(page_title="ML Pipeline App", layout="wide")
 
-st.title("🚀 Advanced ML Pipeline (Error-Free Version)")
+st.title("🚀 Clean & Stable ML Pipeline App")
 st.write("Upload CSV → Auto Clean → Train Models → Compare Results")
 
 # =========================
-# UPLOAD FILE
+# UPLOAD
 # =========================
 file = st.file_uploader("Upload CSV File", type=["csv"])
 
@@ -22,10 +21,10 @@ if file:
 
     df = load_data(file)
 
-    st.subheader("📊 Raw Data Preview")
+    st.subheader("📊 Data Preview")
     st.dataframe(df.head())
 
-    st.subheader("📌 Missing Values Report")
+    st.subheader("⚠️ Missing Values")
     st.write(df.isnull().sum())
 
     target = st.selectbox("🎯 Select Target Column", df.columns)
@@ -41,7 +40,7 @@ if file:
         # =========================
         # ACCURACY CHART
         # =========================
-        st.subheader("📈 Model Accuracy Comparison")
+        st.subheader("📈 Model Comparison")
 
         names = list(results.keys())
         accs = [results[n]["accuracy"] for n in names]
@@ -49,7 +48,7 @@ if file:
         fig, ax = plt.subplots()
         ax.bar(names, accs)
         ax.set_ylabel("Accuracy")
-        ax.set_title("Model Comparison")
+        ax.set_title("Model Performance")
 
         st.pyplot(fig)
 
@@ -67,7 +66,6 @@ if file:
         # CONFUSION MATRIX
         # =========================
         st.subheader("🧮 Confusion Matrix (Best Model)")
-
         st.write(results[best_name]["confusion_matrix"])
 
         # =========================
