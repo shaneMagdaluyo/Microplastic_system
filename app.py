@@ -7,107 +7,87 @@ import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score
-)
-
 from imblearn.over_sampling import SMOTE
 
+# =========================
+# STREAMLIT CONFIG
+# =========================
 st.set_page_config(page_title="Microplastic Risk System", layout="wide")
-
-st.title("🌊 Microplastic Risk Analysis & Prediction System")
+st.title("🌊 Microplastic Risk Analysis & ML System")
 
 # =========================
-# 1. LOAD DATA
+# UPLOAD DATA
 # =========================
-uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=["csv"])
+uploaded_file = st.file_uploader("📂 Upload CSV Dataset", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 
-    st.success("File loaded successfully!")
-
+    st.success("Dataset Loaded Successfully!")
     st.dataframe(df.head())
 
-    # NOW SAFE TO COPY
-    data = df.copy()
-
-else:
-    st.warning("Please upload a CSV file to continue.")
-    st.stop()
-
     # =========================
-    # 2. TARGET SELECTION
+    # TARGET SELECTION
     # =========================
-    target = st.selectbox("Select Target Column", df.columns)
+    target = st.selectbox("🎯 Select Target Column", df.columns)
 
     if target:
 
         # =========================
-        # 3. BASIC EDA
+        # BASIC EDA
         # =========================
-        st.subheader("📈 EDA")
+        st.subheader("📊 Exploratory Data Analysis")
 
         if df[target].dtype != "object":
             fig, ax = plt.subplots()
             sns.histplot(df[target], kde=True, ax=ax)
             st.pyplot(fig)
 
-        # Correlation heatmap
+        # Correlation
         st.write("### Correlation Heatmap")
-        numeric_df = df.select_dtypes(include=np.number)
-        if numeric_df.shape[1] > 1:
+        num_df = df.select_dtypes(include=np.number)
+        if num_df.shape[1] > 1:
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.heatmap(numeric_df.corr(), annot=True, cmap="coolwarm", ax=ax)
+            sns.heatmap(num_df.corr(), annot=True, cmap="coolwarm", ax=ax)
             st.pyplot(fig)
 
         # =========================
-        # 4. PREPROCESSING
+        # PREPROCESSING (FIXED)
         # =========================
-        # =========================
-# CLEAN PREPROCESSING (FIXED)
-# =========================
+        st.subheader("⚙️ Preprocessing Data")
 
-# =========================
-# CLEAN & SAFE PREPROCESSING (FINAL FIX)
-# =========================
+        data = df.copy()
 
-data = df.copy()
+        # Split columns
+        num_cols = data.select_dtypes(include=np.number).columns
+        cat_cols = data.select_dtypes(include="object").columns
 
-# STEP 1: Convert everything safely to numeric where possible
-for col in data.columns:
-    data[col] = pd.to_numeric(data[col], errors='coerce')
+        # Handle numeric
+        for col in num_cols:
+            data[col] = pd.to_numeric(data[col], errors='coerce')
+            data[col].fillna(data[col].median(), inplace=True)
 
-# STEP 2: Handle missing values
-for col in data.columns:
+        # Handle categorical
+        for col in cat_cols:
+            data[col].fillna(data[col].mode()[0], inplace=True)
 
-    if pd.api.types.is_numeric_dtype(data[col]):
-        data[col].fillna(data[col].median(), inplace=True)
-    else:
-        data[col].fillna(data[col].mode()[0], inplace=True)
+        # Encode categorical
+        encoders = {}
+        for col in cat_cols:
+            le = LabelEncoder()
+            data[col] = le.fit_transform(data[col].astype(str))
+            encoders[col] = le
 
-# STEP 3: Encode categorical columns (if any remain)
-from sklearn.preprocessing import LabelEncoder
-
-encoders = {}
-
-for col in data.columns:
-    if data[col].dtype == "object":
-        le = LabelEncoder()
-        data[col] = le.fit_transform(data[col].astype(str))
-        encoders[col] = le
+        st.success("Preprocessing Completed")
 
         # =========================
-        # 5. SPLIT DATA
+        # SPLIT DATA
         # =========================
         X = data.drop(columns=[target])
         y = data[target]
@@ -117,25 +97,26 @@ for col in data.columns:
         )
 
         # =========================
-        # 6. SMOTE
+        # SMOTE (SAFE)
         # =========================
-        st.write("Applying SMOTE (if classification)...")
+        st.subheader("⚖️ Handling Class Imbalance")
 
         try:
             smote = SMOTE(random_state=42)
             X_train, y_train = smote.fit_resample(X_train, y_train)
+            st.success("SMOTE Applied")
         except:
             st.warning("SMOTE not applied (check target type)")
 
         # =========================
-        # 7. SCALING
+        # SCALING
         # =========================
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
         # =========================
-        # 8. MODEL SELECTION
+        # MODEL SELECTION
         # =========================
         st.subheader("🤖 Model Training")
 
@@ -155,9 +136,9 @@ for col in data.columns:
         y_pred = model.predict(X_test)
 
         # =========================
-        # 9. EVALUATION
+        # EVALUATION
         # =========================
-        st.subheader("📊 Model Evaluation")
+        st.subheader("📈 Model Evaluation")
 
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="weighted")
@@ -174,7 +155,7 @@ for col in data.columns:
         st.pyplot(fig)
 
         # =========================
-        # 10. FEATURE IMPORTANCE
+        # FEATURE IMPORTANCE
         # =========================
         st.subheader("🔍 Feature Importance")
 
@@ -197,7 +178,7 @@ for col in data.columns:
             sns.barplot(data=feat_df, x="Importance", y="Feature", ax=ax)
             st.pyplot(fig)
 
-        st.success("Model pipeline completed successfully 🚀")
+        st.success("Model Training Completed 🚀")
 
 else:
-    st.info("Upload a CSV file to begin analysis")
+    st.warning("📂 Please upload a CSV file to start")
