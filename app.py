@@ -8,10 +8,10 @@ from ml_pipeline import load_data, train_models, save_model
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="MP Risk Intelligence System", layout="wide")
+st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Advanced Dashboard for Risk Analysis & Machine Learning")
+st.caption("Professional Dashboard with ML & Risk Analytics")
 
 
 # =========================
@@ -22,119 +22,127 @@ file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 
 # =========================
-# MAIN APP
+# MAIN
 # =========================
 if file:
 
     df = load_data(file)
 
     # =========================
-    # KPI DASHBOARD
+    # DASHBOARD KPIs
     # =========================
     st.subheader("📊 Overview")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Rows", df.shape[0])
     c2.metric("Columns", df.shape[1])
-    c3.metric("Missing", int(df.isnull().sum().sum()))
+    c3.metric("Missing Values", int(df.isnull().sum().sum()))
     c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
 
     st.divider()
 
-    # =========================
     # TARGET
-    # =========================
-    target = st.sidebar.selectbox("🎯 Select MP Risk Column", df.columns)
+    target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
 
-    # =========================
     # TABS
-    # =========================
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
 
-    # =========================
+    # ==================================================
     # TAB 1: DASHBOARD
-    # =========================
+    # ==================================================
     with tab1:
 
         st.subheader("📌 Dataset Preview")
         st.dataframe(df.head(), use_container_width=True)
 
-        # =========================
-        # 🌊 ENHANCED RISK DISTRIBUTION
-        # =========================
-        st.subheader("🌊 Risk Distribution Analysis")
+        st.subheader("🌊 Risk Distribution")
 
         target_data = df[target]
 
         col1, col2 = st.columns(2)
 
+        # FIXED HISTOGRAM ERROR HERE
         if target_data.dtype == "object":
 
             counts = target_data.value_counts()
-            percent = (counts / counts.sum()) * 100
 
-            col1.write("### 📊 Risk Count")
             col1.bar_chart(counts)
 
             fig, ax = plt.subplots()
-            ax.pie(counts, labels=counts.index, autopct='%1.1f%%')
-            ax.set_title("Risk Share")
+            ax.pie(counts, labels=counts.index, autopct="%1.1f%%")
             col2.pyplot(fig)
 
-            top_risk = counts.idxmax()
-
-            st.markdown(f"""
-            ### 📌 Key Insights
-            - Most common risk: **{top_risk}**
-            - Highest percentage: **{percent.max():.2f}%**
-            - Total categories: **{len(counts)}**
-            """)
-
         else:
-
             clean = pd.to_numeric(target_data, errors="coerce").dropna()
 
             fig, ax = plt.subplots()
             ax.hist(clean, bins=20)
-            ax.set_title("Risk Distribution")
             col1.pyplot(fig)
 
             fig2, ax2 = plt.subplots()
             ax2.boxplot(clean)
-            ax2.set_title("Risk Spread")
             col2.pyplot(fig2)
 
-            st.markdown(f"""
-            ### 📌 Key Insights
-            - Mean Risk: **{clean.mean():.2f}**
-            - Max Risk: **{clean.max():.2f}**
-            - Min Risk: **{clean.min():.2f}**
-            - Std Dev: **{clean.std():.2f}**
-            """)
-
-    # =========================
-    # TAB 2: ANALYSIS
-    # =========================
+    # ==================================================
+    # TAB 2: FEATURE ANALYSIS (🔥 FIXED)
+    # ==================================================
     with tab2:
 
-        st.subheader("🔬 Feature Comparison")
+        st.subheader("🔬 Feature Comparison by Risk")
 
-        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        cols = df.columns.tolist()
+        cols.remove(target)
 
-        if target in numeric_cols:
-            numeric_cols.remove(target)
+        feature = st.selectbox("Select Feature", cols)
 
-        if numeric_cols:
-            feature = st.selectbox("Select Feature", numeric_cols)
+        col1, col2 = st.columns(2)
+
+        # NUMERIC FEATURE
+        if pd.api.types.is_numeric_dtype(df[feature]):
+
+            agg = st.selectbox("Aggregation", ["Mean", "Median"])
 
             try:
-                group = df.groupby(target)[feature].mean()
-                st.bar_chart(group)
-            except:
-                st.warning("Cannot analyze this feature")
+                if agg == "Mean":
+                    grouped = df.groupby(target)[feature].mean()
+                else:
+                    grouped = df.groupby(target)[feature].median()
+
+                col1.bar_chart(grouped)
+
+                fig, ax = plt.subplots()
+                df.boxplot(column=feature, by=target, ax=ax)
+                col2.pyplot(fig)
+
+                st.markdown(f"""
+                ### 📌 Insights
+                - Highest value group: **{grouped.idxmax()}**
+                - Lowest value group: **{grouped.idxmin()}**
+                """)
+
+            except Exception as e:
+                st.warning(str(e))
+
+        # CATEGORICAL FEATURE
+        else:
+
+            try:
+                cross = pd.crosstab(df[target], df[feature])
+
+                col1.bar_chart(cross)
+
+                st.markdown(f"""
+                ### 📌 Insights
+                - Most common: **{df[feature].value_counts().idxmax()}**
+                - Total categories: **{df[feature].nunique()}**
+                """)
+
+            except Exception as e:
+                st.warning(str(e))
 
         st.divider()
 
+        # CORRELATION
         st.subheader("🔥 Correlation Matrix")
 
         corr = df.select_dtypes(include="number").corr()
@@ -151,33 +159,30 @@ if file:
 
             st.pyplot(fig)
 
-    # =========================
-    # TAB 3: ML MODELS
-    # =========================
+    # ==================================================
+    # TAB 3: ML
+    # ==================================================
     with tab3:
 
         st.subheader("🤖 Model Training")
 
-        if st.button("🚀 Train Models"):
+        if st.button("Train Models"):
 
             with st.spinner("Training..."):
 
                 try:
                     results, best_name, best_model = train_models(df, target)
 
-                    st.success("Training Completed!")
+                    st.success("Training Done")
 
                     names = list(results.keys())
                     accs = [results[n]["accuracy"] for n in names]
 
                     fig, ax = plt.subplots()
                     ax.bar(names, accs)
-                    ax.set_title("Model Performance")
-
                     st.pyplot(fig)
 
-                    st.subheader("🏆 Best Model")
-                    st.success(best_name)
+                    st.success(f"Best Model: {best_name}")
                     st.info(f"Accuracy: {results[best_name]['accuracy']:.4f}")
 
                     for name in results:
@@ -185,10 +190,10 @@ if file:
                             st.text(results[name]["report"])
 
                     save_model(best_model)
-                    st.success("💾 Model saved!")
+                    st.success("Model Saved!")
 
                 except Exception as e:
                     st.error(str(e))
 
 else:
-    st.info("⬅️ Upload a dataset to begin")
+    st.info("⬅️ Upload a CSV file to start")
