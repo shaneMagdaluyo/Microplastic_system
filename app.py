@@ -31,12 +31,19 @@ st.title("🌊 Microplastic Risk Analysis & Prediction System")
 # =========================
 uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=["csv"])
 
-if uploaded_file:
+if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.subheader("📊 Dataset Preview")
+
+    st.success("File loaded successfully!")
+
     st.dataframe(df.head())
 
-    st.write("Shape:", df.shape)
+    # NOW SAFE TO COPY
+    data = df.copy()
+
+else:
+    st.warning("Please upload a CSV file to continue.")
+    st.stop()
 
     # =========================
     # 2. TARGET SELECTION
