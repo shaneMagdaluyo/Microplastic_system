@@ -18,28 +18,20 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.combine import SMOTETomek
 
 # =========================
-# PAGE CONFIG
+# APP CONFIG
 # =========================
 st.set_page_config(page_title="Enterprise ML System", layout="wide")
-st.title("🚀 Enterprise ML Dashboard (Stable Version)")
+st.title("🚀 Enterprise ML Dashboard (Stable Final Version)")
 
 # =========================
-# SAFE SESSION STATE INIT
+# SESSION STATE SAFE INIT
 # =========================
-defaults = {
-    "df": None,
-    "model_results": {},
-    "X_test": None,
-    "y_test": None,
-    "features": None
-}
-
-for k, v in defaults.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+for key in ["df", "model_results", "X_test", "y_test", "features"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key != "model_results" else {}
 
 # =========================
-# SIDEBAR MENU
+# SIDEBAR
 # =========================
 menu = st.sidebar.radio(
     "Navigation",
@@ -67,16 +59,14 @@ def safe_imbalance(X, y, method="smote"):
     for col in X.columns:
         X[col] = pd.to_numeric(X[col], errors="coerce")
 
-    # CLEAN NA
+    # CLEAN DATA
     X = X.fillna(X.median())
-
-    # ALIGN
     X = X.reset_index(drop=True)
 
     class_counts = y.value_counts()
     min_class = class_counts.min()
 
-    # ❌ Too small for SMOTE
+    # TOO SMALL → fallback
     if min_class < 2:
         st.warning("⚠️ Too few samples → using RandomOverSampler")
         return RandomOverSampler().fit_resample(X, y)
@@ -86,31 +76,30 @@ def safe_imbalance(X, y, method="smote"):
     try:
         if method == "smote":
             sampler = SMOTE(k_neighbors=k, random_state=42)
-
         elif method == "tomek":
             sampler = SMOTETomek(random_state=42)
-
         elif method == "under":
             sampler = RandomUnderSampler(random_state=42)
-
         else:
             return X, y
 
         return sampler.fit_resample(X, y)
 
     except Exception as e:
-        st.warning(f"Fallback activated: {e}")
+        st.warning(f"Fallback used: {e}")
         return RandomOverSampler().fit_resample(X, y)
 
 # =========================
 # UPLOAD
 # =========================
 if menu == "📁 Upload":
+
     file = st.file_uploader("Upload CSV", type=["csv"])
 
     if file:
         df = pd.read_csv(file)
         st.session_state.df = df
+
         st.success("Dataset Loaded")
         st.dataframe(df.head())
 
@@ -122,16 +111,9 @@ elif menu == "📊 Overview":
     df = st.session_state.df
 
     if df is not None:
-        st.subheader("Shape")
-        st.write(df.shape)
-
-        st.subheader("Missing Values")
-        st.write(df.isnull().sum())
-
-        st.subheader("Data Types")
-        st.write(df.dtypes)
-
-        st.subheader("Summary")
+        st.write("Shape:", df.shape)
+        st.write("Missing Values:", df.isnull().sum())
+        st.write("Data Types:", df.dtypes)
         st.write(df.describe(include="all"))
     else:
         st.warning("Upload dataset first")
@@ -144,20 +126,19 @@ elif menu == "⚙️ Preprocessing":
     df = st.session_state.df
 
     if df is not None:
+
         data = df.copy()
 
+        # categorical encoding
         cat_cols = data.select_dtypes(include="object").columns
-        num_cols = data.select_dtypes(include=np.number).columns
 
-        # numeric cleaning
-        for col in num_cols:
-            data[col] = pd.to_numeric(data[col], errors="coerce")
-            data[col].fillna(data[col].median(), inplace=True)
-
-        # encoding
         for col in cat_cols:
             le = LabelEncoder()
             data[col] = le.fit_transform(data[col].astype(str))
+
+        # numeric cleanup
+        data = data.apply(pd.to_numeric, errors="coerce")
+        data = data.fillna(data.median())
 
         st.session_state.df = data
 
@@ -193,14 +174,14 @@ elif menu == "⚖️ Imbalance Handling":
 
             st.session_state.df = new_df
 
-            st.success("Imbalance Handling Applied")
+            st.success("Imbalance Applied")
             st.write(pd.Series(y_res).value_counts())
 
     else:
         st.warning("Upload dataset first")
 
 # =========================
-# TRAINING
+# TRAINING (FIXED SCALING)
 # =========================
 elif menu == "🤖 Training":
 
@@ -211,38 +192,26 @@ elif menu == "🤖 Training":
         target = st.selectbox("Target Column", df.columns)
 
         X = df.drop(columns=[target])
-        y = df[target]
+        y = df[target].astype(str)
 
-        # =========================
-        # FORCE NUMERIC (CRITICAL FIX)
-        # =========================
+        # FORCE CLEAN NUMERIC (CRITICAL FIX)
         X = X.apply(pd.to_numeric, errors="coerce")
-        X = X.fillna(X.median())
+        X = X.fillna(0)
 
-        y = y.astype(str)
-
-        # =========================
         # SPLIT
-        # =========================
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42
         )
 
-        # =========================
-        # SAFE SCALING (FIXED)
-        # =========================
+        # SAFE SCALING
         scaler = StandardScaler()
 
-        # convert again AFTER split (important fix)
-        X_train = pd.DataFrame(X_train).apply(pd.to_numeric, errors="coerce").fillna(0)
-        X_test = pd.DataFrame(X_test).apply(pd.to_numeric, errors="coerce").fillna(0)
+        X_train = pd.DataFrame(X_train).fillna(0)
+        X_test = pd.DataFrame(X_test).fillna(0)
 
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
-        # =========================
-        # MODELS
-        # =========================
         models = {
             "Logistic Regression": LogisticRegression(max_iter=1000),
             "Decision Tree": DecisionTreeClassifier(),
@@ -267,7 +236,7 @@ elif menu == "🤖 Training":
         st.session_state.y_test = y_test
         st.session_state.features = X.columns
 
-        st.success("Training Completed Successfully 🚀")
+        st.success("Training Completed")
 
     else:
         st.warning("Upload dataset first")
