@@ -19,7 +19,7 @@ def load_data(file):
 
 
 # =========================
-# CLEAN DATA SAFE VERSION
+# CLEAN DATA (ROBUST)
 # =========================
 def clean_data(df, target):
 
@@ -28,44 +28,43 @@ def clean_data(df, target):
     y = df[target]
     X = df.drop(columns=[target])
 
-    # encode target if string
+    # encode target safely
     if y.dtype == "object":
-        le = LabelEncoder()
-        y = le.fit_transform(y.astype(str))
+        y = LabelEncoder().fit_transform(y.astype(str))
 
-    # encode categorical features
+    # encode features safely
     for col in X.columns:
         if X[col].dtype == "object":
-            le = LabelEncoder()
-            X[col] = le.fit_transform(X[col].astype(str))
+            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
-    # fill missing values safely
-    imputer = SimpleImputer(strategy="mean")
-    X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
+    # fill missing values
+    X = SimpleImputer(strategy="mean").fit_transform(X)
+    X = pd.DataFrame(X)
 
     return X, y
 
 
 # =========================
-# TRAIN MODELS (FIXED)
+# TRAIN MODELS (100% SAFE)
 # =========================
 def train_models(df, target):
 
     X, y = clean_data(df, target)
 
-    y_series = pd.Series(y)
-    class_counts = y_series.value_counts()
+    y = pd.Series(y)
 
-    if len(class_counts) < 2:
-        raise ValueError("Target must have at least 2 classes")
+    # safety check
+    if y.nunique() < 2:
+        raise ValueError("❌ Target must have at least 2 classes")
 
-    stratify_value = y if class_counts.min() >= 2 else None
+    # auto stratify safety
+    stratify = y if y.value_counts().min() >= 2 else None
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=0.2,
         random_state=42,
-        stratify=stratify_value
+        stratify=stratify
     )
 
     models = {
