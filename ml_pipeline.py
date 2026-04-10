@@ -1,129 +1,114 @@
 import pandas as pd
+import numpy as np
+import joblib
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import LabelEncoder
+from sklearn.impute import SimpleImputer
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-
-from imblearn.over_sampling import SMOTE
-import joblib
+from sklearn.metrics import accuracy_score, classification_report
 
 
 # =========================
 # LOAD DATA
 # =========================
 def load_data(file):
-    return pd.read_csv(file)
+    df = pd.read_csv(file)
+    return df
 
 
 # =========================
-# CLEAN DATA (FIXED 100%)
+# CLEAN DATA (SAFE VERSION)
 # =========================
 def clean_data(df, target):
 
-    # remove rows where target is missing
-    df = df.dropna(subset=[target])
+    df = df.copy()
 
-    X = df.drop(columns=[target])
+    # drop empty rows
+    df = df.dropna(axis=0, how="all")
+
     y = df[target]
+    X = df.drop(columns=[target])
+
+    # encode target if needed
+    if y.dtype == "object":
+        le = LabelEncoder()
+        y = le.fit_transform(y)
+
+    # keep only numeric columns safely
+    for col in X.columns:
+        if X[col].dtype == "object":
+            le = LabelEncoder()
+            X[col] = le.fit_transform(X[col].astype(str))
 
     # fill missing values safely
-    for col in X.columns:
-
-        # numeric columns
-        if pd.api.types.is_numeric_dtype(X[col]):
-            X[col] = X[col].fillna(X[col].mean())
-
-        # text columns
-        else:
-            X[col] = X[col].fillna("Missing")
-
-    # target cleanup
-    if y.isnull().sum() > 0:
-        y = y.fillna(y.mode()[0])
+    imputer = SimpleImputer(strategy="mean")
+    X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
 
     return X, y
 
 
 # =========================
-# PREPROCESSOR
-# =========================
-def build_preprocessor(X):
-
-    cat_cols = X.select_dtypes(include=["object"]).columns
-    num_cols = X.select_dtypes(exclude=["object"]).columns
-
-    return ColumnTransformer([
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-        ("num", StandardScaler(), num_cols)
-    ])
-
-
-# =========================
-# MODELS
-# =========================
-def get_models():
-    return {
-        "LogisticRegression": LogisticRegression(max_iter=2000),
-        "RandomForest": RandomForestClassifier(n_estimators=200),
-        "SVM": SVC(probability=True)
-    }
-
-
-# =========================
-# TRAIN MODELS
+# TRAIN MODELS (FIXED STRATIFY ERROR)
 # =========================
 def train_models(df, target):
 
     X, y = clean_data(df, target)
 
+    # check class distribution
+    y_series = pd.Series(y)
+    class_counts = y_series.value_counts()
+
+    # SAFE STRATIFY LOGIC
+    if len(class_counts) < 2:
+        raise ValueError("❌ Need at least 2 classes in target column")
+
+    if class_counts.min() < 2:
+        stratify_value = None
+    else:
+        stratify_value = y
+
+    # split dataset safely
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=0.2,
         random_state=42,
-        stratify=y
+        stratify=stratify_value
     )
 
-    preprocessor = build_preprocessor(X)
-
-    X_train_enc = preprocessor.fit_transform(X_train)
-    X_test_enc = preprocessor.transform(X_test)
-
-    smote = SMOTE(random_state=42)
-    X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
-
-    models = get_models()
+    # models
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Random Forest": RandomForestClassifier(),
+        "Gradient Boosting": GradientBoostingClassifier()
+    }
 
     results = {}
-    best_name = ""
+
     best_model = None
+    best_name = ""
     best_acc = 0
 
+    # training loop
     for name, model in models.items():
-
-        model.fit(X_train_bal, y_train_bal)
-        preds = model.predict(X_test_enc)
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
 
         acc = accuracy_score(y_test, preds)
-        cm = confusion_matrix(y_test, preds)
         report = classification_report(y_test, preds)
 
         results[name] = {
             "accuracy": acc,
-            "confusion_matrix": cm,
-            "report": report,
-            "model": model
+            "report": report
         }
 
         if acc > best_acc:
             best_acc = acc
-            best_name = name
             best_model = model
+            best_name = name
 
     return results, best_name, best_model
 
@@ -131,5 +116,5 @@ def train_models(df, target):
 # =========================
 # SAVE MODEL
 # =========================
-def save_model(model, filename="best_model.pkl"):
-    joblib.dump(model, filename)
+def save_model(model):
+    joblib.dump(model, "best_model.pkl")
