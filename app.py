@@ -5,9 +5,8 @@ warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import streamlit as st
+import plotly.express as px
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler, PowerTransformer
@@ -57,35 +56,28 @@ def preprocess(df):
     return df, enc
 
 
-def plot(fig):
-    st.pyplot(fig)
-    plt.close(fig)
-
-
 def main():
     st.title("Microplastic Risk Analysis System")
 
     df = generate_data()
+
     st.subheader("Dataset Preview")
     st.dataframe(df.head())
 
     # ================= EDA =================
     st.subheader("EDA")
 
-    fig1, ax1 = plt.subplots()
-    sns.countplot(data=df, x="Polymer Type", ax=ax1)
-    ax1.set_title("Polymer Distribution")
-    plot(fig1)
+    fig1 = px.histogram(df, x="Polymer Type", title="Polymer Distribution")
+    st.plotly_chart(fig1, use_container_width=True)
 
-    fig2, ax2 = plt.subplots()
-    sns.histplot(df["risk score"], kde=True, ax=ax2)
-    ax2.set_title("Risk Score Distribution")
-    plot(fig2)
+    fig2 = px.histogram(df, x="risk score", nbins=30, title="Risk Score Distribution")
+    st.plotly_chart(fig2, use_container_width=True)
 
-    fig3, ax3 = plt.subplots()
-    sns.scatterplot(data=df, x="mp count per l", y="risk score", ax=ax3)
-    ax3.set_title("MP vs Risk Score")
-    plot(fig3)
+    fig3 = px.scatter(df, x="mp count per l", y="risk score", title="MP vs Risk Score")
+    st.plotly_chart(fig3, use_container_width=True)
+
+    fig4 = px.box(df, x="risk level", y="risk score", title="Risk Score by Level")
+    st.plotly_chart(fig4, use_container_width=True)
 
     # ================= PREPROCESS =================
     df, encoder = preprocess(df)
@@ -140,23 +132,28 @@ def main():
     st.write("Best Params:", gs.best_params_)
     st.text(classification_report(y_test, y_pred))
 
-    # Confusion Matrix
-    fig4, ax4 = plt.subplots()
+    # Confusion Matrix (Plotly)
     cm = confusion_matrix(y_test, y_pred)
-    sns.heatmap(cm, annot=True, fmt="d", ax=ax4,
-                xticklabels=encoder.classes_,
-                yticklabels=encoder.classes_)
-    ax4.set_title("Confusion Matrix")
-    plot(fig4)
+    fig_cm = px.imshow(
+        cm,
+        text_auto=True,
+        labels=dict(x="Predicted", y="Actual"),
+        x=encoder.classes_,
+        y=encoder.classes_,
+        title="Confusion Matrix",
+    )
+    st.plotly_chart(fig_cm, use_container_width=True)
 
-    # ROC Curve
-    fig5, ax5 = plt.subplots()
+    # ROC Curve (Plotly)
     fpr, tpr, _ = roc_curve(y_test, y_prob)
-    ax5.plot(fpr, tpr, label=f"AUC={roc_auc_score(y_test, y_prob):.2f}")
-    ax5.plot([0, 1], [0, 1], linestyle="--")
-    ax5.legend()
-    ax5.set_title("ROC Curve")
-    plot(fig5)
+    fig_roc = px.line(
+        x=fpr,
+        y=tpr,
+        title=f"ROC Curve (AUC={roc_auc_score(y_test, y_prob):.2f})",
+        labels={"x": "False Positive Rate", "y": "True Positive Rate"},
+    )
+    fig_roc.add_shape(type="line", line=dict(dash="dash"), x0=0, x1=1, y0=0, y1=1)
+    st.plotly_chart(fig_roc, use_container_width=True)
 
 
 if __name__ == "__main__":
