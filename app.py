@@ -1,139 +1,55 @@
-import argparse
-import traceback
-
-import pandas as pd
-import numpy as np
-
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.compose import ColumnTransformer
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-
-from sklearn.metrics import accuracy_score, classification_report
-
-from imblearn.over_sampling import SMOTE
-
-
-print("\n🚀 ML PIPELINE STARTED")
-
+import streamlit as st
+from ml_pipeline import load_data, train_models
 
 # =========================
-# LOAD DATA
+# APP CONFIG
 # =========================
-def load_data(path):
-    print("\n📥 Loading data...")
-    df = pd.read_csv(path)
-    print("Shape:", df.shape)
-    return df
+st.set_page_config(page_title="ML Pipeline App", layout="centered")
 
+st.title("🚀 Machine Learning Pipeline App")
+st.write("Upload a dataset, select target column, and train models automatically.")
 
 # =========================
-# PREPROCESS
+# UPLOAD FILE
 # =========================
-def preprocess(X):
-    cat_cols = X.select_dtypes(include=["object"]).columns
-    num_cols = X.select_dtypes(exclude=["object"]).columns
+file = st.file_uploader("📂 Upload CSV File", type=["csv"])
 
-    print("\n🔧 Categorical:", list(cat_cols))
-    print("🔧 Numerical:", list(num_cols))
+if file:
+    df = load_data(file)
 
-    return ColumnTransformer([
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-        ("num", "passthrough", num_cols)
-    ])
+    st.subheader("📊 Dataset Preview")
+    st.dataframe(df.head())
 
+    st.subheader("📌 Columns")
+    st.write(list(df.columns))
 
-# =========================
-# MODELS
-# =========================
-def get_models():
-    return {
-        "LogisticRegression": LogisticRegression(max_iter=1000),
-        "RandomForest": RandomForestClassifier(n_estimators=200),
-        "SVM": SVC()
-    }
+    # select target column
+    target = st.selectbox("🎯 Select Target Column", df.columns)
 
+    # train button
+    if st.button("🚀 Train Models"):
+        with st.spinner("Training models... please wait"):
 
-# =========================
-# MAIN PIPELINE
-# =========================
-def main(data_path, target):
-    try:
-        df = load_data(data_path)
+            results, best_model = train_models(df, target)
 
-        print("\n📊 Columns:", list(df.columns))
+        st.success("Training Complete!")
 
-        if target not in df.columns:
-            raise Exception(f"Target '{target}' not found in dataset!")
+        # =========================
+        # SHOW RESULTS
+        # =========================
+        st.subheader("📊 Model Results")
 
-        X = df.drop(columns=[target])
-        y = df[target]
+        for name, metrics in results.items():
+            st.markdown(f"### 🤖 {name}")
+            st.write(f"Accuracy: {metrics['accuracy']:.4f}")
+            st.text(metrics["report"])
 
-        print("\n📊 Class distribution:")
-        print(y.value_counts())
+        # =========================
+        # BEST MODEL
+        # =========================
+        st.subheader("🏆 Best Model")
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y,
-            test_size=0.2,
-            random_state=42,
-            stratify=y
-        )
-
-        preprocessor = preprocess(X)
-
-        print("\n⚙️ Encoding...")
-        X_train_enc = preprocessor.fit_transform(X_train)
-        X_test_enc = preprocessor.transform(X_test)
-
-        print("\n⚖️ Applying SMOTE...")
-        smote = SMOTE(random_state=42)
-        X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
-
-        models = get_models()
-
-        best_acc = 0
-        best_model_name = ""
-        best_model = None
-
-        for name, model in models.items():
-            print(f"\n🤖 Training {name}...")
-
-            model.fit(X_train_bal, y_train_bal)
-            preds = model.predict(X_test_enc)
-
-            acc = accuracy_score(y_test, preds)
-
-            print(f"📊 {name} Accuracy: {acc:.4f}")
-            print(classification_report(y_test, preds))
-
-            if acc > best_acc:
-                best_acc = acc
-                best_model_name = name
-                best_model = model
-
-        print("\n🏆 BEST MODEL:", best_model_name)
-        print("🏆 BEST ACCURACY:", best_acc)
-
-        print("\n✅ PIPELINE COMPLETE SUCCESSFULLY")
-
-    except Exception as e:
-        print("\n❌ ERROR OCCURRED")
-        print(str(e))
-        traceback.print_exc()
-        input("\nPress Enter to exit...")
-
-
-# =========================
-# ENTRY POINT
-# =========================
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", required=True)
-    parser.add_argument("--target", required=True)
-
-    args = parser.parse_args()
-
-    main(args.data, args.target)
+        best_name = best_model[0]
+        st.write("Best Model:", best_name)
+        st.write("Best Accuracy:", f"{results[best_name]['accuracy']:.4f}")
+    
