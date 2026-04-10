@@ -6,45 +6,23 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
-# PAGE CONFIG
+# CONFIG
 # =========================
-st.set_page_config(
-    page_title="MP Risk Intelligence System",
-    layout="wide",
-    page_icon="🌊"
-)
+st.set_page_config(page_title="MP Risk Intelligence System", layout="wide")
 
-# =========================
-# CUSTOM STYLE
-# =========================
-st.markdown("""
-<style>
-.metric-box {
-    background-color: #f5f7fa;
-    padding: 15px;
-    border-radius: 10px;
-    text-align: center;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# =========================
-# HEADER
-# =========================
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Professional Dashboard for Risk Analysis & Machine Learning")
+st.caption("Advanced Dashboard for Risk Analysis & Machine Learning")
 
 
 # =========================
 # SIDEBAR
 # =========================
 st.sidebar.header("⚙️ Controls")
-file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
+file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 
 # =========================
-# MAIN
+# MAIN APP
 # =========================
 if file:
 
@@ -56,20 +34,22 @@ if file:
     st.subheader("📊 Overview")
 
     c1, c2, c3, c4 = st.columns(4)
-
-    c1.markdown(f"<div class='metric-box'><h3>{df.shape[0]}</h3><p>Rows</p></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-box'><h3>{df.shape[1]}</h3><p>Columns</p></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-box'><h3>{df.isnull().sum().sum()}</h3><p>Missing</p></div>", unsafe_allow_html=True)
-    c4.markdown(f"<div class='metric-box'><h3>{df.select_dtypes(include='number').shape[1]}</h3><p>Numeric Features</p></div>", unsafe_allow_html=True)
+    c1.metric("Rows", df.shape[0])
+    c2.metric("Columns", df.shape[1])
+    c3.metric("Missing", int(df.isnull().sum().sum()))
+    c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
 
     st.divider()
 
+    # =========================
+    # TARGET
+    # =========================
+    target = st.sidebar.selectbox("🎯 Select MP Risk Column", df.columns)
 
     # =========================
     # TABS
     # =========================
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
-
 
     # =========================
     # TAB 1: DASHBOARD
@@ -79,25 +59,65 @@ if file:
         st.subheader("📌 Dataset Preview")
         st.dataframe(df.head(), use_container_width=True)
 
-        target = st.sidebar.selectbox("🎯 Select MP Risk Column", df.columns)
+        # =========================
+        # 🌊 ENHANCED RISK DISTRIBUTION
+        # =========================
+        st.subheader("🌊 Risk Distribution Analysis")
 
-        st.subheader("🌊 Risk Distribution")
+        target_data = df[target]
 
-        if df[target].dtype == "object":
-            st.bar_chart(df[target].value_counts())
+        col1, col2 = st.columns(2)
+
+        if target_data.dtype == "object":
+
+            counts = target_data.value_counts()
+            percent = (counts / counts.sum()) * 100
+
+            col1.write("### 📊 Risk Count")
+            col1.bar_chart(counts)
+
+            fig, ax = plt.subplots()
+            ax.pie(counts, labels=counts.index, autopct='%1.1f%%')
+            ax.set_title("Risk Share")
+            col2.pyplot(fig)
+
+            top_risk = counts.idxmax()
+
+            st.markdown(f"""
+            ### 📌 Key Insights
+            - Most common risk: **{top_risk}**
+            - Highest percentage: **{percent.max():.2f}%**
+            - Total categories: **{len(counts)}**
+            """)
+
         else:
-            clean = pd.to_numeric(df[target], errors="coerce").dropna()
+
+            clean = pd.to_numeric(target_data, errors="coerce").dropna()
+
             fig, ax = plt.subplots()
             ax.hist(clean, bins=20)
-            st.pyplot(fig)
+            ax.set_title("Risk Distribution")
+            col1.pyplot(fig)
 
+            fig2, ax2 = plt.subplots()
+            ax2.boxplot(clean)
+            ax2.set_title("Risk Spread")
+            col2.pyplot(fig2)
+
+            st.markdown(f"""
+            ### 📌 Key Insights
+            - Mean Risk: **{clean.mean():.2f}**
+            - Max Risk: **{clean.max():.2f}**
+            - Min Risk: **{clean.min():.2f}**
+            - Std Dev: **{clean.std():.2f}**
+            """)
 
     # =========================
     # TAB 2: ANALYSIS
     # =========================
     with tab2:
 
-        st.subheader("🔬 Feature Analysis")
+        st.subheader("🔬 Feature Comparison")
 
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
@@ -105,19 +125,13 @@ if file:
             numeric_cols.remove(target)
 
         if numeric_cols:
-
-            col1, col2 = st.columns(2)
-
-            feature = col1.selectbox("Select Feature", numeric_cols)
+            feature = st.selectbox("Select Feature", numeric_cols)
 
             try:
                 group = df.groupby(target)[feature].mean()
-                col2.bar_chart(group)
+                st.bar_chart(group)
             except:
                 st.warning("Cannot analyze this feature")
-
-        else:
-            st.warning("No numeric features found")
 
         st.divider()
 
@@ -129,12 +143,13 @@ if file:
             fig, ax = plt.subplots()
             cax = ax.imshow(corr)
             plt.colorbar(cax)
+
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
             ax.set_xticklabels(corr.columns, rotation=90)
             ax.set_yticklabels(corr.columns)
-            st.pyplot(fig)
 
+            st.pyplot(fig)
 
     # =========================
     # TAB 3: ML MODELS
@@ -152,7 +167,6 @@ if file:
 
                     st.success("Training Completed!")
 
-                    # comparison chart
                     names = list(results.keys())
                     accs = [results[n]["accuracy"] for n in names]
 
@@ -162,12 +176,10 @@ if file:
 
                     st.pyplot(fig)
 
-                    # best model
                     st.subheader("🏆 Best Model")
                     st.success(best_name)
                     st.info(f"Accuracy: {results[best_name]['accuracy']:.4f}")
 
-                    # reports
                     for name in results:
                         with st.expander(name):
                             st.text(results[name]["report"])
@@ -177,7 +189,6 @@ if file:
 
                 except Exception as e:
                     st.error(str(e))
-
 
 else:
     st.info("⬅️ Upload a dataset to begin")
