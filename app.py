@@ -1,111 +1,84 @@
-import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+import joblib
 
-from ml_pipeline import train_models, preprocess_data
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.impute import SimpleImputer
 
-st.set_page_config(page_title="Microplastic Risk System", layout="wide")
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-st.title("🌊 Microplastic Risk Analysis Dashboard")
+from sklearn.metrics import accuracy_score, classification_report
 
-# =========================
-# UPLOAD DATA
-# =========================
-uploaded_file = st.file_uploader("Upload CSV Dataset", type=["csv"])
 
-if uploaded_file:
+def load_data(file):
+    return pd.read_csv(file)
 
-    df = pd.read_csv(uploaded_file)
-    st.subheader("📊 Dataset Preview")
-    st.dataframe(df.head())
 
-    target = st.selectbox("Select Target Column", df.columns)
+def clean_data(df, target):
+    df = df.copy()
 
-    if st.button("🚀 Run Analysis"):
+    y = df[target]
+    X = df.drop(columns=[target])
 
-        # =========================
-        # TRAIN MODELS
-        # =========================
-        results, best_name, best_model, X_test, y_test, X_processed = train_models(df, target)
+    if y.dtype == "object":
+        y = LabelEncoder().fit_transform(y.astype(str))
 
-        st.success(f"Best Model: {best_name}")
+    for col in X.columns:
+        if X[col].dtype == "object":
+            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
-        # =========================
-        # MODEL COMPARISON
-        # =========================
-        st.subheader("📌 Model Comparison")
+    X = SimpleImputer(strategy="mean").fit_transform(X)
+    X = pd.DataFrame(X)
 
-        results_df = pd.DataFrame(results).T
-        st.dataframe(results_df)
+    return X, y
 
-        fig, ax = plt.subplots()
-        results_df["accuracy"].plot(kind="bar", ax=ax)
-        ax.set_title("Model Accuracy Comparison")
-        st.pyplot(fig)
 
-        # =========================
-        # RISK DISTRIBUTION (SAFE)
-        # =========================
-        st.subheader("📊 Risk Distribution")
+def train_models(df, target):
+    X, y = clean_data(df, target)
+    y = pd.Series(y)
 
-        if df[target].dtype == "object":
-            encoded = df[target].astype("category").cat.codes
-        else:
-            encoded = pd.to_numeric(df[target], errors="coerce")
+    if y.nunique() < 2:
+        raise ValueError("Target must have at least 2 classes")
 
-        fig, ax = plt.subplots()
-        ax.hist(encoded.dropna(), bins=20)
-        ax.set_title("Risk Distribution")
-        st.pyplot(fig)
+    stratify = y if y.value_counts().min() >= 2 else None
 
-        # =========================
-        # FEATURE IMPORTANCE
-        # =========================
-        st.subheader("🔥 Feature Importance")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=0.2,
+        random_state=42,
+        stratify=stratify
+    )
 
-        if hasattr(best_model, "feature_importances_"):
-            importances = best_model.feature_importances_
-            feat_names = X_processed.columns
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Random Forest": RandomForestClassifier(),
+        "Gradient Boosting": GradientBoostingClassifier()
+    }
 
-            imp_df = pd.DataFrame({
-                "Feature": feat_names,
-                "Importance": importances
-            }).sort_values("Importance", ascending=False)
+    results = {}
+    best_model = None
+    best_name = ""
+    best_acc = 0
 
-            st.dataframe(imp_df)
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
 
-            fig, ax = plt.subplots()
-            ax.barh(imp_df["Feature"], imp_df["Importance"])
-            ax.set_title("Feature Importance")
-            st.pyplot(fig)
+        acc = accuracy_score(y_test, preds)
 
-        else:
-            st.info("Model does not support feature importance")
+        results[name] = {
+            "accuracy": acc,
+            "report": classification_report(y_test, preds)
+        }
 
-        # =========================
-        # CORRELATION MATRIX (FIXED)
-        # =========================
-        st.subheader("📈 Correlation Matrix")
+        if acc > best_acc:
+            best_acc = acc
+            best_model = model
+            best_name = name
 
-        corr_df = X_processed.copy()
-        corr_df["target"] = pd.factorize(df[target])[0]
+    return results, best_name, best_model
 
-        if corr_df.shape[1] < 2:
-            st.warning("Not enough numeric features for correlation")
-        else:
-            corr = corr_df.corr()
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            cax = ax.imshow(corr)
-            plt.colorbar(cax)
-
-            ax.set_xticks(range(len(corr.columns)))
-            ax.set_yticks(range(len(corr.columns)))
-            ax.set_xticklabels(corr.columns, rotation=45)
-            ax.set_yticklabels(corr.columns)
-
-            st.pyplot(fig)
-
-else:
-    st.info("Upload a CSV file to begin analysis")
+def save_model(model):
+    joblib.dump(model, "best_model.pkl")
