@@ -1,17 +1,25 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.preprocessing import RobustScaler, LabelEncoder
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import RobustScaler, PowerTransformer, LabelEncoder
+from sklearn.feature_selection import SelectKBest, mutual_info_classif
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, roc_curve
+
+from imblearn.over_sampling import SMOTE
 
 sns.set_style("whitegrid")
 
 
-def handle_outliers(df, col):
+# -----------------------------
+# OUTLIER HANDLING
+# -----------------------------
+def cap_outliers(df, col):
     q1 = df[col].quantile(0.25)
     q3 = df[col].quantile(0.75)
     iqr = q3 - q1
@@ -23,129 +31,180 @@ def handle_outliers(df, col):
     return df
 
 
+# -----------------------------
+# MAIN APP
+# -----------------------------
 def main():
-    st.set_page_config(page_title="Microplastic Risk EDA", layout="wide")
-    st.title("🌊 Microplastic Risk Analysis Dashboard")
+    st.set_page_config(page_title="Microplastic ML Pipeline", layout="wide")
+    st.title("🌊 Microplastic Risk ML Pipeline")
 
-    st.markdown("Focused EDA: encoding, scaling, outliers, and risk insights.")
-
-    # ----------------------------
-    # DATA LOADING (dummy data)
-    # ----------------------------
+    # =========================
+    # LOAD DATA (dummy)
+    # =========================
     np.random.seed(42)
     n = 1000
 
     df = pd.DataFrame({
         "risk score": np.random.gamma(2, 5, n),
         "mp count per l": np.random.exponential(80, n),
-        "risk level": np.random.choice(["Low", "Medium", "High"], n, p=[0.5, 0.3, 0.2]),
-        "Polymer Type": np.random.choice(["PET", "PE", "PP", "PVC"], n)
+        "risk level": np.random.choice(["Low", "Medium", "High"], n),
+        "Polymer Type": np.random.choice(["PET", "PE", "PP", "PVC"], n),
+        "Risk_Type": np.random.choice(["Type A", "Type B"], n, p=[0.8, 0.2])
     })
 
-    st.subheader("📊 Raw Data Sample")
+    st.subheader("Raw Data")
     st.dataframe(df.head())
 
-    # ----------------------------
-    # OUTLIER HANDLING
-    # ----------------------------
-    st.header("1. Outlier Treatment")
-
+    # =========================
+    # OUTLIERS
+    # =========================
+    st.header("1. Outlier Handling")
     for col in ["risk score", "mp count per l"]:
-        df = handle_outliers(df, col)
+        df = cap_outliers(df, col)
 
-    st.success("Outliers capped using IQR method (1.5×IQR rule).")
+    st.success("Outliers capped using IQR method")
 
-    # ----------------------------
+    # =========================
+    # SKEW TRANSFORM
+    # =========================
+    st.header("2. Skew Transformation")
+
+    pt = PowerTransformer(method="yeo-johnson")
+    df[["risk score", "mp count per l"]] = pt.fit_transform(
+        df[["risk score", "mp count per l"]]
+    )
+
+    st.success("Skewness reduced using PowerTransformer")
+
+    # =========================
     # ENCODING
-    # ----------------------------
-    st.header("2. Encoding Categorical Variables")
+    # =========================
+    st.header("3. Encoding")
 
     le = LabelEncoder()
-    df["risk level encoded"] = le.fit_transform(df["risk level"])
+    df["risk level"] = le.fit_transform(df["risk level"])
+    df["Risk_Type"] = le.fit_transform(df["Risk_Type"])
 
-    df_encoded = pd.get_dummies(df, columns=["Polymer Type"], drop_first=True)
+    df = pd.get_dummies(df, columns=["Polymer Type"], drop_first=True)
 
-    st.write("Encoded dataset preview:")
-    st.dataframe(df_encoded.head())
-
-    # ----------------------------
+    # =========================
     # SCALING
-    # ----------------------------
-    st.header("3. Feature Scaling")
+    # =========================
+    st.header("4. Scaling")
 
     scaler = RobustScaler()
-    df_encoded[["risk score", "mp count per l"]] = scaler.fit_transform(
-        df_encoded[["risk score", "mp count per l"]]
-    )
+    scale_cols = ["risk score", "mp count per l"]
+    df[scale_cols] = scaler.fit_transform(df[scale_cols])
 
-    st.success("Robust scaling applied to numeric features.")
-
-    # ----------------------------
-    # ANALYSIS 1: DISTRIBUTION
-    # ----------------------------
-    st.header("4. Distribution of Risk Score")
+    # =========================
+    # EDA
+    # =========================
+    st.header("5. EDA")
 
     fig1, ax1 = plt.subplots()
-    sns.histplot(df_encoded["risk score"], kde=True, ax=ax1, color="blue")
-    ax1.set_title("Risk Score Distribution")
+    sns.histplot(df["risk score"], kde=True, ax=ax1)
     st.pyplot(fig1)
 
-    # ----------------------------
-    # ANALYSIS 2: RELATIONSHIP
-    # ----------------------------
-    st.header("5. Risk Score vs MP Count per L")
-
     fig2, ax2 = plt.subplots()
-    sns.regplot(
-        x="mp count per l",
-        y="risk score",
-        data=df_encoded,
-        ax=ax2,
-        scatter_kws={"alpha": 0.4},
-        line_kws={"color": "red"}
-    )
-    ax2.set_title("Risk Score vs Microplastic Concentration")
+    sns.scatterplot(x=df["mp count per l"], y=df["risk score"], ax=ax2)
     st.pyplot(fig2)
-
-    correlation = df_encoded["risk score"].corr(df_encoded["mp count per l"])
-    st.info(f"Correlation: {correlation:.3f}")
-
-    # ----------------------------
-    # ANALYSIS 3: RISK LEVEL COMPARISON
-    # ----------------------------
-    st.header("6. Risk Score by Risk Level")
 
     fig3, ax3 = plt.subplots()
     sns.boxplot(x=df["risk level"], y=df["risk score"], ax=ax3)
-    ax3.set_title("Risk Score across Risk Levels")
     st.pyplot(fig3)
 
-    summary_table = df.groupby("risk level")["risk score"].agg(["mean", "median", "std"])
-    st.write("Summary statistics by risk level:")
-    st.dataframe(summary_table)
+    # =========================
+    # FEATURES
+    # =========================
+    st.header("6. Feature Selection")
 
-    # ----------------------------
-    # FINAL SUMMARY
-    # ----------------------------
-    st.header("📌 Summary Insights")
+    X = df.drop("Risk_Type", axis=1)
+    y = df["Risk_Type"]
 
-    low = df[df["risk level"] == "Low"]["risk score"].mean()
-    med = df[df["risk level"] == "Medium"]["risk score"].mean()
-    high = df[df["risk level"] == "High"]["risk score"].mean()
+    selector = SelectKBest(mutual_info_classif, k="all")
+    selector.fit(X, y)
 
-    st.markdown(f"""
-### Key Findings:
-- Risk score distribution is **right-skewed (environmental accumulation pattern)**.
-- Correlation between microplastic concentration and risk score: **{correlation:.2f}**
-- Mean risk score:
-  - Low: **{low:.2f}**
-  - Medium: **{med:.2f}**
-  - High: **{high:.2f}**
-- Risk score increases clearly across risk levels → strong separation.
+    feat = pd.DataFrame({
+        "Feature": X.columns,
+        "Score": selector.scores_
+    }).sort_values("Score", ascending=False)
 
-### Interpretation:
-Microplastic concentration (mp count per l) shows a **moderate positive relationship** with risk score, suggesting it is a key predictor of environmental risk classification.
+    fig4, ax4 = plt.subplots()
+    sns.barplot(data=feat, y="Feature", x="Score", ax=ax4)
+    st.pyplot(fig4)
+
+    # =========================
+    # MODELING
+    # =========================
+    st.header("7. Modeling")
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, stratify=y, random_state=42
+    )
+
+    smote = SMOTE()
+    X_train, y_train = smote.fit_resample(X_train, y_train)
+
+    models = {
+        "LogReg": LogisticRegression(max_iter=1000),
+        "RF": RandomForestClassifier(),
+        "GB": GradientBoostingClassifier()
+    }
+
+    results = {}
+
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        pred = model.predict(X_test)
+
+        results[name] = {
+            "Accuracy": accuracy_score(y_test, pred),
+            "ROC_AUC": roc_auc_score(y_test, pred)
+        }
+
+    st.dataframe(pd.DataFrame(results).T)
+
+    # =========================
+    # TUNING
+    # =========================
+    st.header("8. Hyperparameter Tuning")
+
+    grid = GridSearchCV(
+        LogisticRegression(max_iter=1000),
+        {"C": [0.01, 0.1, 1, 10]},
+        cv=5,
+        scoring="roc_auc"
+    )
+
+    grid.fit(X_train, y_train)
+
+    st.write("Best Params:", grid.best_params_)
+
+    best = grid.best_estimator_
+    pred = best.predict(X_test)
+
+    cm = confusion_matrix(y_test, pred)
+
+    fig5, ax5 = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt="d", ax=ax5)
+    st.pyplot(fig5)
+
+    # =========================
+    # SUMMARY
+    # =========================
+    st.header("📌 Summary")
+
+    st.markdown("""
+- Data was cleaned using IQR outlier capping
+- Skewness reduced using PowerTransformer
+- Categorical variables encoded successfully
+- Features scaled using RobustScaler
+- SMOTE applied to handle imbalance
+- Multiple models trained and compared
+- Logistic Regression tuned using GridSearchCV
+- Feature importance visualized using mutual information
 """)
+
 
 if __name__ == "__main__":
     main()
