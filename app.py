@@ -2,15 +2,14 @@ import argparse
 import warnings
 warnings.filterwarnings("ignore")
 
-import numpy as np
 import pandas as pd
+import numpy as np
 
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -24,163 +23,131 @@ from sklearn.metrics import (
 )
 
 from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline as ImbPipeline
 
 
-# ----------------------------
-# Load Data
-# ----------------------------
+# =========================
+# LOAD DATA
+# =========================
 def load_data(path, encoding="utf-8"):
+    print("\n📥 Loading data...")
     df = pd.read_csv(path, encoding=encoding)
+    print("Shape:", df.shape)
     return df
 
 
-# ----------------------------
-# Preprocessing
-# ----------------------------
-def build_preprocessor(X):
-    categorical_cols = X.select_dtypes(include=["object"]).columns
-    numeric_cols = X.select_dtypes(exclude=["object"]).columns
+# =========================
+# PREPROCESSOR
+# =========================
+def preprocess(X):
+    cat_cols = X.select_dtypes(include=["object"]).columns
+    num_cols = X.select_dtypes(exclude=["object"]).columns
 
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
-            ("num", "passthrough", numeric_cols),
-        ]
-    )
+    print("\n🔧 Categorical columns:", list(cat_cols))
+    print("🔧 Numerical columns:", list(num_cols))
 
-    return preprocessor
+    transformer = ColumnTransformer([
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+        ("num", "passthrough", num_cols)
+    ])
+
+    return transformer
 
 
-# ----------------------------
-# Models
-# ----------------------------
+# =========================
+# MODELS
+# =========================
 def get_models():
     return {
-        "LogisticRegression": LogisticRegression(max_iter=1000),
-        "RandomForest": RandomForestClassifier(n_estimators=200),
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Random Forest": RandomForestClassifier(n_estimators=200),
         "SVM": SVC(probability=True)
     }
 
 
-# ----------------------------
-# Evaluation
-# ----------------------------
-def evaluate_model(name, model, X_test, y_test):
+# =========================
+# EVALUATION
+# =========================
+def evaluate(model, X_test, y_test, name):
     preds = model.predict(X_test)
 
-    print("\n==============================")
-    print(f"📊 Model: {name}")
-    print("==============================")
+    print(f"\n📊 {name}")
     print("Accuracy:", accuracy_score(y_test, preds))
-    print("\nClassification Report:\n", classification_report(y_test, preds))
+    print(classification_report(y_test, preds))
 
     cm = confusion_matrix(y_test, preds)
     ConfusionMatrixDisplay(cm).plot()
-    plt.title(f"Confusion Matrix - {name}")
+    plt.title(name)
     plt.show()
 
 
-# ----------------------------
-# Feature Importance (Tree model only)
-# ----------------------------
-def feature_importance(model, preprocessor, X):
-    try:
-        feature_names = preprocessor.get_feature_names_out()
-        importances = model.feature_importances_
-
-        feat_df = pd.DataFrame({
-            "feature": feature_names,
-            "importance": importances
-        }).sort_values(by="importance", ascending=False)
-
-        print("\n🔥 Top Features:")
-        print(feat_df.head(10))
-    except:
-        print("Feature importance not available for this model.")
-
-
-# ----------------------------
-# Hyperparameter tuning
-# ----------------------------
-def tune_logistic(X_train, y_train):
-    pipe = Pipeline([
-        ("clf", LogisticRegression(max_iter=1000))
-    ])
-
-    params = {
-        "clf__C": [0.01, 0.1, 1, 10],
-        "clf__penalty": ["l2"],
-        "clf__solver": ["lbfgs"]
-    }
-
-    grid = GridSearchCV(pipe, params, cv=3, scoring="accuracy")
-    grid.fit(X_train, y_train)
-
-    print("\n🏆 Best Logistic Regression Params:", grid.best_params_)
-    return grid.best_estimator_
-
-
-# ----------------------------
-# Main Pipeline
-# ----------------------------
+# =========================
+# MAIN PIPELINE
+# =========================
 def main(data_path, target):
-    df = load_data(data_path)
+    try:
+        df = load_data(data_path)
 
-    print("\n📊 Data Loaded:", df.shape)
-    print("\nClass Distribution:\n", df[target].value_counts())
+        if target not in df.columns:
+            raise Exception(f"Target column '{target}' not found!")
 
-    X = df.drop(columns=[target])
-    y = df[target]
+        print("\n📊 Class distribution:")
+        print(df[target].value_counts())
 
-    preprocessor = build_preprocessor(X)
+        X = df.drop(columns=[target])
+        y = df[target]
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+        preprocessor = preprocess(X)
 
-    # ---------------- SMOTE ----------------
-    print("\n⚖️ Applying SMOTE...")
-    X_train_encoded = preprocessor.fit_transform(X_train)
-    X_test_encoded = preprocessor.transform(X_test)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y,
+            test_size=0.2,
+            random_state=42,
+            stratify=y
+        )
 
-    smote = SMOTE(random_state=42)
-    X_train_res, y_train_res = smote.fit_resample(X_train_encoded, y_train)
+        # Encode
+        print("\n⚙️ Encoding data...")
+        X_train_enc = preprocessor.fit_transform(X_train)
+        X_test_enc = preprocessor.transform(X_test)
 
-    # ---------------- Models ----------------
-    models = get_models()
-    results = {}
+        # SMOTE
+        print("\n⚖️ Applying SMOTE...")
+        smote = SMOTE(random_state=42)
 
-    for name, model in models.items():
-        print(f"\n🚀 Training {name}...")
+        X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
 
-        model.fit(X_train_res, y_train_res)
-        results[name] = model
+        # Models
+        models = get_models()
+        trained_models = {}
 
-        evaluate_model(name, model, X_test_encoded, y_test)
+        for name, model in models.items():
+            print(f"\n🚀 Training {name}...")
+            model.fit(X_train_bal, y_train_bal)
+            trained_models[name] = model
+            evaluate(model, X_test_enc, y_test, name)
 
-    # ---------------- Compare Models ----------------
-    print("\n📈 Model Comparison:")
-    for name, model in results.items():
-        acc = accuracy_score(y_test, model.predict(X_test_encoded))
-        print(f"{name}: {acc:.4f}")
+        # Comparison
+        print("\n📈 FINAL COMPARISON:")
+        for name, model in trained_models.items():
+            acc = accuracy_score(y_test, model.predict(X_test_enc))
+            print(f"{name}: {acc:.4f}")
 
-    # ---------------- Hyperparameter Tuning ----------------
-    print("\n⚙️ Hyperparameter Tuning Logistic Regression...")
-    best_model = tune_logistic(X_train_res, y_train_res)
+        print("\n✅ DONE SUCCESSFULLY!")
 
-    evaluate_model("Tuned Logistic Regression", best_model, X_test_encoded, y_test)
+    except Exception as e:
+        print("\n❌ CRASH DETECTED")
+        print(str(e))
+        input("\nPress Enter to exit...")
 
-    print("\n✅ Pipeline Complete!")
 
-
-# ----------------------------
-# Entry Point
-# ----------------------------
+# =========================
+# ENTRY POINT
+# =========================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", required=True, help="Path to CSV file")
-    parser.add_argument("--target", required=True, help="Target column name")
+
+    parser.add_argument("--data", required=True, help="CSV file path")
+    parser.add_argument("--target", required=True, help="Target column")
 
     args = parser.parse_args()
 
