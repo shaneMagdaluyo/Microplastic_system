@@ -21,20 +21,25 @@ from imblearn.combine import SMOTETomek
 # PAGE CONFIG
 # =========================
 st.set_page_config(page_title="Enterprise ML System", layout="wide")
-
-st.title("🚀 Enterprise ML Dashboard System")
-
-# =========================
-# SESSION STATE
-# =========================
-if "df" not in st.session_state:
-    st.session_state.df = None
-
-if "model_results" not in st.session_state:
-    st.session_state.model_results = {}
+st.title("🚀 Enterprise ML Dashboard (Stable Version)")
 
 # =========================
-# SIDEBAR
+# SAFE SESSION STATE INIT
+# =========================
+defaults = {
+    "df": None,
+    "model_results": {},
+    "X_test": None,
+    "y_test": None,
+    "features": None
+}
+
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+# =========================
+# SIDEBAR MENU
 # =========================
 menu = st.sidebar.radio(
     "Navigation",
@@ -46,36 +51,41 @@ menu = st.sidebar.radio(
         "🤖 Training",
         "📉 Evaluation",
         "🔍 Feature Importance",
-        "🏆 Model Leaderboard"
+        "🏆 Leaderboard"
     ]
 )
 
 # =========================
-# SAFE SMOTE SYSTEM
+# SAFE IMBALANCE FUNCTION
 # =========================
-def handle_class_imbalance(X, y, method="smote"):
+def safe_imbalance(X, y, method="smote"):
 
     X = pd.DataFrame(X).copy()
+    y = pd.Series(y).reset_index(drop=True)
 
-    # Convert everything to numeric safely
+    # FORCE NUMERIC ONLY
     for col in X.columns:
         X[col] = pd.to_numeric(X[col], errors="coerce")
 
+    # CLEAN NA
     X = X.fillna(X.median())
+
+    # ALIGN
+    X = X.reset_index(drop=True)
 
     class_counts = y.value_counts()
     min_class = class_counts.min()
 
-    # If too small → fallback
+    # ❌ Too small for SMOTE
     if min_class < 2:
         st.warning("⚠️ Too few samples → using RandomOverSampler")
         return RandomOverSampler().fit_resample(X, y)
 
-    k_neighbors = min(5, min_class - 1)
+    k = min(5, min_class - 1)
 
     try:
         if method == "smote":
-            sampler = SMOTE(k_neighbors=k_neighbors, random_state=42)
+            sampler = SMOTE(k_neighbors=k, random_state=42)
 
         elif method == "tomek":
             sampler = SMOTETomek(random_state=42)
@@ -89,8 +99,8 @@ def handle_class_imbalance(X, y, method="smote"):
         return sampler.fit_resample(X, y)
 
     except Exception as e:
-        st.error(f"SMOTE failed → fallback used: {e}")
-        return RandomUnderSampler().fit_resample(X, y)
+        st.warning(f"Fallback activated: {e}")
+        return RandomOverSampler().fit_resample(X, y)
 
 # =========================
 # UPLOAD
@@ -99,9 +109,10 @@ if menu == "📁 Upload":
     file = st.file_uploader("Upload CSV", type=["csv"])
 
     if file:
-        st.session_state.df = pd.read_csv(file)
+        df = pd.read_csv(file)
+        st.session_state.df = df
         st.success("Dataset Loaded")
-        st.dataframe(st.session_state.df.head())
+        st.dataframe(df.head())
 
 # =========================
 # OVERVIEW
@@ -122,7 +133,6 @@ elif menu == "📊 Overview":
 
         st.subheader("Summary")
         st.write(df.describe(include="all"))
-
     else:
         st.warning("Upload dataset first")
 
@@ -139,17 +149,15 @@ elif menu == "⚙️ Preprocessing":
         cat_cols = data.select_dtypes(include="object").columns
         num_cols = data.select_dtypes(include=np.number).columns
 
-        # numeric cleanup
+        # numeric cleaning
         for col in num_cols:
             data[col] = pd.to_numeric(data[col], errors="coerce")
             data[col].fillna(data[col].median(), inplace=True)
 
-        # categorical encoding
-        encoders = {}
+        # encoding
         for col in cat_cols:
             le = LabelEncoder()
             data[col] = le.fit_transform(data[col].astype(str))
-            encoders[col] = le
 
         st.session_state.df = data
 
@@ -169,22 +177,23 @@ elif menu == "⚖️ Imbalance Handling":
     if df is not None:
 
         target = st.selectbox("Select Target", df.columns)
-
-        method = st.selectbox(
-            "Method",
-            ["none", "smote", "tomek", "under"]
-        )
+        method = st.selectbox("Method", ["none", "smote", "tomek", "under"])
 
         if st.button("Apply"):
+
             X = df.drop(columns=[target])
             y = df[target]
 
-            X_res, y_res = handle_class_imbalance(X, y, method)
+            X_res, y_res = safe_imbalance(X, y, method)
 
-            st.session_state.df = pd.concat([pd.DataFrame(X_res), pd.DataFrame(y_res, columns=[target])], axis=1)
+            new_df = pd.concat([
+                pd.DataFrame(X_res),
+                pd.DataFrame(y_res, columns=[target])
+            ], axis=1)
+
+            st.session_state.df = new_df
 
             st.success("Imbalance Handling Applied")
-            st.write("New distribution:")
             st.write(pd.Series(y_res).value_counts())
 
     else:
@@ -238,6 +247,9 @@ elif menu == "🤖 Training":
 
         st.success("Training Completed")
 
+    else:
+        st.warning("Upload dataset first")
+
 # =========================
 # EVALUATION
 # =========================
@@ -247,14 +259,12 @@ elif menu == "📉 Evaluation":
 
     if results:
 
-        best_model = max(results.items(), key=lambda x: x[1]["accuracy"])
-
-        st.subheader("Best Model")
-        st.write(best_model[0])
-
-        model = best_model[1]["model"]
+        best = max(results.items(), key=lambda x: x[1]["accuracy"])
+        model = best[1]["model"]
 
         y_pred = model.predict(st.session_state.X_test)
+
+        st.subheader(f"Best Model: {best[0]}")
 
         st.write("Accuracy:", accuracy_score(st.session_state.y_test, y_pred))
         st.write("F1 Score:", f1_score(st.session_state.y_test, y_pred, average="weighted"))
@@ -266,7 +276,7 @@ elif menu == "📉 Evaluation":
         st.pyplot(fig)
 
     else:
-        st.warning("Train models first")
+        st.warning("Train model first")
 
 # =========================
 # FEATURE IMPORTANCE
@@ -277,14 +287,13 @@ elif menu == "🔍 Feature Importance":
 
     if results:
 
-        best_model = max(results.items(), key=lambda x: x[1]["accuracy"])[1]["model"]
-
+        best = max(results.items(), key=lambda x: x[1]["accuracy"])[1]["model"]
         features = st.session_state.features
 
-        if hasattr(best_model, "feature_importances_"):
-            importance = best_model.feature_importances_
+        if hasattr(best, "feature_importances_"):
+            importance = best.feature_importances_
         else:
-            importance = best_model.coef_[0]
+            importance = best.coef_[0]
 
         feat_df = pd.DataFrame({
             "Feature": features,
@@ -303,24 +312,23 @@ elif menu == "🔍 Feature Importance":
 # =========================
 # LEADERBOARD
 # =========================
-elif menu == "🏆 Model Leaderboard":
+elif menu == "🏆 Leaderboard":
 
     results = st.session_state.model_results
 
     if results:
 
-        leaderboard = pd.DataFrame([
+        table = pd.DataFrame([
             {
-                "Model": name,
-                "Accuracy": res["accuracy"],
-                "F1 Score": res["f1"]
+                "Model": k,
+                "Accuracy": v["accuracy"],
+                "F1 Score": v["f1"]
             }
-            for name, res in results.items()
+            for k, v in results.items()
         ]).sort_values(by="Accuracy", ascending=False)
 
-        st.dataframe(leaderboard)
-
-        st.bar_chart(leaderboard.set_index("Model"))
+        st.dataframe(table)
+        st.bar_chart(table.set_index("Model"))
 
     else:
-        st.warning("Train models first")
+        st.warning("Train model first")
