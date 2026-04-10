@@ -18,18 +18,18 @@ from imblearn.over_sampling import SMOTE
 from collections import Counter
 
 # -----------------------------
-# PAGE CONFIG
+# APP CONFIG
 # -----------------------------
 st.set_page_config(page_title="Microplastic Risk System", layout="wide")
-st.title("🌊 Microplastic Risk Prediction System")
+st.title("🌊 Microplastic Risk Prediction System (Stable Version)")
 
 # -----------------------------
-# UPLOAD DATA (FIXED - NO FILE ERROR)
+# UPLOAD FILE (FIXED)
 # -----------------------------
 file = st.file_uploader("Upload CSV Dataset", type=["csv"])
 
 if file is None:
-    st.info("👆 Please upload a CSV file to continue")
+    st.info("Upload dataset to continue")
     st.stop()
 
 df = pd.read_csv(file)
@@ -39,25 +39,22 @@ df = pd.read_csv(file)
 # -----------------------------
 df = df.fillna(df.median(numeric_only=True))
 
-# Encode categorical variables
-label_encoders = {}
+# Encode categorical
 for col in df.select_dtypes(include=['object']).columns:
-    le = LabelEncoder()
-    df[col] = le.fit_transform(df[col])
-    label_encoders[col] = le
+    df[col] = LabelEncoder().fit_transform(df[col])
 
 # -----------------------------
-# OUTLIERS (IQR METHOD)
+# OUTLIER REMOVAL
 # -----------------------------
 Q1 = df.quantile(0.25)
 Q3 = df.quantile(0.75)
 IQR = Q3 - Q1
 df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
 
-st.success(f"Cleaned dataset shape: {df.shape}")
+st.success(f"Dataset shape: {df.shape}")
 
 # -----------------------------
-# SELECT TARGET
+# TARGET
 # -----------------------------
 target = st.selectbox("Select Target Column", df.columns)
 
@@ -65,21 +62,32 @@ X = df.drop(columns=[target])
 y = df[target]
 
 # -----------------------------
-# VALIDATE TARGET
+# VALIDATION
 # -----------------------------
 if y.nunique() < 2:
     st.error("Target must have at least 2 classes")
     st.stop()
 
-# -----------------------------
-# SPLIT DATA
-# -----------------------------
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+class_counts = Counter(y)
+st.write("Class distribution:", class_counts)
 
 # -----------------------------
-# FEATURE SCALING
+# SAFE TRAIN SPLIT (NO STRATIFY CRASH)
+# -----------------------------
+use_stratify = min(class_counts.values()) > 1
+
+if use_stratify:
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+else:
+    st.warning("Stratify disabled due to small class size")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+# -----------------------------
+# SCALING
 # -----------------------------
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
@@ -93,100 +101,85 @@ X_train = selector.fit_transform(X_train, y_train)
 X_test = selector.transform(X_test)
 
 # -----------------------------
-# CLASS IMBALANCE (SAFE SMOTE)
+# SAFE SMOTE
 # -----------------------------
-class_counts = Counter(y_train)
-st.write("Class distribution:", class_counts)
+min_class = min(Counter(y_train).values())
 
-min_class = min(class_counts.values())
-
-if type_of_target(y_train) not in ["binary", "multiclass"]:
-    st.error("Invalid classification target")
-    st.stop()
-
-if min_class < 6:
-    st.warning("SMOTE skipped (not enough samples)")
-    X_train_final, y_train_final = X_train, y_train
+if type_of_target(y_train) in ["binary", "multiclass"] and min_class >= 6:
+    smote = SMOTE(k_neighbors=min(5, min_class - 1), random_state=42)
+    X_train, y_train = smote.fit_resample(X_train, y_train)
+    st.success("SMOTE applied")
 else:
-    k = min(5, min_class - 1)
-    smote = SMOTE(k_neighbors=k, random_state=42)
-    X_train_final, y_train_final = smote.fit_resample(X_train, y_train)
+    st.warning("SMOTE skipped (not enough samples)")
+
+# -----------------------------
+# MODELS
+# -----------------------------
+models = {
+    "Logistic Regression": LogisticRegression(max_iter=1000),
+    "Random Forest": RandomForestClassifier(),
+    "SVM": SVC()
+}
+
+results = {}
+best_model = None
+best_score = 0
+
+# -----------------------------
+# TRAIN MODELS
+# -----------------------------
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+
+    acc = accuracy_score(y_test, preds)
+    results[name] = acc
+
+    if acc > best_score:
+        best_score = acc
+        best_model = model
+
+# -----------------------------
+# SAVE PIPELINE
+# -----------------------------
+joblib.dump({
+    "model": best_model,
+    "scaler": scaler,
+    "selector": selector
+}, "pipeline.pkl")
 
 # -----------------------------
 # TABS
 # -----------------------------
-tab1, tab2, tab3 = st.tabs(["EDA", "Modeling", "Prediction"])
+tab1, tab2 = st.tabs(["EDA", "Prediction"])
 
-# =============================
+# -----------------------------
 # EDA
-# =============================
+# -----------------------------
 with tab1:
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head())
+    st.subheader("EDA")
 
     if "Risk_Score" in df.columns:
-        st.subheader("Risk Score Distribution")
         fig = plt.figure()
         plt.hist(df["Risk_Score"], bins=20)
         st.pyplot(fig)
 
     if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
-        st.subheader("MP Count vs Risk Score")
         fig = plt.figure()
         plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
         st.pyplot(fig)
 
-    st.subheader("Correlation Heatmap")
+    st.subheader("Model Results")
+    st.write(results)
+
     fig = plt.figure()
-    plt.imshow(df.corr(), cmap="coolwarm")
-    plt.colorbar()
+    plt.bar(results.keys(), results.values())
     st.pyplot(fig)
 
-# =============================
-# MODELING
-# =============================
-with tab2:
-    st.subheader("Train Models")
-
-    if st.button("Train Models"):
-        models = {
-            "Logistic Regression": LogisticRegression(max_iter=1000),
-            "Random Forest": RandomForestClassifier(),
-            "SVM": SVC()
-        }
-
-        results = {}
-        best_model = None
-        best_score = 0
-
-        for name, model in models.items():
-            model.fit(X_train_final, y_train_final)
-            preds = model.predict(X_test)
-            acc = accuracy_score(y_test, preds)
-            results[name] = acc
-
-            if acc > best_score:
-                best_model = model
-                best_score = acc
-
-        joblib.dump({
-            "model": best_model,
-            "scaler": scaler,
-            "selector": selector
-        }, "pipeline.pkl")
-
-        st.write(results)
-
-        fig = plt.figure()
-        plt.bar(results.keys(), results.values())
-        st.pyplot(fig)
-
-        st.success("Model saved successfully")
-
-# =============================
+# -----------------------------
 # PREDICTION
-# =============================
-with tab3:
+# -----------------------------
+with tab2:
     st.subheader("Make Prediction")
 
     input_data = {}
@@ -201,7 +194,6 @@ with tab3:
         selector = pipe["selector"]
 
         input_df = pd.DataFrame([input_data])
-
         input_scaled = scaler.transform(input_df)
         input_selected = selector.transform(input_scaled)
 
