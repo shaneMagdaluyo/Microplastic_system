@@ -1,32 +1,45 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
+import joblib
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
+
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.utils.multiclass import type_of_target
 
 from imblearn.over_sampling import SMOTE
 from collections import Counter
 
 # -----------------------------
-# LOAD DATA
+# PAGE CONFIG
 # -----------------------------
-df = pd.read_csv("data.csv")
+st.set_page_config(page_title="Microplastic Risk System", layout="wide")
+st.title("🌊 Microplastic Risk Prediction System")
 
 # -----------------------------
-# MISSING VALUES
+# UPLOAD DATA (FIXED - NO FILE ERROR)
+# -----------------------------
+file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+
+if file is None:
+    st.info("👆 Please upload a CSV file to continue")
+    st.stop()
+
+df = pd.read_csv(file)
+
+# -----------------------------
+# CLEAN DATA
 # -----------------------------
 df = df.fillna(df.median(numeric_only=True))
 
-# -----------------------------
-# ENCODE CATEGORICAL VARIABLES
-# -----------------------------
+# Encode categorical variables
 label_encoders = {}
 for col in df.select_dtypes(include=['object']).columns:
     le = LabelEncoder()
@@ -34,61 +47,32 @@ for col in df.select_dtypes(include=['object']).columns:
     label_encoders[col] = le
 
 # -----------------------------
-# TRANSFORM SKEWED DATA
-# -----------------------------
-num_cols = df.select_dtypes(include=np.number).columns
-for col in num_cols:
-    if abs(df[col].skew()) > 1:
-        df[col] = np.log1p(df[col])
-
-# -----------------------------
-# OUTLIER HANDLING (IQR)
+# OUTLIERS (IQR METHOD)
 # -----------------------------
 Q1 = df.quantile(0.25)
 Q3 = df.quantile(0.75)
 IQR = Q3 - Q1
 df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
 
+st.success(f"Cleaned dataset shape: {df.shape}")
+
 # -----------------------------
-# TARGET SELECTION
+# SELECT TARGET
 # -----------------------------
-target = "Risk_Type"  # change if needed
+target = st.selectbox("Select Target Column", df.columns)
+
 X = df.drop(columns=[target])
 y = df[target]
 
 # -----------------------------
-# EDA ANALYSIS (REQUIRED TASKS)
+# VALIDATE TARGET
 # -----------------------------
-
-# Risk Score distribution
-if "Risk_Score" in df.columns:
-    plt.figure()
-    sns.histplot(df["Risk_Score"], kde=True)
-    plt.title("Risk Score Distribution")
-    plt.show()
-
-# MP vs Risk Score relationship
-if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
-    plt.figure()
-    sns.scatterplot(x=df["MP_Count_per_L"], y=df["Risk_Score"])
-    plt.title("MP Count vs Risk Score")
-    plt.show()
-
-# Risk level differences
-if "Risk_Level" in df.columns:
-    plt.figure()
-    sns.boxplot(x=df["Risk_Level"], y=df["Risk_Score"])
-    plt.title("Risk Score by Risk Level")
-    plt.show()
-
-# Correlation heatmap
-plt.figure(figsize=(10,6))
-sns.heatmap(df.corr(), cmap="coolwarm")
-plt.title("Correlation Matrix")
-plt.show()
+if y.nunique() < 2:
+    st.error("Target must have at least 2 classes")
+    st.stop()
 
 # -----------------------------
-# TRAIN TEST SPLIT
+# SPLIT DATA
 # -----------------------------
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
@@ -109,55 +93,118 @@ X_train = selector.fit_transform(X_train, y_train)
 X_test = selector.transform(X_test)
 
 # -----------------------------
-# CLASS IMBALANCE HANDLING
+# CLASS IMBALANCE (SAFE SMOTE)
 # -----------------------------
-print("Before SMOTE:", Counter(y_train))
+class_counts = Counter(y_train)
+st.write("Class distribution:", class_counts)
 
-if min(Counter(y_train).values()) > 5:
-    smote = SMOTE(random_state=42)
-    X_train, y_train = smote.fit_resample(X_train, y_train)
+min_class = min(class_counts.values())
 
-print("After SMOTE:", Counter(y_train))
+if type_of_target(y_train) not in ["binary", "multiclass"]:
+    st.error("Invalid classification target")
+    st.stop()
 
-# -----------------------------
-# MODEL TRAINING
-# -----------------------------
-models = {
-    "Logistic Regression": LogisticRegression(max_iter=1000),
-    "Random Forest": RandomForestClassifier(),
-    "SVM": SVC()
-}
-
-results = {}
-
-for name, model in models.items():
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
-    acc = accuracy_score(y_test, preds)
-    results[name] = acc
-    print(f"{name}: {acc}")
+if min_class < 6:
+    st.warning("SMOTE skipped (not enough samples)")
+    X_train_final, y_train_final = X_train, y_train
+else:
+    k = min(5, min_class - 1)
+    smote = SMOTE(k_neighbors=k, random_state=42)
+    X_train_final, y_train_final = smote.fit_resample(X_train, y_train)
 
 # -----------------------------
-# BEST MODEL SELECTION
+# TABS
 # -----------------------------
-best_model = max(models.items(), key=lambda x: accuracy_score(y_test, x[1].predict(X_test)))[1]
+tab1, tab2, tab3 = st.tabs(["EDA", "Modeling", "Prediction"])
 
-# -----------------------------
-# FEATURE IMPORTANCE (RF ONLY)
-# -----------------------------
-if hasattr(best_model, "feature_importances_"):
-    importance = best_model.feature_importances_
+# =============================
+# EDA
+# =============================
+with tab1:
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head())
 
-    plt.figure()
-    plt.bar(range(len(importance)), importance)
-    plt.title("Feature Importance")
-    plt.show()
+    if "Risk_Score" in df.columns:
+        st.subheader("Risk Score Distribution")
+        fig = plt.figure()
+        plt.hist(df["Risk_Score"], bins=20)
+        st.pyplot(fig)
 
-# -----------------------------
-# FINAL REPORT OUTPUT
-# -----------------------------
-print("\nMODEL COMPARISON:")
-for k, v in results.items():
-    print(k, ":", v)
+    if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
+        st.subheader("MP Count vs Risk Score")
+        fig = plt.figure()
+        plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
+        st.pyplot(fig)
 
-print("\nBest Model:", type(best_model).__name__)
+    st.subheader("Correlation Heatmap")
+    fig = plt.figure()
+    plt.imshow(df.corr(), cmap="coolwarm")
+    plt.colorbar()
+    st.pyplot(fig)
+
+# =============================
+# MODELING
+# =============================
+with tab2:
+    st.subheader("Train Models")
+
+    if st.button("Train Models"):
+        models = {
+            "Logistic Regression": LogisticRegression(max_iter=1000),
+            "Random Forest": RandomForestClassifier(),
+            "SVM": SVC()
+        }
+
+        results = {}
+        best_model = None
+        best_score = 0
+
+        for name, model in models.items():
+            model.fit(X_train_final, y_train_final)
+            preds = model.predict(X_test)
+            acc = accuracy_score(y_test, preds)
+            results[name] = acc
+
+            if acc > best_score:
+                best_model = model
+                best_score = acc
+
+        joblib.dump({
+            "model": best_model,
+            "scaler": scaler,
+            "selector": selector
+        }, "pipeline.pkl")
+
+        st.write(results)
+
+        fig = plt.figure()
+        plt.bar(results.keys(), results.values())
+        st.pyplot(fig)
+
+        st.success("Model saved successfully")
+
+# =============================
+# PREDICTION
+# =============================
+with tab3:
+    st.subheader("Make Prediction")
+
+    input_data = {}
+    for col in X.columns:
+        input_data[col] = st.number_input(col, value=float(X[col].mean()))
+
+    if st.button("Predict"):
+        pipe = joblib.load("pipeline.pkl")
+
+        model = pipe["model"]
+        scaler = pipe["scaler"]
+        selector = pipe["selector"]
+
+        input_df = pd.DataFrame([input_data])
+
+        input_scaled = scaler.transform(input_df)
+        input_selected = selector.transform(input_scaled)
+
+        pred = model.predict(input_selected)
+
+        st.success(f"Prediction: {pred[0]}")
