@@ -11,7 +11,9 @@ from sklearn.metrics import accuracy_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
+
 from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.utils.multiclass import type_of_target
 
 from imblearn.over_sampling import SMOTE
 from collections import Counter
@@ -20,7 +22,7 @@ from collections import Counter
 # PAGE CONFIG
 # -----------------------------
 st.set_page_config(page_title="Microplastic Risk System", layout="wide")
-st.title("🌊 Microplastic Risk Prediction System (Final Polished)")
+st.title("🌊 Microplastic Risk Prediction System (Production Ready)")
 
 # -----------------------------
 # UPLOAD DATA
@@ -31,54 +33,47 @@ if file is not None:
     df = pd.read_csv(file)
 
     # -----------------------------
-    # MISSING VALUES
+    # CLEANING
     # -----------------------------
     df = df.fillna(df.median(numeric_only=True))
 
-    # -----------------------------
-    # ENCODE CATEGORICAL
-    # -----------------------------
+    # Encode categorical
     label_encoders = {}
     for col in df.select_dtypes(include=['object']).columns:
         le = LabelEncoder()
         df[col] = le.fit_transform(df[col])
         label_encoders[col] = le
 
-    # -----------------------------
-    # SKEW TRANSFORMATION
-    # -----------------------------
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    for col in numeric_cols:
-        if abs(df[col].skew()) > 1:
-            df[col] = np.log1p(df[col])
-
-    # -----------------------------
-    # OUTLIER REMOVAL (IQR)
-    # -----------------------------
+    # Outlier removal
     Q1 = df.quantile(0.25)
     Q3 = df.quantile(0.75)
     IQR = Q3 - Q1
     df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
 
-    st.success(f"Cleaned dataset shape: {df.shape}")
+    st.success(f"Cleaned shape: {df.shape}")
 
     # -----------------------------
     # TARGET
     # -----------------------------
-    target = st.selectbox("Select Target Column (Risk_Type)", df.columns)
+    target = st.selectbox("Select Target Column", df.columns)
 
     X = df.drop(columns=[target])
     y = df[target]
 
+    # Validate target
+    if y.nunique() < 2:
+        st.error("Target must have at least 2 classes")
+        st.stop()
+
     # -----------------------------
-    # TRAIN TEST SPLIT (avoid leakage)
+    # SPLIT (NO LEAKAGE)
     # -----------------------------
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
     # -----------------------------
-    # FEATURE SCALING
+    # SCALING
     # -----------------------------
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -87,74 +82,72 @@ if file is not None:
     # -----------------------------
     # FEATURE SELECTION
     # -----------------------------
-    selector = SelectKBest(score_func=f_classif, k=min(10, X.shape[1]))
+    selector = SelectKBest(f_classif, k=min(10, X.shape[1]))
     X_train_sel = selector.fit_transform(X_train_scaled, y_train)
     X_test_sel = selector.transform(X_test_scaled)
 
     # -----------------------------
-    # SMOTE (ONLY TRAIN DATA)
+    # SAFE SMOTE
     # -----------------------------
     class_counts = Counter(y_train)
+    min_class = min(class_counts.values())
+
     st.write("Class distribution:", class_counts)
 
-    min_samples = min(class_counts.values())
+    if type_of_target(y_train) not in ["binary", "multiclass"]:
+        st.error("Invalid classification target")
+        st.stop()
 
-    if min_samples > 5:
-        smote = SMOTE(k_neighbors=min(5, min_samples - 1))
-        X_train_res, y_train_res = smote.fit_resample(X_train_sel, y_train)
-        st.success("SMOTE applied")
+    if min_class < 6:
+        st.warning("SMOTE skipped (not enough samples)")
+        X_train_final, y_train_final = X_train_sel, y_train
     else:
-        X_train_res, y_train_res = X_train_sel, y_train
-        st.warning("SMOTE skipped")
+        k = min(5, min_class - 1)
+        smote = SMOTE(k_neighbors=k, random_state=42)
+        X_train_final, y_train_final = smote.fit_resample(X_train_sel, y_train)
 
     # -----------------------------
     # TABS
     # -----------------------------
     tab1, tab2, tab3, tab4 = st.tabs([
-        "EDA",
-        "Modeling",
-        "Prediction",
-        "Explainability"
+        "EDA", "Modeling", "Prediction", "Explainability"
     ])
 
     # =============================
-    # TAB 1 - EDA
+    # EDA
     # =============================
     with tab1:
         st.subheader("Dataset Preview")
         st.dataframe(df.head())
 
-        st.subheader("Risk Score Distribution (if exists)")
         if "Risk_Score" in df.columns:
+            st.subheader("Risk Score Distribution")
             fig = plt.figure()
             plt.hist(df["Risk_Score"], bins=20)
             st.pyplot(fig)
 
-        st.subheader("MP Count vs Risk Score")
         if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
+            st.subheader("MP Count vs Risk Score")
             fig = plt.figure()
             plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
-            plt.xlabel("MP Count per L")
-            plt.ylabel("Risk Score")
             st.pyplot(fig)
 
         st.subheader("Correlation Heatmap")
         fig = plt.figure()
         plt.imshow(df.corr(), cmap="coolwarm")
         plt.colorbar()
-        plt.title("Correlation Matrix")
         st.pyplot(fig)
 
     # =============================
-    # TAB 2 - MODELING
+    # MODELING
     # =============================
     with tab2:
         st.subheader("Train Models")
 
-        if st.button("Train Models"):
+        if st.button("Train"):
             models = {
                 "Logistic Regression": LogisticRegression(max_iter=1000),
-                "Random Forest": RandomForestClassifier(),
+                "Random Forest": RandomForestClassifier(random_state=42),
                 "SVM": SVC(probability=True)
             }
 
@@ -163,18 +156,20 @@ if file is not None:
             best_score = 0
 
             for name, model in models.items():
-                model.fit(X_train_res, y_train_res)
+                model.fit(X_train_final, y_train_final)
                 preds = model.predict(X_test_sel)
                 acc = accuracy_score(y_test, preds)
                 results[name] = acc
 
                 if acc > best_score:
-                    best_score = acc
                     best_model = model
+                    best_score = acc
 
-            joblib.dump(best_model, "model.pkl")
-            joblib.dump(scaler, "scaler.pkl")
-            joblib.dump(selector, "selector.pkl")
+            joblib.dump({
+                "model": best_model,
+                "scaler": scaler,
+                "selector": selector
+            }, "pipeline.pkl")
 
             st.write(results)
 
@@ -182,10 +177,10 @@ if file is not None:
             plt.bar(results.keys(), results.values())
             st.pyplot(fig)
 
-            st.success("Best model saved!")
+            st.success("Model saved successfully")
 
     # =============================
-    # TAB 3 - PREDICTION
+    # PREDICTION
     # =============================
     with tab3:
         st.subheader("Make Prediction")
@@ -195,41 +190,40 @@ if file is not None:
             input_data[col] = st.number_input(col, value=float(X[col].mean()))
 
         if st.button("Predict"):
-            try:
-                model = joblib.load("model.pkl")
-                scaler = joblib.load("scaler.pkl")
-                selector = joblib.load("selector.pkl")
+            pipe = joblib.load("pipeline.pkl")
 
-                input_df = pd.DataFrame([input_data])
+            model = pipe["model"]
+            scaler = pipe["scaler"]
+            selector = pipe["selector"]
 
-                input_scaled = scaler.transform(input_df)
-                input_selected = selector.transform(input_scaled)
+            input_df = pd.DataFrame([input_data])
 
-                pred = model.predict(input_selected)
-                st.success(f"Prediction: {pred[0]}")
+            input_scaled = scaler.transform(input_df)
+            input_selected = selector.transform(input_scaled)
 
-            except Exception as e:
-                st.error(str(e))
+            pred = model.predict(input_selected)
+
+            st.success(f"Prediction: {pred[0]}")
 
     # =============================
-    # TAB 4 - SHAP
+    # EXPLAINABILITY
     # =============================
     with tab4:
-        st.subheader("Explainability")
+        st.subheader("Feature Importance")
 
         try:
-            model = joblib.load("model.pkl")
+            pipe = joblib.load("pipeline.pkl")
+            model = pipe["model"]
 
-            if hasattr(model, "feature_importances_"):
+            if isinstance(model, RandomForestClassifier):
                 explainer = shap.TreeExplainer(model)
                 shap_values = explainer.shap_values(X_test_sel)
 
                 fig = plt.figure()
                 shap.summary_plot(shap_values, X_test_sel, show=False)
                 st.pyplot(fig)
-
             else:
-                st.warning("SHAP not supported for this model type")
+                st.warning("SHAP only enabled for Random Forest in production mode")
 
         except Exception as e:
             st.warning(str(e))
