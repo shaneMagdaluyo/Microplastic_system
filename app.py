@@ -213,14 +213,36 @@ elif menu == "🤖 Training":
         X = df.drop(columns=[target])
         y = df[target]
 
+        # =========================
+        # FORCE NUMERIC (CRITICAL FIX)
+        # =========================
+        X = X.apply(pd.to_numeric, errors="coerce")
+        X = X.fillna(X.median())
+
+        y = y.astype(str)
+
+        # =========================
+        # SPLIT
+        # =========================
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42
         )
 
+        # =========================
+        # SAFE SCALING (FIXED)
+        # =========================
         scaler = StandardScaler()
+
+        # convert again AFTER split (important fix)
+        X_train = pd.DataFrame(X_train).apply(pd.to_numeric, errors="coerce").fillna(0)
+        X_test = pd.DataFrame(X_test).apply(pd.to_numeric, errors="coerce").fillna(0)
+
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
+        # =========================
+        # MODELS
+        # =========================
         models = {
             "Logistic Regression": LogisticRegression(max_iter=1000),
             "Decision Tree": DecisionTreeClassifier(),
@@ -245,7 +267,7 @@ elif menu == "🤖 Training":
         st.session_state.y_test = y_test
         st.session_state.features = X.columns
 
-        st.success("Training Completed")
+        st.success("Training Completed Successfully 🚀")
 
     else:
         st.warning("Upload dataset first")
