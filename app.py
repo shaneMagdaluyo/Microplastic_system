@@ -1,201 +1,181 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.metrics import accuracy_score
+from sklearn.impute import SimpleImputer
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 
-from imblearn.over_sampling import SMOTE
-from collections import Counter
-
-# =============================
-# APP CONFIG
-# =============================
-st.set_page_config(page_title="Microplastic ML System", layout="wide")
-st.title("🌊 Microplastic Risk Prediction System")
-
-# =============================
-# UPLOAD DATA
-# =============================
-file = st.file_uploader("Upload CSV Dataset", type=["csv"])
-
-if file is None:
-    st.info("Please upload a dataset to continue")
-    st.stop()
-
-df = pd.read_csv(file)
-
-# =============================
-# CLEAN DATA
-# =============================
-df = df.fillna(df.median(numeric_only=True))
-
-# Encode categorical variables
-for col in df.select_dtypes(include=["object"]).columns:
-    df[col] = LabelEncoder().fit_transform(df[col])
-
-# Outlier removal
-Q1 = df.quantile(0.25)
-Q3 = df.quantile(0.75)
-IQR = Q3 - Q1
-df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
-
-st.success(f"Cleaned dataset shape: {df.shape}")
-
-# =============================
-# TARGET SELECTION
-# =============================
-target = st.selectbox("Select Target Column", df.columns)
-
-X = df.drop(columns=[target])
-y = df[target]
-
-# =============================
-# EDA SECTION
-# =============================
-st.subheader("📊 Exploratory Data Analysis")
-
-# Risk Score Distribution
-if "Risk_Score" in df.columns:
-    fig = plt.figure()
-    plt.hist(df["Risk_Score"], bins=20)
-    plt.title("Risk Score Distribution")
-    st.pyplot(fig)
-
-# MP vs Risk Score
-if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
-    fig = plt.figure()
-    plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
-    plt.xlabel("MP Count per L")
-    plt.ylabel("Risk Score")
-    plt.title("MP vs Risk Score")
-    st.pyplot(fig)
-
-# Risk Level comparison
-if "Risk_Level" in df.columns:
-    fig = plt.figure()
-    df.boxplot(column="Risk_Score", by="Risk_Level")
-    plt.title("Risk Score by Risk Level")
-    st.pyplot(fig)
-
-# =============================
-# POLYMER TYPE (FIXED NUMBERING)
-# =============================
-if "Polymer_Type" in df.columns:
-    st.subheader("📦 Polymer Type Distribution (Numbered)")
-
-    poly_counts = df["Polymer_Type"].value_counts().sort_values(ascending=False)
-
-    numbered_labels = [str(i + 1) for i in range(len(poly_counts))]
-
-    fig = plt.figure()
-    plt.bar(numbered_labels, poly_counts.values)
-
-    plt.xlabel("Polymer Type (Numbered)")
-    plt.ylabel("Count")
-    plt.title("Polymer Type Distribution")
-
-    st.pyplot(fig)
-
-    # Mapping table
-    st.write("📌 Polymer Mapping (Original → Number)")
-    mapping_df = pd.DataFrame({
-        "Polymer_Type": poly_counts.index,
-        "Number": range(1, len(poly_counts) + 1)
-    })
-
-    st.dataframe(mapping_df)
-
-# =============================
-# FEATURE SELECTION
-# =============================
-selector = SelectKBest(f_classif, k=min(10, X.shape[1]))
-X_selected = selector.fit_transform(X, y)
-
-# =============================
-# TRAIN TEST SPLIT
-# =============================
-X_train, X_test, y_train, y_test = train_test_split(
-    X_selected, y, test_size=0.2, random_state=42
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score
 )
 
-# =============================
-# SCALING
-# =============================
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
+from imblearn.over_sampling import SMOTE
 
-# =============================
-# SMOTE HANDLING
-# =============================
-class_counts = Counter(y_train)
+st.set_page_config(page_title="Microplastic Risk System", layout="wide")
 
-if min(class_counts.values()) > 5:
-    smote = SMOTE(random_state=42)
-    X_train, y_train = smote.fit_resample(X_train, y_train)
+st.title("🌊 Microplastic Risk Analysis & Prediction System")
 
-st.write("Class Distribution:", class_counts)
+# =========================
+# 1. LOAD DATA
+# =========================
+uploaded_file = st.file_uploader("Upload Dataset (CSV)", type=["csv"])
 
-# =============================
-# MODELS
-# =============================
-models = {
-    "Logistic Regression": LogisticRegression(max_iter=1000),
-    "Random Forest": RandomForestClassifier(),
-    "SVM": SVC()
-}
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.subheader("📊 Dataset Preview")
+    st.dataframe(df.head())
 
-results = {}
-best_model = None
-best_score = 0
+    st.write("Shape:", df.shape)
 
-for name, model in models.items():
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
+    # =========================
+    # 2. TARGET SELECTION
+    # =========================
+    target = st.selectbox("Select Target Column", df.columns)
 
-    acc = accuracy_score(y_test, preds)
-    results[name] = acc
+    if target:
 
-    if acc > best_score:
-        best_model = model
-        best_score = acc
+        # =========================
+        # 3. BASIC EDA
+        # =========================
+        st.subheader("📈 EDA")
 
-# =============================
-# RESULTS
-# =============================
-st.subheader("📈 Model Performance")
+        if df[target].dtype != "object":
+            fig, ax = plt.subplots()
+            sns.histplot(df[target], kde=True, ax=ax)
+            st.pyplot(fig)
 
-st.write(results)
+        # Correlation heatmap
+        st.write("### Correlation Heatmap")
+        numeric_df = df.select_dtypes(include=np.number)
+        if numeric_df.shape[1] > 1:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.heatmap(numeric_df.corr(), annot=True, cmap="coolwarm", ax=ax)
+            st.pyplot(fig)
 
-fig = plt.figure()
-plt.bar(results.keys(), results.values())
-plt.title("Model Comparison")
-st.pyplot(fig)
+        # =========================
+        # 4. PREPROCESSING
+        # =========================
+        st.subheader("⚙️ Preprocessing")
 
-# =============================
-# PREDICTION
-# =============================
-st.subheader("🔮 Prediction System")
+        data = df.copy()
 
-input_data = {}
+        # Handle missing values
+        for col in data.columns:
+            if data[col].dtype == "object":
+                data[col].fillna(data[col].mode()[0], inplace=True)
+            else:
+                data[col].fillna(data[col].median(), inplace=True)
 
-for col in X.columns:
-    input_data[col] = st.number_input(col, value=float(X[col].mean()))
+        # Encode categorical
+        encoders = {}
+        for col in data.select_dtypes(include="object").columns:
+            le = LabelEncoder()
+            data[col] = le.fit_transform(data[col])
+            encoders[col] = le
 
-if st.button("Predict"):
-    input_df = pd.DataFrame([input_data])
+        # =========================
+        # 5. SPLIT DATA
+        # =========================
+        X = data.drop(columns=[target])
+        y = data[target]
 
-    input_scaled = scaler.transform(input_df)
-    input_selected = selector.transform(input_scaled)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
 
-    pred = best_model.predict(input_selected)
+        # =========================
+        # 6. SMOTE
+        # =========================
+        st.write("Applying SMOTE (if classification)...")
 
-    st.success(f"Prediction: {pred[0]}")
+        try:
+            smote = SMOTE(random_state=42)
+            X_train, y_train = smote.fit_resample(X_train, y_train)
+        except:
+            st.warning("SMOTE not applied (check target type)")
+
+        # =========================
+        # 7. SCALING
+        # =========================
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        # =========================
+        # 8. MODEL SELECTION
+        # =========================
+        st.subheader("🤖 Model Training")
+
+        model_name = st.selectbox(
+            "Choose Model",
+            ["Logistic Regression", "Random Forest", "Decision Tree"]
+        )
+
+        if model_name == "Logistic Regression":
+            model = LogisticRegression(max_iter=1000)
+        elif model_name == "Random Forest":
+            model = RandomForestClassifier()
+        else:
+            model = DecisionTreeClassifier()
+
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        # =========================
+        # 9. EVALUATION
+        # =========================
+        st.subheader("📊 Model Evaluation")
+
+        acc = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred, average="weighted")
+
+        st.write("Accuracy:", acc)
+        st.write("F1 Score:", f1)
+
+        st.text("Classification Report")
+        st.text(classification_report(y_test, y_pred))
+
+        # Confusion Matrix
+        fig, ax = plt.subplots()
+        sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d", ax=ax)
+        st.pyplot(fig)
+
+        # =========================
+        # 10. FEATURE IMPORTANCE
+        # =========================
+        st.subheader("🔍 Feature Importance")
+
+        if hasattr(model, "feature_importances_"):
+            importance = model.feature_importances_
+        elif hasattr(model, "coef_"):
+            importance = model.coef_[0]
+        else:
+            importance = None
+
+        if importance is not None:
+            feat_df = pd.DataFrame({
+                "Feature": X.columns,
+                "Importance": importance
+            }).sort_values(by="Importance", ascending=False)
+
+            st.dataframe(feat_df)
+
+            fig, ax = plt.subplots()
+            sns.barplot(data=feat_df, x="Importance", y="Feature", ax=ax)
+            st.pyplot(fig)
+
+        st.success("Model pipeline completed successfully 🚀")
+
+else:
+    st.info("Upload a CSV file to begin analysis")
