@@ -13,13 +13,29 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from imblearn.over_sampling import SMOTE
-
 # =========================
 # STREAMLIT CONFIG
 # =========================
 st.set_page_config(page_title="Microplastic Risk System", layout="wide")
-st.title("🌊 Microplastic Risk Analysis & ML System")
+st.title("🌊 Microplastic Risk Analysis System")
+
+# =========================
+# CLASS IMBALANCE FUNCTION
+# =========================
+def handle_class_imbalance(X_train, y_train, method="smote"):
+    """
+    Handles class imbalance using SMOTE.
+    """
+    if method == "smote":
+        from imblearn.over_sampling import SMOTE
+
+        smote = SMOTE(random_state=42)
+        X_res, y_res = smote.fit_resample(X_train, y_train)
+
+        return X_res, y_res
+
+    return X_train, y_train
+
 
 # =========================
 # UPLOAD DATA
@@ -40,7 +56,7 @@ if uploaded_file is not None:
     if target:
 
         # =========================
-        # BASIC EDA
+        # EDA
         # =========================
         st.subheader("📊 Exploratory Data Analysis")
 
@@ -50,34 +66,33 @@ if uploaded_file is not None:
             st.pyplot(fig)
 
         # Correlation
-        st.write("### Correlation Heatmap")
         num_df = df.select_dtypes(include=np.number)
         if num_df.shape[1] > 1:
+            st.write("### Correlation Heatmap")
             fig, ax = plt.subplots(figsize=(10, 6))
             sns.heatmap(num_df.corr(), annot=True, cmap="coolwarm", ax=ax)
             st.pyplot(fig)
 
         # =========================
-        # PREPROCESSING (FIXED)
+        # PREPROCESSING
         # =========================
-        st.subheader("⚙️ Preprocessing Data")
+        st.subheader("⚙️ Preprocessing")
 
         data = df.copy()
 
-        # Split columns
         num_cols = data.select_dtypes(include=np.number).columns
         cat_cols = data.select_dtypes(include="object").columns
 
-        # Handle numeric
+        # numeric handling
         for col in num_cols:
             data[col] = pd.to_numeric(data[col], errors='coerce')
             data[col].fillna(data[col].median(), inplace=True)
 
-        # Handle categorical
+        # categorical handling
         for col in cat_cols:
             data[col].fillna(data[col].mode()[0], inplace=True)
 
-        # Encode categorical
+        # encoding
         encoders = {}
         for col in cat_cols:
             le = LabelEncoder()
@@ -97,16 +112,17 @@ if uploaded_file is not None:
         )
 
         # =========================
-        # SMOTE (SAFE)
+        # CLASS IMBALANCE HANDLING
         # =========================
-        st.subheader("⚖️ Handling Class Imbalance")
+        st.subheader("⚖️ Class Imbalance Handling")
 
-        try:
-            smote = SMOTE(random_state=42)
-            X_train, y_train = smote.fit_resample(X_train, y_train)
-            st.success("SMOTE Applied")
-        except:
-            st.warning("SMOTE not applied (check target type)")
+        apply_smote = st.checkbox("Apply SMOTE")
+
+        if apply_smote:
+            X_train, y_train = handle_class_imbalance(X_train, y_train, method="smote")
+            st.success("SMOTE Applied Successfully")
+        else:
+            st.info("SMOTE Not Applied")
 
         # =========================
         # SCALING
@@ -149,7 +165,6 @@ if uploaded_file is not None:
         st.text("Classification Report")
         st.text(classification_report(y_test, y_pred))
 
-        # Confusion Matrix
         fig, ax = plt.subplots()
         sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d", ax=ax)
         st.pyplot(fig)
@@ -181,4 +196,4 @@ if uploaded_file is not None:
         st.success("Model Training Completed 🚀")
 
 else:
-    st.warning("📂 Please upload a CSV file to start")
+    st.warning("📂 Please upload a dataset to start")
