@@ -66,23 +66,37 @@ if uploaded_file:
         # =========================
         # 4. PREPROCESSING
         # =========================
-        st.subheader("⚙️ Preprocessing")
+        # =========================
+# CLEAN PREPROCESSING (FIXED)
+# =========================
 
-        data = df.copy()
+data = df.copy()
 
-        # Handle missing values
-        for col in data.columns:
-            if data[col].dtype == "object":
-                data[col].fillna(data[col].mode()[0], inplace=True)
-            else:
-                data[col].fillna(data[col].median(), inplace=True)
+# STEP 1: Convert obvious numeric strings to numeric
+for col in data.columns:
+    data[col] = pd.to_numeric(data[col], errors='ignore')
 
-        # Encode categorical
-        encoders = {}
-        for col in data.select_dtypes(include="object").columns:
-            le = LabelEncoder()
-            data[col] = le.fit_transform(data[col])
-            encoders[col] = le
+# STEP 2: Handle missing values safely
+for col in data.columns:
+
+    # If column is numeric
+    if pd.api.types.is_numeric_dtype(data[col]):
+        data[col].fillna(data[col].median(), inplace=True)
+
+    # If column is categorical / object
+    else:
+        data[col].fillna(data[col].mode()[0], inplace=True)
+
+# STEP 3: Encode categorical variables
+from sklearn.preprocessing import LabelEncoder
+
+encoders = {}
+
+for col in data.columns:
+    if data[col].dtype == "object":
+        le = LabelEncoder()
+        data[col] = le.fit_transform(data[col].astype(str))
+        encoders[col] = le
 
         # =========================
         # 5. SPLIT DATA
