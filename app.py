@@ -6,11 +6,9 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import streamlit as st
-import plotly.express as px
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler, PowerTransformer
-from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import (
@@ -64,20 +62,17 @@ def main():
     st.subheader("Dataset Preview")
     st.dataframe(df.head())
 
-    # ================= EDA =================
-    st.subheader("EDA")
+    # ================= SIMPLE EDA =================
+    st.subheader("EDA (Simple Built-in Charts)")
 
-    fig1 = px.histogram(df, x="Polymer Type", title="Polymer Distribution")
-    st.plotly_chart(fig1, use_container_width=True)
+    st.write("Polymer Distribution")
+    st.bar_chart(df["Polymer Type"].value_counts())
 
-    fig2 = px.histogram(df, x="risk score", nbins=30, title="Risk Score Distribution")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.write("Risk Score Distribution")
+    st.line_chart(df["risk score"])
 
-    fig3 = px.scatter(df, x="mp count per l", y="risk score", title="MP vs Risk Score")
-    st.plotly_chart(fig3, use_container_width=True)
-
-    fig4 = px.box(df, x="risk level", y="risk score", title="Risk Score by Level")
-    st.plotly_chart(fig4, use_container_width=True)
+    st.write("MP Count vs Risk Score")
+    st.scatter_chart(df[["mp count per l", "risk score"]])
 
     # ================= PREPROCESS =================
     df, encoder = preprocess(df)
@@ -132,28 +127,20 @@ def main():
     st.write("Best Params:", gs.best_params_)
     st.text(classification_report(y_test, y_pred))
 
-    # Confusion Matrix (Plotly)
-    cm = confusion_matrix(y_test, y_pred)
-    fig_cm = px.imshow(
-        cm,
-        text_auto=True,
-        labels=dict(x="Predicted", y="Actual"),
-        x=encoder.classes_,
-        y=encoder.classes_,
-        title="Confusion Matrix",
+    # Confusion Matrix (table only)
+    st.subheader("Confusion Matrix")
+    cm = pd.DataFrame(
+        confusion_matrix(y_test, y_pred),
+        index=encoder.classes_,
+        columns=encoder.classes_,
     )
-    st.plotly_chart(fig_cm, use_container_width=True)
+    st.dataframe(cm)
 
-    # ROC Curve (Plotly)
+    # ROC values (table only)
     fpr, tpr, _ = roc_curve(y_test, y_prob)
-    fig_roc = px.line(
-        x=fpr,
-        y=tpr,
-        title=f"ROC Curve (AUC={roc_auc_score(y_test, y_prob):.2f})",
-        labels={"x": "False Positive Rate", "y": "True Positive Rate"},
-    )
-    fig_roc.add_shape(type="line", line=dict(dash="dash"), x0=0, x1=1, y0=0, y1=1)
-    st.plotly_chart(fig_roc, use_container_width=True)
+    roc_df = pd.DataFrame({"FPR": fpr, "TPR": tpr})
+    st.subheader("ROC Curve Data")
+    st.dataframe(roc_df)
 
 
 if __name__ == "__main__":
