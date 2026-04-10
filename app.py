@@ -1,210 +1,159 @@
-import streamlit as st
+from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import RobustScaler, PowerTransformer, LabelEncoder
-from sklearn.feature_selection import SelectKBest, mutual_info_classif
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, roc_curve
+from sklearn.svm import SVC
 
+from sklearn.metrics import accuracy_score, classification_report
 from imblearn.over_sampling import SMOTE
 
-sns.set_style("whitegrid")
+import joblib
+import os
+
+app = Flask(__name__)
+
+MODEL_PATH = "model.pkl"
+
+# -----------------------------
+# LOAD & PREPROCESS FUNCTION
+# -----------------------------
+def preprocess_data(df):
+    # Example column names (adjust based on your dataset)
+    target = "Risk_Type"
+
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    # Separate column types
+    num_cols = X.select_dtypes(include=['int64', 'float64']).columns
+    cat_cols = X.select_dtypes(include=['object']).columns
+
+    # Pipelines
+    num_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+
+    cat_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore"))
+    ])
+
+    preprocessor = ColumnTransformer([
+        ("num", num_pipeline, num_cols),
+        ("cat", cat_pipeline, cat_cols)
+    ])
+
+    return X, y, preprocessor
 
 
 # -----------------------------
-# OUTLIER HANDLING
+# TRAIN MODEL
 # -----------------------------
-def cap_outliers(df, col):
-    q1 = df[col].quantile(0.25)
-    q3 = df[col].quantile(0.75)
-    iqr = q3 - q1
+@app.route("/train", methods=["POST"])
+def train_model():
+    try:
+        file = request.files['file']
+        df = pd.read_csv(file)
 
-    lower = q1 - 1.5 * iqr
-    upper = q3 + 1.5 * iqr
+        X, y, preprocessor = preprocess_data(df)
 
-    df[col] = np.clip(df[col], lower, upper)
-    return df
+        # Handle imbalance
+        smote = SMOTE()
+        X_resampled, y_resampled = smote.fit_resample(X, y)
 
-
-# -----------------------------
-# MAIN APP
-# -----------------------------
-def main():
-    st.set_page_config(page_title="Microplastic ML Pipeline", layout="wide")
-    st.title("🌊 Microplastic Risk ML Pipeline")
-
-    # =========================
-    # LOAD DATA (dummy)
-    # =========================
-    np.random.seed(42)
-    n = 1000
-
-    df = pd.DataFrame({
-        "risk score": np.random.gamma(2, 5, n),
-        "mp count per l": np.random.exponential(80, n),
-        "risk level": np.random.choice(["Low", "Medium", "High"], n),
-        "Polymer Type": np.random.choice(["PET", "PE", "PP", "PVC"], n),
-        "Risk_Type": np.random.choice(["Type A", "Type B"], n, p=[0.8, 0.2])
-    })
-
-    st.subheader("Raw Data")
-    st.dataframe(df.head())
-
-    # =========================
-    # OUTLIERS
-    # =========================
-    st.header("1. Outlier Handling")
-    for col in ["risk score", "mp count per l"]:
-        df = cap_outliers(df, col)
-
-    st.success("Outliers capped using IQR method")
-
-    # =========================
-    # SKEW TRANSFORM
-    # =========================
-    st.header("2. Skew Transformation")
-
-    pt = PowerTransformer(method="yeo-johnson")
-    df[["risk score", "mp count per l"]] = pt.fit_transform(
-        df[["risk score", "mp count per l"]]
-    )
-
-    st.success("Skewness reduced using PowerTransformer")
-
-    # =========================
-    # ENCODING
-    # =========================
-    st.header("3. Encoding")
-
-    le = LabelEncoder()
-    df["risk level"] = le.fit_transform(df["risk level"])
-    df["Risk_Type"] = le.fit_transform(df["Risk_Type"])
-
-    df = pd.get_dummies(df, columns=["Polymer Type"], drop_first=True)
-
-    # =========================
-    # SCALING
-    # =========================
-    st.header("4. Scaling")
-
-    scaler = RobustScaler()
-    scale_cols = ["risk score", "mp count per l"]
-    df[scale_cols] = scaler.fit_transform(df[scale_cols])
-
-    # =========================
-    # EDA
-    # =========================
-    st.header("5. EDA")
-
-    fig1, ax1 = plt.subplots()
-    sns.histplot(df["risk score"], kde=True, ax=ax1)
-    st.pyplot(fig1)
-
-    fig2, ax2 = plt.subplots()
-    sns.scatterplot(x=df["mp count per l"], y=df["risk score"], ax=ax2)
-    st.pyplot(fig2)
-
-    fig3, ax3 = plt.subplots()
-    sns.boxplot(x=df["risk level"], y=df["risk score"], ax=ax3)
-    st.pyplot(fig3)
-
-    # =========================
-    # FEATURES
-    # =========================
-    st.header("6. Feature Selection")
-
-    X = df.drop("Risk_Type", axis=1)
-    y = df["Risk_Type"]
-
-    selector = SelectKBest(mutual_info_classif, k="all")
-    selector.fit(X, y)
-
-    feat = pd.DataFrame({
-        "Feature": X.columns,
-        "Score": selector.scores_
-    }).sort_values("Score", ascending=False)
-
-    fig4, ax4 = plt.subplots()
-    sns.barplot(data=feat, y="Feature", x="Score", ax=ax4)
-    st.pyplot(fig4)
-
-    # =========================
-    # MODELING
-    # =========================
-    st.header("7. Modeling")
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, stratify=y, random_state=42
-    )
-
-    smote = SMOTE()
-    X_train, y_train = smote.fit_resample(X_train, y_train)
-
-    models = {
-        "LogReg": LogisticRegression(max_iter=1000),
-        "RF": RandomForestClassifier(),
-        "GB": GradientBoostingClassifier()
-    }
-
-    results = {}
-
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        pred = model.predict(X_test)
-
-        results[name] = {
-            "Accuracy": accuracy_score(y_test, pred),
-            "ROC_AUC": roc_auc_score(y_test, pred)
+        # Model options
+        models = {
+            "logistic": LogisticRegression(max_iter=1000),
+            "random_forest": RandomForestClassifier(),
+            "svm": SVC()
         }
 
-    st.dataframe(pd.DataFrame(results).T)
+        results = {}
 
-    # =========================
-    # TUNING
-    # =========================
-    st.header("8. Hyperparameter Tuning")
+        best_model = None
+        best_score = 0
 
-    grid = GridSearchCV(
-        LogisticRegression(max_iter=1000),
-        {"C": [0.01, 0.1, 1, 10]},
-        cv=5,
-        scoring="roc_auc"
-    )
+        for name, model in models.items():
+            pipe = Pipeline([
+                ("preprocessor", preprocessor),
+                ("model", model)
+            ])
 
-    grid.fit(X_train, y_train)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_resampled, y_resampled, test_size=0.2, random_state=42
+            )
 
-    st.write("Best Params:", grid.best_params_)
+            pipe.fit(X_train, y_train)
+            preds = pipe.predict(X_test)
 
-    best = grid.best_estimator_
-    pred = best.predict(X_test)
+            acc = accuracy_score(y_test, preds)
+            results[name] = acc
 
-    cm = confusion_matrix(y_test, pred)
+            if acc > best_score:
+                best_score = acc
+                best_model = pipe
 
-    fig5, ax5 = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", ax=ax5)
-    st.pyplot(fig5)
+        # Save best model
+        joblib.dump(best_model, MODEL_PATH)
 
-    # =========================
-    # SUMMARY
-    # =========================
-    st.header("📌 Summary")
+        return jsonify({
+            "message": "Training complete",
+            "results": results,
+            "best_score": best_score
+        })
 
-    st.markdown("""
-- Data was cleaned using IQR outlier capping
-- Skewness reduced using PowerTransformer
-- Categorical variables encoded successfully
-- Features scaled using RobustScaler
-- SMOTE applied to handle imbalance
-- Multiple models trained and compared
-- Logistic Regression tuned using GridSearchCV
-- Feature importance visualized using mutual information
-""")
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
+# -----------------------------
+# PREDICT
+# -----------------------------
+@app.route("/predict", methods=["POST"])
+def predict():
+    try:
+        data = request.json
+        df = pd.DataFrame([data])
+
+        model = joblib.load(MODEL_PATH)
+        prediction = model.predict(df)
+
+        return jsonify({
+            "prediction": prediction[0]
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+# -----------------------------
+# FEATURE IMPORTANCE
+# -----------------------------
+@app.route("/feature-importance", methods=["GET"])
+def feature_importance():
+    try:
+        model = joblib.load(MODEL_PATH)
+
+        if hasattr(model.named_steps["model"], "feature_importances_"):
+            importance = model.named_steps["model"].feature_importances_
+            return jsonify({"importance": importance.tolist()})
+        else:
+            return jsonify({"message": "Model has no feature importance"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+# -----------------------------
+# RUN APP
+# -----------------------------
 if __name__ == "__main__":
-    main()
+    app.run(debug=True)
