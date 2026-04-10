@@ -32,30 +32,20 @@ def clean_data(df):
     data = df.copy()
 
     for col in data.columns:
-
-        # Convert everything to string first
         data[col] = data[col].astype(str)
-
-        # Extract numbers if present (e.g., "12 mg" → 12)
-        extracted = data[col].str.extract('(\d+\.?\d*)')[0]
-
-        # Try convert extracted values to numeric
+        extracted = data[col].str.extract(r'(\d+\.?\d*)')[0]
         numeric_col = pd.to_numeric(extracted, errors='coerce')
 
-        # If most values are numeric → treat as numeric column
         if numeric_col.notna().sum() > len(data) * 0.5:
             data[col] = numeric_col
-            data[col].fillna(data[col].median(), inplace=True)
-
+            data[col] = data[col].fillna(data[col].median())
         else:
-            # Treat as categorical
-            data[col] = data[col].fillna("Unknown")
-            data[col] = data[col].astype(str)
+            data[col] = data[col].fillna("Unknown").astype(str)
 
     return data
 
 # =========================
-# MAIN
+# MAIN APP
 # =========================
 if uploaded_file:
 
@@ -69,68 +59,81 @@ if uploaded_file:
     use_smote = st.sidebar.checkbox("Apply SMOTE")
 
     # =========================
-    # KPI CARDS
-    # =========================
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Rows", df.shape[0])
-    col2.metric("Columns", df.shape[1])
-    col3.metric("Unique Classes", df[target].nunique())
-
-    # =========================
-    # TARGET VISUALIZATION (FIXED)
-    # =========================
-    st.subheader("📊 Target Distribution")
-
-    top_data = df[target].value_counts().nlargest(top_n).reset_index()
-    top_data.columns = ["Category", "Count"]
-
-    fig = px.bar(
-        top_data,
-        x="Count",
-        y="Category",
-        orientation='h',
-        title="Top Categories (Readable)"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # =========================
     # CLEAN DATA
     # =========================
-    st.subheader("⚙️ Data Cleaning")
-
     data = clean_data(df)
-    st.success("Data cleaned successfully")
 
-    # Encode categorical AFTER cleaning
+    # FIX: Replace inf and NaN early
+    data = data.replace([np.inf, -np.inf], np.nan)
+
+    # =========================
+    # ENCODING
+    # =========================
     encoders = {}
+
     for col in data.select_dtypes(include="object").columns:
         le = LabelEncoder()
         data[col] = le.fit_transform(data[col].astype(str))
         encoders[col] = le
 
     # =========================
-    # SPLIT
+    # TARGET SPLIT
     # =========================
     X = data.drop(columns=[target])
     y = data[target]
 
+    # Force numeric safety
+    X = X.apply(pd.to_numeric, errors='coerce')
+
+    # Fill NaNs
+    X = X.fillna(X.median())
+    y = y.fillna(y.mode()[0])
+
+    # =========================
+    # KPI
+    # =========================
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Rows", df.shape[0])
+    col2.metric("Columns", df.shape[1])
+    col3.metric("Unique Classes", len(np.unique(y)))
+
+    # =========================
+    # TARGET VISUALIZATION
+    # =========================
+    st.subheader("📊 Target Distribution")
+
+    top_data = pd.Series(y).value_counts().nlargest(top_n).reset_index()
+    top_data.columns = ["Category", "Count"]
+
+    fig = px.bar(
+        top_data,
+        x="Count",
+        y="Category",
+        orientation='h'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # =========================
+    # SPLIT
+    # =========================
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # FINAL SAFETY CLEAN
+    X_train = np.nan_to_num(X_train)
+    X_test = np.nan_to_num(X_test)
+
     # =========================
     # SMOTE
     # =========================
-    if use_smote:
+    if use_smote and len(np.unique(y_train)) > 1:
         try:
             smote = SMOTE(random_state=42)
-            X, y = smote.fit_resample(X, y)
+            X_train, y_train = smote.fit_resample(X_train, y_train)
             st.success("SMOTE applied successfully")
-        except:
-            st.warning("SMOTE failed (dataset too small or imbalanced)")
-
-    # =========================
-    # TRAIN TEST SPLIT
-    # =========================
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+        except Exception as e:
+            st.warning(f"SMOTE failed: {e}")
 
     # =========================
     # SCALING
@@ -140,7 +143,7 @@ if uploaded_file:
     X_test = scaler.transform(X_test)
 
     # =========================
-    # MODEL TRAINING
+    # MODELS
     # =========================
     st.subheader("🤖 Model Performance")
 
@@ -156,33 +159,19 @@ if uploaded_file:
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
-        acc = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='weighted')
-
         results.append({
             "Model": name,
-            "Accuracy": acc,
-            "F1 Score": f1
+            "Accuracy": accuracy_score(y_test, y_pred),
+            "F1 Score": f1_score(y_test, y_pred, average='weighted')
         })
 
     results_df = pd.DataFrame(results)
 
-    # KPI RESULTS
     col1, col2 = st.columns(2)
     col1.metric("Best Accuracy", round(results_df["Accuracy"].max(), 3))
     col2.metric("Best F1 Score", round(results_df["F1 Score"].max(), 3))
 
-    # =========================
-    # MODEL COMPARISON
-    # =========================
-    st.subheader("📊 Model Comparison")
-
-    fig2 = px.bar(
-        results_df,
-        x="Model",
-        y=["Accuracy", "F1 Score"],
-        barmode="group"
-    )
+    fig2 = px.bar(results_df, x="Model", y=["Accuracy", "F1 Score"], barmode="group")
     st.plotly_chart(fig2, use_container_width=True)
 
     # =========================
@@ -198,12 +187,7 @@ if uploaded_file:
         "Importance": rf.feature_importances_
     }).sort_values(by="Importance", ascending=False)
 
-    fig3 = px.bar(
-        feat_df.head(10),
-        x="Importance",
-        y="Feature",
-        orientation='h'
-    )
+    fig3 = px.bar(feat_df.head(10), x="Importance", y="Feature", orientation='h')
     st.plotly_chart(fig3, use_container_width=True)
 
     # =========================
@@ -224,17 +208,13 @@ if uploaded_file:
         best_model = grid.best_estimator_
         y_pred = best_model.predict(X_test)
 
-        acc = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='weighted')
-
         st.success(f"Best Params: {grid.best_params_}")
-        st.write("Accuracy:", acc)
-        st.write("F1 Score:", f1)
-
+        st.write("Accuracy:", accuracy_score(y_test, y_pred))
+        st.write("F1 Score:", f1_score(y_test, y_pred, average='weighted'))
         st.text(classification_report(y_test, y_pred))
 
         cm = confusion_matrix(y_test, y_pred)
-        fig_cm = px.imshow(cm, text_auto=True, title="Confusion Matrix")
+        fig_cm = px.imshow(cm, text_auto=True)
         st.plotly_chart(fig_cm)
 
     st.success("🚀 Dashboard Ready!")
