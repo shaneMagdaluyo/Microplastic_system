@@ -3,10 +3,11 @@ import pandas as pd
 import numpy as np
 import joblib
 import matplotlib.pyplot as plt
+import shap
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import accuracy_score, roc_curve, auc
+from sklearn.metrics import accuracy_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
@@ -14,190 +15,149 @@ from sklearn.svm import SVC
 from imblearn.over_sampling import SMOTE
 from collections import Counter
 
-# -----------------------------
-# APP TITLE
-# -----------------------------
-st.title("🌊 Advanced Microplastic Risk Prediction System")
+st.set_page_config(page_title="Microplastic Risk System", layout="wide")
+
+st.title("🌊 Microplastic Risk Prediction System (Final Version)")
 
 # -----------------------------
-# FILE UPLOAD
+# TABS
 # -----------------------------
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Data & EDA",
+    "⚖️ Modeling",
+    "🔮 Prediction",
+    "📌 Explainability"
+])
+
 file = st.file_uploader("Upload CSV Dataset", type=["csv"])
 
 if file:
     df = pd.read_csv(file)
-
-    st.subheader("📊 Dataset Preview")
-    st.dataframe(df.head())
 
     # -----------------------------
     # CLEANING
     # -----------------------------
     df = df.fillna(df.median(numeric_only=True))
 
-    # Encode categorical
     label_encoders = {}
     for col in df.select_dtypes(include=['object']).columns:
         le = LabelEncoder()
         df[col] = le.fit_transform(df[col])
         label_encoders[col] = le
 
-    # -----------------------------
-    # OUTLIER REMOVAL
-    # -----------------------------
+    # Outliers
     Q1 = df.quantile(0.25)
     Q3 = df.quantile(0.75)
     IQR = Q3 - Q1
     df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
 
-    st.write("✅ Cleaned Data Shape:", df.shape)
-
-    # -----------------------------
-    # SELECT TARGET
-    # -----------------------------
     target = st.selectbox("Select Target (Risk_Type)", df.columns)
 
     X = df.drop(columns=[target])
     y = df[target]
 
-    # -----------------------------
-    # SCALING
-    # -----------------------------
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # -----------------------------
-    # SAFE SMOTE FIX
-    # -----------------------------
-    st.subheader("⚖️ Class Imbalance Handling")
-
+    # SMOTE SAFE
     class_counts = Counter(y)
-    st.write("📊 Before SMOTE:", class_counts)
-
     min_samples = min(class_counts.values())
 
     if min_samples > 5:
         smote = SMOTE(k_neighbors=min(5, min_samples - 1))
         X_res, y_res = smote.fit_resample(X_scaled, y)
-        st.success("✅ SMOTE applied successfully")
     else:
-        st.warning("⚠️ SMOTE skipped (not enough samples in some classes)")
         X_res, y_res = X_scaled, y
 
-    st.write("📊 After SMOTE:", Counter(y_res))
+# -----------------------------
+# TAB 1: EDA
+# -----------------------------
+    with tab1:
+        st.subheader("Dataset Preview")
+        st.dataframe(df.head())
 
-    # -----------------------------
-    # EDA
-    # -----------------------------
-    st.header("📊 Exploratory Data Analysis")
+        st.subheader("Statistics")
+        st.write(df.describe())
 
-    if "Risk_Score" in df.columns:
+        if "Risk_Score" in df.columns:
+            fig = plt.figure()
+            plt.hist(df["Risk_Score"], bins=20)
+            plt.title("Risk Score Distribution")
+            st.pyplot(fig)
+
+        if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
+            fig = plt.figure()
+            plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
+            plt.xlabel("MP Count")
+            plt.ylabel("Risk Score")
+            st.pyplot(fig)
+
+        # Correlation
+        st.subheader("Correlation Heatmap")
+        corr = df.corr()
         fig = plt.figure()
-        plt.hist(df["Risk_Score"], bins=20)
-        plt.title("Risk Score Distribution")
+        plt.imshow(corr)
+        plt.colorbar()
+        plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
+        plt.yticks(range(len(corr.columns)), corr.columns)
         st.pyplot(fig)
 
-    if "Risk_Score" in df.columns and "MP_Count_per_L" in df.columns:
-        fig = plt.figure()
-        plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
-        plt.xlabel("MP Count per L")
-        plt.ylabel("Risk Score")
-        plt.title("Risk Score vs MP Count")
-        st.pyplot(fig)
+# -----------------------------
+# TAB 2: MODELING
+# -----------------------------
+    with tab2:
+        st.subheader("Model Training")
 
-    # Correlation heatmap
-    st.subheader("🔥 Correlation Heatmap")
-    corr = df.corr()
+        st.write("Class Distribution:", class_counts)
 
-    fig = plt.figure()
-    plt.imshow(corr)
-    plt.colorbar()
-    plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
-    plt.yticks(range(len(corr.columns)), corr.columns)
-    st.pyplot(fig)
+        if st.button("Train Models"):
 
-    # -----------------------------
-    # TRAIN MODELS
-    # -----------------------------
-    if st.button("🚀 Train & Tune Models"):
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_res, y_res, test_size=0.2, random_state=42
-        )
-
-        models = {
-            "Logistic Regression": (
-                LogisticRegression(max_iter=1000),
-                {"C": [0.1, 1, 10]}
-            ),
-            "Random Forest": (
-                RandomForestClassifier(),
-                {"n_estimators": [50, 100]}
-            ),
-            "SVM": (
-                SVC(probability=True),
-                {"C": [0.1, 1], "kernel": ["linear", "rbf"]}
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_res, y_res, test_size=0.2, random_state=42
             )
-        }
 
-        results = {}
-        best_model = None
-        best_score = 0
+            models = {
+                "Logistic": LogisticRegression(max_iter=1000),
+                "RandomForest": RandomForestClassifier(),
+                "SVM": SVC(probability=True)
+            }
 
-        for name, (model, params) in models.items():
-            grid = GridSearchCV(model, params, cv=3)
-            grid.fit(X_train, y_train)
+            results = {}
+            best_model = None
+            best_score = 0
 
-            preds = grid.predict(X_test)
-            acc = accuracy_score(y_test, preds)
-            results[name] = acc
+            for name, model in models.items():
+                model.fit(X_train, y_train)
+                preds = model.predict(X_test)
+                acc = accuracy_score(y_test, preds)
+                results[name] = acc
 
-            if acc > best_score:
-                best_score = acc
-                best_model = grid.best_estimator_
+                if acc > best_score:
+                    best_score = acc
+                    best_model = model
 
-        joblib.dump(best_model, "model.pkl")
-        joblib.dump(scaler, "scaler.pkl")
+            joblib.dump(best_model, "model.pkl")
+            joblib.dump(scaler, "scaler.pkl")
 
-        st.subheader("📊 Model Comparison")
-        st.write(results)
-
-        fig = plt.figure()
-        plt.bar(results.keys(), results.values())
-        plt.xticks(rotation=30)
-        plt.title("Model Accuracy Comparison")
-        st.pyplot(fig)
-
-        st.success("✅ Best model trained and saved!")
-
-        # ROC Curve
-        try:
-            probs = best_model.predict_proba(X_test)[:, 1]
-            fpr, tpr, _ = roc_curve(y_test, probs)
-            roc_auc = auc(fpr, tpr)
+            st.write("Model Accuracy:", results)
 
             fig = plt.figure()
-            plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
-            plt.plot([0, 1], [0, 1], linestyle='--')
-            plt.xlabel("FPR")
-            plt.ylabel("TPR")
-            plt.title("ROC Curve")
-            plt.legend()
+            plt.bar(results.keys(), results.values())
             st.pyplot(fig)
-        except:
-            st.info("ROC not available")
 
-    # -----------------------------
-    # PREDICTION
-    # -----------------------------
-    st.header("🔮 Prediction")
+            st.success("Best model saved!")
 
-    input_data = {}
-    for col in X.columns:
-        input_data[col] = st.number_input(f"{col}", value=float(df[col].mean()))
+# -----------------------------
+# TAB 3: PREDICTION
+# -----------------------------
+    with tab3:
+        st.subheader("Make Prediction")
 
-    if st.button("Predict"):
-        try:
+        input_data = {}
+        for col in X.columns:
+            input_data[col] = st.number_input(col, value=float(df[col].mean()))
+
+        if st.button("Predict"):
             model = joblib.load("model.pkl")
             scaler = joblib.load("scaler.pkl")
 
@@ -206,26 +166,210 @@ if file:
 
             pred = model.predict(input_scaled)
             st.success(f"Prediction: {pred[0]}")
+
+# -----------------------------
+# TAB 4: EXPLAINABILITY (SHAP)
+# -----------------------------
+    with tab4:
+        st.subheader("Model Explainability (SHAP)")
+
+        try:
+            model = joblib.load("model.pkl")
+
+            explainer = shap.Explainer(model, X_res)
+            shap_values = explainer(X_res)
+
+            st.write("Feature Impact Summary")
+            fig = plt.figure()
+            shap.plots.bar(shap_values, show=False)
+            st.pyplot(fig)
+
         except Exception as e:
-            st.error(e)
+            st.warning("Train model first or SHAP not supported")import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+import matplotlib.pyplot as plt
+import shap
+
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import accuracy_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+
+from imblearn.over_sampling import SMOTE
+from collections import Counter
+
+st.set_page_config(page_title="Microplastic Risk System", layout="wide")
+
+st.title("🌊 Microplastic Risk Prediction System (Final Version)")
+
+# -----------------------------
+# TABS
+# -----------------------------
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Data & EDA",
+    "⚖️ Modeling",
+    "🔮 Prediction",
+    "📌 Explainability"
+])
+
+file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+
+if file:
+    df = pd.read_csv(file)
 
     # -----------------------------
-    # FEATURE IMPORTANCE
+    # CLEANING
     # -----------------------------
-    st.header("📌 Feature Importance")
+    df = df.fillna(df.median(numeric_only=True))
 
-    try:
-        model = joblib.load("model.pkl")
+    label_encoders = {}
+    for col in df.select_dtypes(include=['object']).columns:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col])
+        label_encoders[col] = le
 
-        if hasattr(model, "feature_importances_"):
-            importance = model.feature_importances_
+    # Outliers
+    Q1 = df.quantile(0.25)
+    Q3 = df.quantile(0.75)
+    IQR = Q3 - Q1
+    df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
+
+    target = st.selectbox("Select Target (Risk_Type)", df.columns)
+
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # SMOTE SAFE
+    class_counts = Counter(y)
+    min_samples = min(class_counts.values())
+
+    if min_samples > 5:
+        smote = SMOTE(k_neighbors=min(5, min_samples - 1))
+        X_res, y_res = smote.fit_resample(X_scaled, y)
+    else:
+        X_res, y_res = X_scaled, y
+
+# -----------------------------
+# TAB 1: EDA
+# -----------------------------
+    with tab1:
+        st.subheader("Dataset Preview")
+        st.dataframe(df.head())
+
+        st.subheader("Statistics")
+        st.write(df.describe())
+
+        if "Risk_Score" in df.columns:
+            fig = plt.figure()
+            plt.hist(df["Risk_Score"], bins=20)
+            plt.title("Risk Score Distribution")
+            st.pyplot(fig)
+
+        if "MP_Count_per_L" in df.columns and "Risk_Score" in df.columns:
+            fig = plt.figure()
+            plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
+            plt.xlabel("MP Count")
+            plt.ylabel("Risk Score")
+            st.pyplot(fig)
+
+        # Correlation
+        st.subheader("Correlation Heatmap")
+        corr = df.corr()
+        fig = plt.figure()
+        plt.imshow(corr)
+        plt.colorbar()
+        plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
+        plt.yticks(range(len(corr.columns)), corr.columns)
+        st.pyplot(fig)
+
+# -----------------------------
+# TAB 2: MODELING
+# -----------------------------
+    with tab2:
+        st.subheader("Model Training")
+
+        st.write("Class Distribution:", class_counts)
+
+        if st.button("Train Models"):
+
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_res, y_res, test_size=0.2, random_state=42
+            )
+
+            models = {
+                "Logistic": LogisticRegression(max_iter=1000),
+                "RandomForest": RandomForestClassifier(),
+                "SVM": SVC(probability=True)
+            }
+
+            results = {}
+            best_model = None
+            best_score = 0
+
+            for name, model in models.items():
+                model.fit(X_train, y_train)
+                preds = model.predict(X_test)
+                acc = accuracy_score(y_test, preds)
+                results[name] = acc
+
+                if acc > best_score:
+                    best_score = acc
+                    best_model = model
+
+            joblib.dump(best_model, "model.pkl")
+            joblib.dump(scaler, "scaler.pkl")
+
+            st.write("Model Accuracy:", results)
 
             fig = plt.figure()
-            plt.barh(X.columns, importance)
-            plt.title("Feature Importance")
+            plt.bar(results.keys(), results.values())
             st.pyplot(fig)
-        else:
-            st.info("Model does not support feature importance")
 
-    except:
-        st.info("Train model first")
+            st.success("Best model saved!")
+
+# -----------------------------
+# TAB 3: PREDICTION
+# -----------------------------
+    with tab3:
+        st.subheader("Make Prediction")
+
+        input_data = {}
+        for col in X.columns:
+            input_data[col] = st.number_input(col, value=float(df[col].mean()))
+
+        if st.button("Predict"):
+            model = joblib.load("model.pkl")
+            scaler = joblib.load("scaler.pkl")
+
+            input_df = pd.DataFrame([input_data])
+            input_scaled = scaler.transform(input_df)
+
+            pred = model.predict(input_scaled)
+            st.success(f"Prediction: {pred[0]}")
+
+# -----------------------------
+# TAB 4: EXPLAINABILITY (SHAP)
+# -----------------------------
+    with tab4:
+        st.subheader("Model Explainability (SHAP)")
+
+        try:
+            model = joblib.load("model.pkl")
+
+            explainer = shap.Explainer(model, X_res)
+            shap_values = explainer(X_res)
+
+            st.write("Feature Impact Summary")
+            fig = plt.figure()
+            shap.plots.bar(shap_values, show=False)
+            st.pyplot(fig)
+
+        except Exception as e:
+            st.warning("Train model first or SHAP not supported")
