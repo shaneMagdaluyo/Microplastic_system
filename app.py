@@ -1,159 +1,164 @@
-from flask import Flask, request, jsonify
+import streamlit as st
 import pandas as pd
 import numpy as np
+import joblib
+import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-
 from sklearn.metrics import accuracy_score, classification_report
-from imblearn.over_sampling import SMOTE
-
-import joblib
-import os
-
-app = Flask(__name__)
-
-MODEL_PATH = "model.pkl"
+from sklearn.preprocessing import LabelEncoder
 
 # -----------------------------
-# LOAD & PREPROCESS FUNCTION
+# APP TITLE
 # -----------------------------
-def preprocess_data(df):
-    # Example column names (adjust based on your dataset)
-    target = "Risk_Type"
+st.title("🌊 Microplastic Risk Prediction System")
+
+# -----------------------------
+# FILE UPLOAD
+# -----------------------------
+file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+
+if file:
+    df = pd.read_csv(file)
+
+    st.subheader("📊 Dataset Preview")
+    st.dataframe(df.head())
+
+    # -----------------------------
+    # BASIC INFO
+    # -----------------------------
+    st.subheader("📌 Dataset Info")
+    st.write(df.describe())
+
+    # -----------------------------
+    # HANDLE MISSING VALUES
+    # -----------------------------
+    df = df.fillna(df.median(numeric_only=True))
+
+    # -----------------------------
+    # ENCODE CATEGORICAL
+    # -----------------------------
+    label_encoders = {}
+    for col in df.select_dtypes(include=['object']).columns:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col])
+        label_encoders[col] = le
+
+    # -----------------------------
+    # OUTLIER REMOVAL (IQR)
+    # -----------------------------
+    Q1 = df.quantile(0.25)
+    Q3 = df.quantile(0.75)
+    IQR = Q3 - Q1
+    df = df[~((df < (Q1 - 1.5 * IQR)) | (df > (Q3 + 1.5 * IQR))).any(axis=1)]
+
+    st.subheader("🧹 Cleaned Data Shape")
+    st.write(df.shape)
+
+    # -----------------------------
+    # SELECT TARGET
+    # -----------------------------
+    target = st.selectbox("Select Target Column (Risk_Type)", df.columns)
 
     X = df.drop(columns=[target])
     y = df[target]
 
-    # Separate column types
-    num_cols = X.select_dtypes(include=['int64', 'float64']).columns
-    cat_cols = X.select_dtypes(include=['object']).columns
+    # -----------------------------
+    # SCALING
+    # -----------------------------
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    # Pipelines
-    num_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler())
-    ])
+    # -----------------------------
+    # EDA SECTION
+    # -----------------------------
+    st.subheader("📈 Risk Score Distribution")
 
-    cat_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", OneHotEncoder(handle_unknown="ignore"))
-    ])
+    if "Risk_Score" in df.columns:
+        fig = plt.figure()
+        plt.hist(df["Risk_Score"], bins=20)
+        plt.title("Risk Score Distribution")
+        st.pyplot(fig)
 
-    preprocessor = ColumnTransformer([
-        ("num", num_pipeline, num_cols),
-        ("cat", cat_pipeline, cat_cols)
-    ])
+    # -----------------------------
+    # TRAIN MODELS
+    # -----------------------------
+    if st.button("🚀 Train Models"):
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_scaled, y, test_size=0.2, random_state=42
+        )
 
-    return X, y, preprocessor
-
-
-# -----------------------------
-# TRAIN MODEL
-# -----------------------------
-@app.route("/train", methods=["POST"])
-def train_model():
-    try:
-        file = request.files['file']
-        df = pd.read_csv(file)
-
-        X, y, preprocessor = preprocess_data(df)
-
-        # Handle imbalance
-        smote = SMOTE()
-        X_resampled, y_resampled = smote.fit_resample(X, y)
-
-        # Model options
         models = {
-            "logistic": LogisticRegression(max_iter=1000),
-            "random_forest": RandomForestClassifier(),
-            "svm": SVC()
+            "Logistic Regression": LogisticRegression(max_iter=1000),
+            "Random Forest": RandomForestClassifier(),
+            "SVM": SVC()
         }
 
         results = {}
 
-        best_model = None
-        best_score = 0
-
         for name, model in models.items():
-            pipe = Pipeline([
-                ("preprocessor", preprocessor),
-                ("model", model)
-            ])
-
-            X_train, X_test, y_train, y_test = train_test_split(
-                X_resampled, y_resampled, test_size=0.2, random_state=42
-            )
-
-            pipe.fit(X_train, y_train)
-            preds = pipe.predict(X_test)
-
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
             acc = accuracy_score(y_test, preds)
             results[name] = acc
 
-            if acc > best_score:
-                best_score = acc
-                best_model = pipe
+        st.subheader("📊 Model Performance")
+        st.write(results)
 
         # Save best model
-        joblib.dump(best_model, MODEL_PATH)
+        best_model_name = max(results, key=results.get)
+        best_model = models[best_model_name]
+        joblib.dump(best_model, "model.pkl")
+        joblib.dump(scaler, "scaler.pkl")
 
-        return jsonify({
-            "message": "Training complete",
-            "results": results,
-            "best_score": best_score
-        })
+        st.success(f"Best Model: {best_model_name}")
 
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    # -----------------------------
+    # PREDICTION SECTION
+    # -----------------------------
+    st.subheader("🔮 Make Prediction")
 
+    input_data = {}
 
-# -----------------------------
-# PREDICT
-# -----------------------------
-@app.route("/predict", methods=["POST"])
-def predict():
+    for col in X.columns:
+        val = st.number_input(f"{col}", value=float(df[col].mean()))
+        input_data[col] = val
+
+    if st.button("Predict"):
+        try:
+            model = joblib.load("model.pkl")
+            scaler = joblib.load("scaler.pkl")
+
+            input_df = pd.DataFrame([input_data])
+            input_scaled = scaler.transform(input_df)
+
+            pred = model.predict(input_scaled)
+            st.success(f"Prediction: {pred[0]}")
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    # -----------------------------
+    # FEATURE IMPORTANCE
+    # -----------------------------
+    st.subheader("📌 Feature Importance")
+
     try:
-        data = request.json
-        df = pd.DataFrame([data])
+        model = joblib.load("model.pkl")
 
-        model = joblib.load(MODEL_PATH)
-        prediction = model.predict(df)
-
-        return jsonify({
-            "prediction": prediction[0]
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
-# -----------------------------
-# FEATURE IMPORTANCE
-# -----------------------------
-@app.route("/feature-importance", methods=["GET"])
-def feature_importance():
-    try:
-        model = joblib.load(MODEL_PATH)
-
-        if hasattr(model.named_steps["model"], "feature_importances_"):
-            importance = model.named_steps["model"].feature_importances_
-            return jsonify({"importance": importance.tolist()})
+        if hasattr(model, "feature_importances_"):
+            importance = model.feature_importances_
+            fig = plt.figure()
+            plt.bar(X.columns, importance)
+            plt.xticks(rotation=45)
+            plt.title("Feature Importance")
+            st.pyplot(fig)
         else:
-            return jsonify({"message": "Model has no feature importance"})
+            st.info("Model does not support feature importance")
 
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-
-# -----------------------------
-# RUN APP
-# -----------------------------
-if __name__ == "__main__":
-    app.run(debug=True)
+    except:
+        st.info("Train model first to see importance")
