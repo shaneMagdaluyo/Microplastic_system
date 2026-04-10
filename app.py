@@ -6,12 +6,13 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
+from sklearn.metrics import accuracy_score, roc_curve, auc
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 
 from imblearn.over_sampling import SMOTE
+from collections import Counter
 
 # -----------------------------
 # APP TITLE
@@ -66,24 +67,36 @@ if file:
     X_scaled = scaler.fit_transform(X)
 
     # -----------------------------
-    # HANDLE IMBALANCE (SMOTE)
+    # SAFE SMOTE FIX
     # -----------------------------
-    smote = SMOTE()
-    X_res, y_res = smote.fit_resample(X_scaled, y)
+    st.subheader("⚖️ Class Imbalance Handling")
+
+    class_counts = Counter(y)
+    st.write("📊 Before SMOTE:", class_counts)
+
+    min_samples = min(class_counts.values())
+
+    if min_samples > 5:
+        smote = SMOTE(k_neighbors=min(5, min_samples - 1))
+        X_res, y_res = smote.fit_resample(X_scaled, y)
+        st.success("✅ SMOTE applied successfully")
+    else:
+        st.warning("⚠️ SMOTE skipped (not enough samples in some classes)")
+        X_res, y_res = X_scaled, y
+
+    st.write("📊 After SMOTE:", Counter(y_res))
 
     # -----------------------------
-    # EDA SECTION
+    # EDA
     # -----------------------------
     st.header("📊 Exploratory Data Analysis")
 
-    # Histogram
     if "Risk_Score" in df.columns:
         fig = plt.figure()
         plt.hist(df["Risk_Score"], bins=20)
         plt.title("Risk Score Distribution")
         st.pyplot(fig)
 
-    # Scatter
     if "Risk_Score" in df.columns and "MP_Count_per_L" in df.columns:
         fig = plt.figure()
         plt.scatter(df["MP_Count_per_L"], df["Risk_Score"])
@@ -92,7 +105,7 @@ if file:
         plt.title("Risk Score vs MP Count")
         st.pyplot(fig)
 
-    # Correlation Heatmap
+    # Correlation heatmap
     st.subheader("🔥 Correlation Heatmap")
     corr = df.corr()
 
@@ -143,15 +156,12 @@ if file:
                 best_score = acc
                 best_model = grid.best_estimator_
 
-        # Save model
         joblib.dump(best_model, "model.pkl")
         joblib.dump(scaler, "scaler.pkl")
 
-        # Results
         st.subheader("📊 Model Comparison")
         st.write(results)
 
-        # Bar chart
         fig = plt.figure()
         plt.bar(results.keys(), results.values())
         plt.xticks(rotation=30)
@@ -160,9 +170,7 @@ if file:
 
         st.success("✅ Best model trained and saved!")
 
-        # -----------------------------
-        # ROC CURVE
-        # -----------------------------
+        # ROC Curve
         try:
             probs = best_model.predict_proba(X_test)[:, 1]
             fpr, tpr, _ = roc_curve(y_test, probs)
@@ -171,13 +179,13 @@ if file:
             fig = plt.figure()
             plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
             plt.plot([0, 1], [0, 1], linestyle='--')
-            plt.xlabel("False Positive Rate")
-            plt.ylabel("True Positive Rate")
+            plt.xlabel("FPR")
+            plt.ylabel("TPR")
             plt.title("ROC Curve")
             plt.legend()
             st.pyplot(fig)
         except:
-            st.info("ROC not available for this model")
+            st.info("ROC not available")
 
     # -----------------------------
     # PREDICTION
@@ -217,7 +225,7 @@ if file:
             plt.title("Feature Importance")
             st.pyplot(fig)
         else:
-            st.info("Feature importance not available for this model")
+            st.info("Model does not support feature importance")
 
     except:
         st.info("Train model first")
