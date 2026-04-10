@@ -8,6 +8,7 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, PowerTransformer
 from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.impute import SimpleImputer
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -15,12 +16,13 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
 from imblearn.over_sampling import SMOTE
+from collections import Counter
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Polymer Risk ML System", layout="wide")
-st.title("🌊 Enterprise Polymer Risk ML System (FIXED)")
+st.set_page_config(page_title="Polymer ML System", layout="wide")
+st.title("🌊 Enterprise Polymer Risk ML System (FULL FIXED)")
 
 # =========================
 # SESSION STATE
@@ -39,13 +41,13 @@ if "y" not in st.session_state:
 
 
 # =========================
-# UPLOAD DATA
+# LOAD DATA
 # =========================
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file:
     st.session_state.df = pd.read_csv(uploaded_file)
-    st.sidebar.success("Data Loaded Successfully")
+    st.sidebar.success("Data Loaded")
 
 df = st.session_state.df
 
@@ -68,22 +70,19 @@ menu = st.sidebar.radio(
 
 
 # =========================
-# FIXED CLEAN FUNCTION (IMPORTANT FIX)
+# CLEAN DATA (FIXED)
 # =========================
 def clean_data(df):
     df = df.copy()
 
     for col in df.columns:
 
-        # try numeric conversion first
+        # try convert to numeric
         numeric = pd.to_numeric(df[col], errors="coerce")
 
-        # if mostly numeric → treat as numeric column
         if numeric.notna().sum() > len(df) * 0.5:
             df[col] = numeric
             df[col] = df[col].fillna(df[col].median())
-
-        # otherwise treat as categorical/text
         else:
             df[col] = df[col].astype(str).fillna("missing")
 
@@ -91,7 +90,7 @@ def clean_data(df):
 
 
 # =========================
-# LABEL ENCODING
+# ENCODING
 # =========================
 def encode(df):
     df = df.copy()
@@ -103,18 +102,43 @@ def encode(df):
 
 
 # =========================
+# SAFE SMOTE (CRITICAL FIX)
+# =========================
+def safe_smote(X, y):
+
+    X = pd.DataFrame(X).copy()
+
+    # force numeric
+    X = X.apply(pd.to_numeric, errors="coerce")
+
+    # impute missing values
+    imputer = SimpleImputer(strategy="median")
+    X = imputer.fit_transform(X)
+
+    # check class distribution
+    counts = Counter(y)
+    min_class = min(counts.values())
+
+    if min_class < 2:
+        st.warning("⚠ SMOTE skipped: not enough samples in smallest class")
+        return X, y
+
+    k = min(5, min_class - 1)
+
+    smote = SMOTE(random_state=42, k_neighbors=k)
+
+    X_res, y_res = smote.fit_resample(X, y)
+
+    return X_res, y_res
+
+
+# =========================
 # 1. DATA OVERVIEW
 # =========================
 if menu == "1. Data Overview":
     if df is not None:
-        st.subheader("Dataset Preview")
         st.dataframe(df.head())
-
-        st.subheader("Missing Values")
         st.write(df.isnull().sum())
-
-        st.subheader("Data Types")
-        st.write(df.dtypes)
 
 
 # =========================
@@ -123,13 +147,11 @@ if menu == "1. Data Overview":
 elif menu == "2. EDA":
     if df is not None:
 
-        st.subheader("Risk Score Distribution")
         if "risk_score" in df.columns:
             fig, ax = plt.subplots()
             sns.histplot(df["risk_score"], kde=True, ax=ax)
             st.pyplot(fig)
 
-        st.subheader("MP Count vs Risk Score")
         if "mp_count_per_l" in df.columns and "risk_score" in df.columns:
             fig, ax = plt.subplots()
             sns.scatterplot(x=df["mp_count_per_l"], y=df["risk_score"], ax=ax)
@@ -137,17 +159,14 @@ elif menu == "2. EDA":
 
 
 # =========================
-# 4. FEATURE ENGINEERING (FIXED)
+# 4. FEATURE ENGINEERING
 # =========================
 elif menu == "4. Feature Engineering":
 
     if df is not None:
 
-        st.subheader("Feature Engineering Pipeline")
-
         data = clean_data(df)
 
-        # numeric columns only
         num_cols = data.select_dtypes(include=np.number).columns
 
         # outlier clipping
@@ -161,14 +180,14 @@ elif menu == "4. Feature Engineering":
 
             data[col] = np.clip(data[col], lower, upper)
 
-        # skew fix
+        # power transform
         if len(num_cols) > 0:
             pt = PowerTransformer()
             data[num_cols] = pt.fit_transform(data[num_cols])
 
         st.session_state.processed_df = data
 
-        st.success("Feature Engineering Completed Successfully")
+        st.success("Feature Engineering Completed")
         st.dataframe(data.head())
 
 
@@ -189,19 +208,18 @@ elif menu == "5. Feature Selection":
         y = df2[target]
 
         selector = SelectKBest(f_classif, k=min(8, X.shape[1]))
-        X_new = selector.fit_transform(X, y)
+        selector.fit(X, y)
 
         selected_features = X.columns[selector.get_support()]
 
-        st.subheader("Selected Features")
-        st.write(list(selected_features))
+        st.write("Selected Features:", list(selected_features))
 
         st.session_state.X = X[selected_features]
         st.session_state.y = y
 
 
 # =========================
-# 6. MODEL TRAINING (SMOTE FIXED)
+# 6. MODEL TRAINING
 # =========================
 elif menu == "6. Risk Type Modeling":
 
@@ -212,11 +230,9 @@ elif menu == "6. Risk Type Modeling":
         X = st.session_state.X
         y = st.session_state.y
 
-        st.subheader("Applying SMOTE")
+        st.write("Class distribution:", Counter(y))
 
-        smote = SMOTE(random_state=42)
-
-        X_res, y_res = smote.fit_resample(X, y)
+        X_res, y_res = safe_smote(X, y)
 
         X_train, X_test, y_train, y_test = train_test_split(
             X_res, y_res,
@@ -248,8 +264,6 @@ elif menu == "6. Risk Type Modeling":
         st.session_state.X_test = X_test
         st.session_state.y_test = y_test
 
-        st.success("Models Trained Successfully")
-
 
 # =========================
 # 7. MODEL EVALUATION
@@ -276,7 +290,6 @@ elif menu == "7. Model Evaluation":
             "Accuracy": [results[m]["acc"] for m in results]
         })
 
-        st.subheader("Model Comparison")
         st.dataframe(acc_df)
 
         fig, ax = plt.subplots()
@@ -291,16 +304,16 @@ elif menu == "7. Model Evaluation":
 elif menu == "8. Summary":
 
     st.markdown("""
-# 🧾 SYSTEM SUMMARY (FIXED VERSION)
+# 🧾 FINAL SYSTEM SUMMARY
 
-✔ Safe data cleaning (no median string crash)  
+✔ Safe data cleaning  
 ✔ Robust numeric detection  
 ✔ Outlier handling  
 ✔ Skew transformation  
 ✔ Feature selection  
-✔ SMOTE balancing  
+✔ SMOTE safe balancing  
 ✔ Multi-model training  
-✔ Model comparison dashboard  
+✔ Evaluation dashboard  
 
-🚀 SYSTEM NOW FULLY STABLE
+🚀 FULLY STABLE ML SYSTEM COMPLETE
 """)
