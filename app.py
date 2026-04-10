@@ -32,18 +32,25 @@ def clean_data(df):
     data = df.copy()
 
     for col in data.columns:
-        # Try convert numeric (fix messy values like '12 mg')
-        data[col] = data[col].astype(str).str.extract('(\d+\.?\d*)')[0]
 
-        # Try convert to numeric
-        data[col] = pd.to_numeric(data[col], errors='ignore')
+        # Convert everything to string first
+        data[col] = data[col].astype(str)
 
-        if pd.api.types.is_numeric_dtype(data[col]):
-            data[col] = pd.to_numeric(data[col], errors='coerce')
+        # Extract numbers if present (e.g., "12 mg" → 12)
+        extracted = data[col].str.extract('(\d+\.?\d*)')[0]
+
+        # Try convert extracted values to numeric
+        numeric_col = pd.to_numeric(extracted, errors='coerce')
+
+        # If most values are numeric → treat as numeric column
+        if numeric_col.notna().sum() > len(data) * 0.5:
+            data[col] = numeric_col
             data[col].fillna(data[col].median(), inplace=True)
+
         else:
+            # Treat as categorical
+            data[col] = data[col].fillna("Unknown")
             data[col] = data[col].astype(str)
-            data[col].fillna(data[col].mode()[0], inplace=True)
 
     return data
 
