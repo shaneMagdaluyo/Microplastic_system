@@ -1,15 +1,17 @@
-
 import pandas as pd
+import numpy as np
+import joblib
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 from imblearn.over_sampling import SMOTE
 
@@ -18,20 +20,19 @@ from imblearn.over_sampling import SMOTE
 # LOAD DATA
 # =========================
 def load_data(file):
-    df = pd.read_csv(file)
-    return df
+    return pd.read_csv(file)
 
 
 # =========================
 # PREPROCESSING
 # =========================
-def preprocess(X):
+def build_preprocessor(X):
     cat_cols = X.select_dtypes(include=["object"]).columns
     num_cols = X.select_dtypes(exclude=["object"]).columns
 
     preprocessor = ColumnTransformer([
         ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-        ("num", "passthrough", num_cols)
+        ("num", StandardScaler(), num_cols)
     ])
 
     return preprocessor
@@ -42,14 +43,14 @@ def preprocess(X):
 # =========================
 def get_models():
     return {
-        "LogisticRegression": LogisticRegression(max_iter=1000),
+        "LogisticRegression": LogisticRegression(max_iter=2000),
         "RandomForest": RandomForestClassifier(n_estimators=200),
-        "SVM": SVC()
+        "SVM": SVC(probability=True)
     }
 
 
 # =========================
-# TRAIN FUNCTION
+# TRAIN PIPELINE
 # =========================
 def train_models(df, target):
     X = df.drop(columns=[target])
@@ -62,13 +63,11 @@ def train_models(df, target):
         stratify=y
     )
 
-    # preprocessing
-    preprocessor = preprocess(X)
+    preprocessor = build_preprocessor(X)
 
     X_train_enc = preprocessor.fit_transform(X_train)
     X_test_enc = preprocessor.transform(X_test)
 
-    # SMOTE balancing
     smote = SMOTE(random_state=42)
     X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
 
@@ -76,21 +75,34 @@ def train_models(df, target):
 
     results = {}
     best_model = None
-    best_score = 0
+    best_name = ""
+    best_acc = 0
 
     for name, model in models.items():
         model.fit(X_train_bal, y_train_bal)
         preds = model.predict(X_test_enc)
 
         acc = accuracy_score(y_test, preds)
+        cm = confusion_matrix(y_test, preds)
+        report = classification_report(y_test, preds)
 
         results[name] = {
             "accuracy": acc,
-            "report": classification_report(y_test, preds)
+            "confusion_matrix": cm,
+            "report": report,
+            "model": model
         }
 
-        if acc > best_score:
-            best_score = acc
-            best_model = (name, model)
+        if acc > best_acc:
+            best_acc = acc
+            best_name = name
+            best_model = model
 
-    return results, best_model
+    return results, best_name, best_model
+
+
+# =========================
+# SAVE MODEL
+# =========================
+def save_model(model, filename="best_model.pkl"):
+    joblib.dump(model, filename)
