@@ -3,7 +3,5 @@ pandas
 numpy
 scikit-learn
 matplotlib
-seaborn
-shap
 imbalanced-learn
 joblib
