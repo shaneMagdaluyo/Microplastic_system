@@ -1,11 +1,8 @@
 import pandas as pd
-import numpy as np
-import joblib
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -14,6 +11,7 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 from imblearn.over_sampling import SMOTE
+import joblib
 
 
 # =========================
@@ -24,9 +22,34 @@ def load_data(file):
 
 
 # =========================
-# PREPROCESSING
+# CLEAN DATA (IMPORTANT FIX)
+# =========================
+def clean_data(df, target):
+
+    # remove missing target rows (CRITICAL FIX)
+    df = df.dropna(subset=[target])
+
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    # fill missing values in features
+    for col in X.columns:
+        if X[col].dtype == "object":
+            X[col] = X[col].fillna("Missing")
+        else:
+            X[col] = X[col].fillna(X[col].mean())
+
+    # fill missing target (safe fallback)
+    y = y.fillna(y.mode()[0])
+
+    return X, y
+
+
+# =========================
+# PREPROCESSOR
 # =========================
 def build_preprocessor(X):
+
     cat_cols = X.select_dtypes(include=["object"]).columns
     num_cols = X.select_dtypes(exclude=["object"]).columns
 
@@ -50,11 +73,11 @@ def get_models():
 
 
 # =========================
-# TRAIN PIPELINE
+# TRAIN MODELS
 # =========================
 def train_models(df, target):
-    X = df.drop(columns=[target])
-    y = df[target]
+
+    X, y = clean_data(df, target)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
@@ -68,17 +91,19 @@ def train_models(df, target):
     X_train_enc = preprocessor.fit_transform(X_train)
     X_test_enc = preprocessor.transform(X_test)
 
+    # SMOTE balancing
     smote = SMOTE(random_state=42)
     X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
 
     models = get_models()
 
     results = {}
-    best_model = None
     best_name = ""
+    best_model = None
     best_acc = 0
 
     for name, model in models.items():
+
         model.fit(X_train_bal, y_train_bal)
         preds = model.predict(X_test_enc)
 
@@ -104,5 +129,5 @@ def train_models(df, target):
 # =========================
 # SAVE MODEL
 # =========================
-def save_model(model, filename="best_model.pkl"):
-    joblib.dump(model, filename)
+def save_model(model, name="best_model.pkl"):
+    joblib.dump(model, name)
