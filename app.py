@@ -5,53 +5,72 @@ import plotly.express as px
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
+
 from imblearn.over_sampling import SMOTE
 
 # =========================
-# PAGE CONFIG
+# CONFIG
 # =========================
 st.set_page_config(page_title="Microplastic Dashboard", layout="wide")
-
 st.title("🌊 Microplastic Risk Dashboard")
 
 # =========================
 # SIDEBAR
 # =========================
 st.sidebar.header("⚙️ Controls")
-
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
+# =========================
+# SAFE CLEANING FUNCTION
+# =========================
+def clean_data(df):
+    data = df.copy()
+
+    for col in data.columns:
+        # Try convert numeric (fix messy values like '12 mg')
+        data[col] = data[col].astype(str).str.extract('(\d+\.?\d*)')[0]
+
+        # Try convert to numeric
+        data[col] = pd.to_numeric(data[col], errors='ignore')
+
+        if pd.api.types.is_numeric_dtype(data[col]):
+            data[col] = pd.to_numeric(data[col], errors='coerce')
+            data[col].fillna(data[col].median(), inplace=True)
+        else:
+            data[col] = data[col].astype(str)
+            data[col].fillna(data[col].mode()[0], inplace=True)
+
+    return data
+
+# =========================
+# MAIN
+# =========================
 if uploaded_file:
 
     df = pd.read_csv(uploaded_file)
 
-    # =========================
-    # SIDEBAR OPTIONS
-    # =========================
-    target = st.sidebar.selectbox("Select Target", df.columns)
+    st.subheader("📊 Raw Dataset")
+    st.dataframe(df.head())
+
+    target = st.sidebar.selectbox("🎯 Select Target Column", df.columns)
     top_n = st.sidebar.slider("Top Categories", 5, 20, 10)
     use_smote = st.sidebar.checkbox("Apply SMOTE")
 
     # =========================
-    # MAIN DASHBOARD
+    # KPI CARDS
     # =========================
-    st.subheader("📊 Dataset Overview")
-
     col1, col2, col3 = st.columns(3)
-
     col1.metric("Rows", df.shape[0])
     col2.metric("Columns", df.shape[1])
-    col3.metric("Unique Target", df[target].nunique())
-
-    st.dataframe(df.head())
+    col3.metric("Unique Classes", df[target].nunique())
 
     # =========================
-    # TARGET VISUALIZATION
+    # TARGET VISUALIZATION (FIXED)
     # =========================
     st.subheader("📊 Target Distribution")
 
@@ -62,25 +81,25 @@ if uploaded_file:
         top_data,
         x="Count",
         y="Category",
-        orientation="h",
-        title="Top Categories"
+        orientation='h',
+        title="Top Categories (Readable)"
     )
     st.plotly_chart(fig, use_container_width=True)
 
     # =========================
-    # PREPROCESSING
+    # CLEAN DATA
     # =========================
-    data = df.copy()
+    st.subheader("⚙️ Data Cleaning")
 
-    for col in data.columns:
-        if data[col].dtype == "object":
-            data[col].fillna(data[col].mode()[0], inplace=True)
-        else:
-            data[col].fillna(data[col].median(), inplace=True)
+    data = clean_data(df)
+    st.success("Data cleaned successfully")
 
+    # Encode categorical AFTER cleaning
+    encoders = {}
     for col in data.select_dtypes(include="object").columns:
         le = LabelEncoder()
         data[col] = le.fit_transform(data[col].astype(str))
+        encoders[col] = le
 
     # =========================
     # SPLIT
@@ -88,14 +107,27 @@ if uploaded_file:
     X = data.drop(columns=[target])
     y = data[target]
 
+    # =========================
+    # SMOTE
+    # =========================
     if use_smote:
-        smote = SMOTE(random_state=42)
-        X, y = smote.fit_resample(X, y)
+        try:
+            smote = SMOTE(random_state=42)
+            X, y = smote.fit_resample(X, y)
+            st.success("SMOTE applied successfully")
+        except:
+            st.warning("SMOTE failed (dataset too small or imbalanced)")
 
+    # =========================
+    # TRAIN TEST SPLIT
+    # =========================
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
+    # =========================
+    # SCALING
+    # =========================
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
@@ -128,13 +160,13 @@ if uploaded_file:
 
     results_df = pd.DataFrame(results)
 
-    # KPI DISPLAY
+    # KPI RESULTS
     col1, col2 = st.columns(2)
     col1.metric("Best Accuracy", round(results_df["Accuracy"].max(), 3))
     col2.metric("Best F1 Score", round(results_df["F1 Score"].max(), 3))
 
     # =========================
-    # MODEL COMPARISON CHART
+    # MODEL COMPARISON
     # =========================
     st.subheader("📊 Model Comparison")
 
@@ -154,18 +186,16 @@ if uploaded_file:
     rf = RandomForestClassifier()
     rf.fit(X_train, y_train)
 
-    importance = rf.feature_importances_
-
     feat_df = pd.DataFrame({
         "Feature": X.columns,
-        "Importance": importance
+        "Importance": rf.feature_importances_
     }).sort_values(by="Importance", ascending=False)
 
     fig3 = px.bar(
         feat_df.head(10),
         x="Importance",
         y="Feature",
-        orientation="h"
+        orientation='h'
     )
     st.plotly_chart(fig3, use_container_width=True)
 
@@ -193,6 +223,12 @@ if uploaded_file:
         st.success(f"Best Params: {grid.best_params_}")
         st.write("Accuracy:", acc)
         st.write("F1 Score:", f1)
+
+        st.text(classification_report(y_test, y_pred))
+
+        cm = confusion_matrix(y_test, y_pred)
+        fig_cm = px.imshow(cm, text_auto=True, title="Confusion Matrix")
+        st.plotly_chart(fig_cm)
 
     st.success("🚀 Dashboard Ready!")
 
