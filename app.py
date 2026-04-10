@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler, PowerTransformer
+from sklearn.preprocessing import LabelEncoder, PowerTransformer
 from sklearn.feature_selection import SelectKBest, f_classif
 
 from sklearn.linear_model import LogisticRegression
@@ -20,7 +20,7 @@ from imblearn.over_sampling import SMOTE
 # CONFIG
 # =========================
 st.set_page_config(page_title="Polymer Risk ML System", layout="wide")
-st.title("🌊 Enterprise Polymer Risk ML System")
+st.title("🌊 Enterprise Polymer Risk ML System (Stable Build)")
 
 # =========================
 # SESSION STATE
@@ -28,43 +28,71 @@ st.title("🌊 Enterprise Polymer Risk ML System")
 if "df" not in st.session_state:
     st.session_state.df = None
 
+if "processed_df" not in st.session_state:
+    st.session_state.processed_df = None
+
+if "X" not in st.session_state:
+    st.session_state.X = None
+
+if "y" not in st.session_state:
+    st.session_state.y = None
+
 # =========================
 # LOAD DATA
 # =========================
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.session_state.df = df
+    st.session_state.df = pd.read_csv(uploaded_file)
     st.sidebar.success("Data Loaded")
 
 df = st.session_state.df
 
 # =========================
-# SIDEBAR MENU
+# MENU
 # =========================
 menu = st.sidebar.radio(
     "ML Pipeline Steps",
     [
         "1. Data Overview",
-        "2. EDA Analysis",
-        "3. Preprocessing",
+        "2. EDA",
         "4. Feature Engineering",
         "5. Feature Selection",
         "6. Risk Type Modeling",
         "7. Model Evaluation",
-        "8. Feature Importance",
-        "9. Summary"
+        "8. Summary"
     ]
 )
+
+# =========================
+# SAFE CLEAN FUNCTION
+# =========================
+def clean_data(df):
+    df = df.copy()
+
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].fillna("missing")
+        else:
+            df[col] = df[col].fillna(df[col].median())
+
+    return df
+
+# =========================
+# ENCODING FUNCTION
+# =========================
+def encode(df):
+    df = df.copy()
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = LabelEncoder().fit_transform(df[col].astype(str))
+    return df
 
 # =========================
 # 1. DATA OVERVIEW
 # =========================
 if menu == "1. Data Overview":
-
     if df is not None:
-        st.subheader("Dataset Preview")
+        st.subheader("Dataset")
         st.dataframe(df.head())
 
         st.subheader("Missing Values")
@@ -74,54 +102,37 @@ if menu == "1. Data Overview":
         st.write(df.dtypes)
 
 # =========================
-# 2. EDA ANALYSIS
+# 2. EDA
 # =========================
-elif menu == "2. EDA Analysis":
-
+elif menu == "2. EDA":
     if df is not None:
 
-        st.subheader("📊 Risk Score Distribution")
-
+        st.subheader("Risk Score Distribution")
         if "risk_score" in df.columns:
             fig, ax = plt.subplots()
             sns.histplot(df["risk_score"], kde=True, ax=ax)
             st.pyplot(fig)
 
-        st.subheader("📈 Risk Score vs MP Count per L")
-
-        if "risk_score" in df.columns and "mp_count_per_l" in df.columns:
+        st.subheader("MP Count vs Risk Score")
+        if "mp_count_per_l" in df.columns and "risk_score" in df.columns:
             fig, ax = plt.subplots()
             sns.scatterplot(x=df["mp_count_per_l"], y=df["risk_score"], ax=ax)
             st.pyplot(fig)
 
-        st.subheader("📊 Risk Level Comparison")
-
-        if "risk_level" in df.columns and "risk_score" in df.columns:
-            fig, ax = plt.subplots()
-            sns.boxplot(x=df["risk_level"], y=df["risk_score"], ax=ax)
-            st.pyplot(fig)
-
 # =========================
-# 3. PREPROCESSING
+# 4. FEATURE ENGINEERING
 # =========================
-elif menu == "3. Preprocessing":
+elif menu == "4. Feature Engineering":
 
     if df is not None:
 
-        data = df.copy()
+        st.subheader("Feature Engineering Pipeline")
 
-        st.subheader("Encoding Categorical Variables")
-        cat_cols = data.select_dtypes(include="object").columns
+        data = clean_data(df)
 
-        for col in cat_cols:
-            le = LabelEncoder()
-            data[col] = le.fit_transform(data[col].astype(str))
-
-        st.success("Categorical Encoding Done")
-
-        st.subheader("Outlier Handling (Clipping)")
         num_cols = data.select_dtypes(include=np.number).columns
 
+        # Outlier clipping
         for col in num_cols:
             q1 = data[col].quantile(0.25)
             q3 = data[col].quantile(0.75)
@@ -132,49 +143,31 @@ elif menu == "3. Preprocessing":
 
             data[col] = np.clip(data[col], lower, upper)
 
-        st.success("Outliers Handled")
-
-        st.subheader("Skew Transformation")
+        # Power transform (fix skew)
         pt = PowerTransformer()
         data[num_cols] = pt.fit_transform(data[num_cols])
 
-        st.success("Skewness Reduced")
+        st.session_state.processed_df = data
 
-        st.session_state.df = data
+        st.success("Feature Engineering Completed")
         st.dataframe(data.head())
-
-# =========================
-# 4. FEATURE ENGINEERING
-# =========================
-elif menu == "4. Feature Engineering":
-
-    if df is not None:
-
-        st.subheader("Feature Scaling")
-
-        scaler = StandardScaler()
-        num_cols = df.select_dtypes(include=np.number).columns
-
-        df[num_cols] = scaler.fit_transform(df[num_cols])
-
-        st.session_state.df = df
-
-        st.success("Scaling Completed")
-        st.dataframe(df.head())
 
 # =========================
 # 5. FEATURE SELECTION
 # =========================
 elif menu == "5. Feature Selection":
 
-    if df is not None:
+    if st.session_state.processed_df is None:
+        st.warning("Run Feature Engineering first")
+    else:
+        df2 = encode(st.session_state.processed_df)
 
-        target = st.selectbox("Select Target Column", df.columns)
+        target = st.selectbox("Select Target Column", df2.columns)
 
-        X = df.drop(columns=[target])
-        y = df[target]
+        X = df2.drop(columns=[target])
+        y = df2[target]
 
-        selector = SelectKBest(score_func=f_classif, k=min(5, X.shape[1]))
+        selector = SelectKBest(f_classif, k=min(8, X.shape[1]))
         X_new = selector.fit_transform(X, y)
 
         selected_features = X.columns[selector.get_support()]
@@ -182,31 +175,37 @@ elif menu == "5. Feature Selection":
         st.subheader("Selected Features")
         st.write(list(selected_features))
 
-        st.session_state.selected_features = selected_features
+        st.session_state.X = X[selected_features]
+        st.session_state.y = y
 
 # =========================
-# 6. MODEL TRAINING (RISK TYPE)
+# 6. MODEL TRAINING (SMOTE FIXED)
 # =========================
 elif menu == "6. Risk Type Modeling":
 
-    if df is not None:
+    if st.session_state.X is None:
+        st.warning("Run Feature Selection first")
+    else:
 
-        target = st.selectbox("Target (Risk_Type)", df.columns)
+        X = st.session_state.X
+        y = st.session_state.y
 
-        X = df.drop(columns=[target])
-        y = df[target]
+        st.subheader("Applying SMOTE")
 
-        # SMOTE
-        smote = SMOTE()
+        smote = SMOTE(random_state=42)
+
         X_res, y_res = smote.fit_resample(X, y)
 
         X_train, X_test, y_train, y_test = train_test_split(
-            X_res, y_res, test_size=0.2, random_state=42
+            X_res, y_res,
+            test_size=0.2,
+            random_state=42,
+            stratify=y_res
         )
 
         models = {
-            "Logistic Regression": LogisticRegression(max_iter=1000),
-            "Random Forest": RandomForestClassifier(),
+            "Logistic Regression": LogisticRegression(max_iter=2000),
+            "Random Forest": RandomForestClassifier(n_estimators=200),
             "Gradient Boosting": GradientBoostingClassifier()
         }
 
@@ -221,6 +220,8 @@ elif menu == "6. Risk Type Modeling":
                 "acc": accuracy_score(y_test, pred)
             }
 
+            st.write(f"{name}: {results[name]['acc']:.4f}")
+
         st.session_state.results = results
         st.session_state.X_test = X_test
         st.session_state.y_test = y_test
@@ -232,72 +233,50 @@ elif menu == "6. Risk Type Modeling":
 # =========================
 elif menu == "7. Model Evaluation":
 
-    if "results" in st.session_state:
+    if "results" not in st.session_state:
+        st.warning("Train models first")
+    else:
 
         results = st.session_state.results
 
-        best = max(results.items(), key=lambda x: x[1]["acc"])
+        best_name = max(results, key=lambda x: results[x]["acc"])
+        best_model = results[best_name]["model"]
 
-        st.subheader(f"Best Model: {best[0]}")
+        st.subheader(f"Best Model: {best_name}")
 
-        y_pred = best[1]["model"].predict(st.session_state.X_test)
+        y_pred = best_model.predict(st.session_state.X_test)
 
         st.text(classification_report(st.session_state.y_test, y_pred))
 
-# =========================
-# 8. FEATURE IMPORTANCE
-# =========================
-elif menu == "8. Feature Importance":
+        acc_df = pd.DataFrame({
+            "Model": list(results.keys()),
+            "Accuracy": [results[m]["acc"] for m in results]
+        })
 
-    if "results" in st.session_state:
+        st.subheader("Model Comparison")
+        st.dataframe(acc_df)
 
-        best_model = max(st.session_state.results.items(), key=lambda x: x[1]["acc"])[1]["model"]
-
-        if hasattr(best_model, "feature_importances_"):
-            importance = best_model.feature_importances_
-
-            feat_df = pd.DataFrame({
-                "Feature": df.columns[:-1],
-                "Importance": importance
-            }).sort_values(by="Importance", ascending=False)
-
-            st.dataframe(feat_df)
-
-            fig, ax = plt.subplots()
-            sns.barplot(x="Importance", y="Feature", data=feat_df, ax=ax)
-            st.pyplot(fig)
+        fig, ax = plt.subplots()
+        sns.barplot(data=acc_df, x="Model", y="Accuracy", ax=ax)
+        plt.xticks(rotation=20)
+        st.pyplot(fig)
 
 # =========================
-# 9. SUMMARY
+# 8. SUMMARY
 # =========================
-elif menu == "9. Summary":
+elif menu == "8. Summary":
 
     st.markdown("""
-    # 🧾 FINAL SUMMARY
+# 🧾 SYSTEM SUMMARY
 
-    ## ✔ Data Processing
-    - Encoded categorical variables
-    - Handled outliers
-    - Transformed skewed features
-    - Applied scaling
+✔ Data Cleaning  
+✔ Feature Engineering  
+✔ Outlier Handling  
+✔ Skew Correction  
+✔ Feature Selection  
+✔ SMOTE Balancing  
+✔ Model Training  
+✔ Model Comparison  
 
-    ## ✔ EDA
-    - Risk score distribution analyzed
-    - MP count relationship studied
-    - Risk level differences compared
-
-    ## ✔ Feature Engineering
-    - Scaling applied
-    - Feature selection performed
-
-    ## ✔ Modeling
-    - SMOTE applied for imbalance
-    - Multiple ML models trained
-    - Best model selected
-
-    ## ✔ Interpretation
-    - Feature importance extracted
-    - Model performance evaluated
-
-    ## 🚀 SYSTEM COMPLETE
-    """)
+🚀 SYSTEM NOW STABLE & RUNNABLE
+""")
