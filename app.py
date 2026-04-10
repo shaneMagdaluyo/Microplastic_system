@@ -20,21 +20,42 @@ st.set_page_config(page_title="Microplastic Risk System", layout="wide")
 st.title("🌊 Microplastic Risk Analysis System")
 
 # =========================
-# CLASS IMBALANCE FUNCTION
+# SAFE SMOTE FUNCTION
 # =========================
 def handle_class_imbalance(X_train, y_train, method="smote"):
     """
-    Handles class imbalance using SMOTE.
+    Safe SMOTE implementation (prevents crashes)
     """
-    if method == "smote":
-        from imblearn.over_sampling import SMOTE
 
-        smote = SMOTE(random_state=42)
+    if method != "smote":
+        return X_train, y_train
+
+    from imblearn.over_sampling import SMOTE
+
+    class_counts = pd.Series(y_train).value_counts()
+    min_class_size = class_counts.min()
+
+    st.write("### 📊 Class Distribution (Before SMOTE)")
+    st.write(class_counts)
+
+    # If dataset too small → skip SMOTE
+    if min_class_size < 2:
+        st.warning("SMOTE skipped: not enough samples in smallest class")
+        return X_train, y_train
+
+    # Safe k_neighbors
+    k = min(5, min_class_size - 1)
+
+    try:
+        smote = SMOTE(random_state=42, k_neighbors=k)
         X_res, y_res = smote.fit_resample(X_train, y_train)
 
+        st.success("SMOTE Applied Successfully")
         return X_res, y_res
 
-    return X_train, y_train
+    except Exception as e:
+        st.warning(f"SMOTE failed safely: {e}")
+        return X_train, y_train
 
 
 # =========================
@@ -45,7 +66,7 @@ uploaded_file = st.file_uploader("📂 Upload CSV Dataset", type=["csv"])
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 
-    st.success("Dataset Loaded Successfully!")
+    st.success("Dataset Loaded Successfully")
     st.dataframe(df.head())
 
     # =========================
@@ -65,7 +86,6 @@ if uploaded_file is not None:
             sns.histplot(df[target], kde=True, ax=ax)
             st.pyplot(fig)
 
-        # Correlation
         num_df = df.select_dtypes(include=np.number)
         if num_df.shape[1] > 1:
             st.write("### Correlation Heatmap")
@@ -83,12 +103,12 @@ if uploaded_file is not None:
         num_cols = data.select_dtypes(include=np.number).columns
         cat_cols = data.select_dtypes(include="object").columns
 
-        # numeric handling
+        # numeric cleaning
         for col in num_cols:
             data[col] = pd.to_numeric(data[col], errors='coerce')
             data[col].fillna(data[col].median(), inplace=True)
 
-        # categorical handling
+        # categorical cleaning
         for col in cat_cols:
             data[col].fillna(data[col].mode()[0], inplace=True)
 
@@ -112,17 +132,14 @@ if uploaded_file is not None:
         )
 
         # =========================
-        # CLASS IMBALANCE HANDLING
+        # CLASS IMBALANCE
         # =========================
         st.subheader("⚖️ Class Imbalance Handling")
 
-        apply_smote = st.checkbox("Apply SMOTE")
+        use_smote = st.checkbox("Apply SMOTE")
 
-        if apply_smote:
+        if use_smote:
             X_train, y_train = handle_class_imbalance(X_train, y_train, method="smote")
-            st.success("SMOTE Applied Successfully")
-        else:
-            st.info("SMOTE Not Applied")
 
         # =========================
         # SCALING
@@ -193,7 +210,7 @@ if uploaded_file is not None:
             sns.barplot(data=feat_df, x="Importance", y="Feature", ax=ax)
             st.pyplot(fig)
 
-        st.success("Model Training Completed 🚀")
+        st.success("Model Completed Successfully 🚀")
 
 else:
-    st.warning("📂 Please upload a dataset to start")
+    st.warning("📂 Please upload a dataset to begin")
