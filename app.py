@@ -70,24 +70,25 @@ if uploaded_file:
 # CLEAN PREPROCESSING (FIXED)
 # =========================
 
+# =========================
+# CLEAN & SAFE PREPROCESSING (FINAL FIX)
+# =========================
+
 data = df.copy()
 
-# STEP 1: Convert obvious numeric strings to numeric
+# STEP 1: Convert everything safely to numeric where possible
 for col in data.columns:
-    data[col] = pd.to_numeric(data[col], errors='ignore')
+    data[col] = pd.to_numeric(data[col], errors='coerce')
 
-# STEP 2: Handle missing values safely
+# STEP 2: Handle missing values
 for col in data.columns:
 
-    # If column is numeric
     if pd.api.types.is_numeric_dtype(data[col]):
         data[col].fillna(data[col].median(), inplace=True)
-
-    # If column is categorical / object
     else:
         data[col].fillna(data[col].mode()[0], inplace=True)
 
-# STEP 3: Encode categorical variables
+# STEP 3: Encode categorical columns (if any remain)
 from sklearn.preprocessing import LabelEncoder
 
 encoders = {}
