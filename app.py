@@ -17,10 +17,10 @@ from sklearn.metrics import accuracy_score, classification_report
 from imblearn.over_sampling import SMOTE
 
 # =========================
-# APP CONFIG
+# CONFIG
 # =========================
-st.set_page_config(page_title="Polymer ML System", layout="wide")
-st.title("🌊 Zero-Crash Polymer Risk ML System")
+st.set_page_config(page_title="Polymer Risk ML System", layout="wide")
+st.title("🌊 Enterprise Polymer Risk ML System")
 
 # =========================
 # SESSION STATE
@@ -29,113 +29,74 @@ if "df" not in st.session_state:
     st.session_state.df = None
 
 # =========================
-# SAFE CLEAN FUNCTION (FIXED)
-# =========================
-def clean_data(df):
-    df = df.copy()
-
-    # remove inf values
-    df = df.replace([np.inf, -np.inf], np.nan)
-
-    # SAFE conversion (FIX: NO errors="ignore")
-    for col in df.columns:
-        try:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        except:
-            pass
-
-    # fill numeric
-    num_cols = df.select_dtypes(include=[np.number]).columns
-    for col in num_cols:
-        df[col] = df[col].fillna(df[col].median())
-
-    # fill categorical
-    cat_cols = df.select_dtypes(include=["object"]).columns
-    for col in cat_cols:
-        df[col] = df[col].fillna("Unknown")
-
-    return df
-
-# =========================
-# SAFE DATA CHECK
-# =========================
-def safe_dataframe(df):
-    df = df.copy()
-
-    # remove empty columns
-    df = df.dropna(axis=1, how="all")
-
-    # remove constant columns (IMPORTANT FIX)
-    df = df.loc[:, df.nunique() > 1]
-
-    return df
-
-# =========================
 # LOAD DATA
 # =========================
-file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
-if file:
-    df = pd.read_csv(file)
-
-    df = clean_data(df)
-    df = safe_dataframe(df)
-
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
     st.session_state.df = df
-    st.sidebar.success("Data Loaded & Cleaned")
+    st.sidebar.success("Data Loaded")
 
 df = st.session_state.df
 
 # =========================
-# MENU
+# SIDEBAR MENU
 # =========================
 menu = st.sidebar.radio(
-    "ML Pipeline",
+    "ML Pipeline Steps",
     [
-        "1. Overview",
-        "2. EDA",
+        "1. Data Overview",
+        "2. EDA Analysis",
         "3. Preprocessing",
-        "4. Scaling",
+        "4. Feature Engineering",
         "5. Feature Selection",
-        "6. Model Training",
-        "7. Evaluation",
-        "8. Summary"
+        "6. Risk Type Modeling",
+        "7. Model Evaluation",
+        "8. Feature Importance",
+        "9. Summary"
     ]
 )
 
 # =========================
-# 1. OVERVIEW
+# 1. DATA OVERVIEW
 # =========================
-if menu == "1. Overview":
+if menu == "1. Data Overview":
 
     if df is not None:
         st.subheader("Dataset Preview")
         st.dataframe(df.head())
 
-        st.subheader("Data Info")
+        st.subheader("Missing Values")
+        st.write(df.isnull().sum())
+
+        st.subheader("Data Types")
         st.write(df.dtypes)
 
 # =========================
-# 2. EDA
+# 2. EDA ANALYSIS
 # =========================
-elif menu == "2. EDA":
+elif menu == "2. EDA Analysis":
 
     if df is not None:
 
+        st.subheader("📊 Risk Score Distribution")
+
         if "risk_score" in df.columns:
-            st.subheader("Risk Score Distribution")
             fig, ax = plt.subplots()
             sns.histplot(df["risk_score"], kde=True, ax=ax)
             st.pyplot(fig)
 
-        if "mp_count_per_l" in df.columns:
-            st.subheader("Risk Score vs MP Count")
+        st.subheader("📈 Risk Score vs MP Count per L")
+
+        if "risk_score" in df.columns and "mp_count_per_l" in df.columns:
             fig, ax = plt.subplots()
             sns.scatterplot(x=df["mp_count_per_l"], y=df["risk_score"], ax=ax)
             st.pyplot(fig)
 
-        if "risk_level" in df.columns:
-            st.subheader("Risk Level Comparison")
+        st.subheader("📊 Risk Level Comparison")
+
+        if "risk_level" in df.columns and "risk_score" in df.columns:
             fig, ax = plt.subplots()
             sns.boxplot(x=df["risk_level"], y=df["risk_score"], ax=ax)
             st.pyplot(fig)
@@ -149,16 +110,16 @@ elif menu == "3. Preprocessing":
 
         data = df.copy()
 
-        # encode categorical
+        st.subheader("Encoding Categorical Variables")
         cat_cols = data.select_dtypes(include="object").columns
 
         for col in cat_cols:
             le = LabelEncoder()
             data[col] = le.fit_transform(data[col].astype(str))
 
-        st.success("Encoding Done")
+        st.success("Categorical Encoding Done")
 
-        # outlier handling
+        st.subheader("Outlier Handling (Clipping)")
         num_cols = data.select_dtypes(include=np.number).columns
 
         for col in num_cols:
@@ -173,35 +134,32 @@ elif menu == "3. Preprocessing":
 
         st.success("Outliers Handled")
 
-        # skew fix
+        st.subheader("Skew Transformation")
         pt = PowerTransformer()
         data[num_cols] = pt.fit_transform(data[num_cols])
 
-        st.success("Skewness Fixed")
+        st.success("Skewness Reduced")
 
         st.session_state.df = data
         st.dataframe(data.head())
 
 # =========================
-# 4. SCALING (FIXED)
+# 4. FEATURE ENGINEERING
 # =========================
-elif menu == "4. Scaling":
+elif menu == "4. Feature Engineering":
 
     if df is not None:
 
-        df = clean_data(df)
-        df = safe_dataframe(df)
+        st.subheader("Feature Scaling")
 
         scaler = StandardScaler()
-
-        num_cols = df.select_dtypes(include=[np.number]).columns
-        num_cols = [c for c in num_cols if df[c].nunique() > 1]
+        num_cols = df.select_dtypes(include=np.number).columns
 
         df[num_cols] = scaler.fit_transform(df[num_cols])
 
         st.session_state.df = df
 
-        st.success("Scaling Done Safely 🚀")
+        st.success("Scaling Completed")
         st.dataframe(df.head())
 
 # =========================
@@ -211,35 +169,34 @@ elif menu == "5. Feature Selection":
 
     if df is not None:
 
-        target = st.selectbox("Target Column", df.columns)
+        target = st.selectbox("Select Target Column", df.columns)
 
         X = df.drop(columns=[target])
         y = df[target]
 
         selector = SelectKBest(score_func=f_classif, k=min(5, X.shape[1]))
-        selector.fit(X, y)
+        X_new = selector.fit_transform(X, y)
 
-        selected = X.columns[selector.get_support()]
+        selected_features = X.columns[selector.get_support()]
 
-        st.write("Selected Features:")
-        st.write(list(selected))
+        st.subheader("Selected Features")
+        st.write(list(selected_features))
 
-        st.session_state.selected = selected
+        st.session_state.selected_features = selected_features
 
 # =========================
-# 6. MODEL TRAINING
+# 6. MODEL TRAINING (RISK TYPE)
 # =========================
-elif menu == "6. Model Training":
+elif menu == "6. Risk Type Modeling":
 
     if df is not None:
 
-        target = st.selectbox("Target Column", df.columns)
+        target = st.selectbox("Target (Risk_Type)", df.columns)
 
         X = df.drop(columns=[target])
         y = df[target]
 
-        X = clean_data(X)
-
+        # SMOTE
         smote = SMOTE()
         X_res, y_res = smote.fit_resample(X, y)
 
@@ -268,12 +225,12 @@ elif menu == "6. Model Training":
         st.session_state.X_test = X_test
         st.session_state.y_test = y_test
 
-        st.success("Models Trained 🚀")
+        st.success("Models Trained")
 
 # =========================
-# 7. EVALUATION
+# 7. MODEL EVALUATION
 # =========================
-elif menu == "7. Evaluation":
+elif menu == "7. Model Evaluation":
 
     if "results" in st.session_state:
 
@@ -283,38 +240,64 @@ elif menu == "7. Evaluation":
 
         st.subheader(f"Best Model: {best[0]}")
 
-        pred = best[1]["model"].predict(st.session_state.X_test)
+        y_pred = best[1]["model"].predict(st.session_state.X_test)
 
-        st.text(classification_report(st.session_state.y_test, pred))
+        st.text(classification_report(st.session_state.y_test, y_pred))
 
 # =========================
-# 8. SUMMARY
+# 8. FEATURE IMPORTANCE
 # =========================
-elif menu == "8. Summary":
+elif menu == "8. Feature Importance":
+
+    if "results" in st.session_state:
+
+        best_model = max(st.session_state.results.items(), key=lambda x: x[1]["acc"])[1]["model"]
+
+        if hasattr(best_model, "feature_importances_"):
+            importance = best_model.feature_importances_
+
+            feat_df = pd.DataFrame({
+                "Feature": df.columns[:-1],
+                "Importance": importance
+            }).sort_values(by="Importance", ascending=False)
+
+            st.dataframe(feat_df)
+
+            fig, ax = plt.subplots()
+            sns.barplot(x="Importance", y="Feature", data=feat_df, ax=ax)
+            st.pyplot(fig)
+
+# =========================
+# 9. SUMMARY
+# =========================
+elif menu == "9. Summary":
 
     st.markdown("""
-    # 🧾 SYSTEM SUMMARY
+    # 🧾 FINAL SUMMARY
 
-    ## ✔ FIXES APPLIED
-    - No pandas "ignore" error
-    - Safe numeric conversion
-    - Removed NaN & inf issues
-    - Removed constant columns
-    - Scaling crash fixed
-    - SMOTE safe pipeline
+    ## ✔ Data Processing
+    - Encoded categorical variables
+    - Handled outliers
+    - Transformed skewed features
+    - Applied scaling
 
-    ## ✔ PIPELINE
-    - Load data
-    - Clean data
-    - Safe preprocessing
-    - Encoding
-    - Outlier handling
-    - Scaling
-    - Feature selection
-    - SMOTE
-    - Model training
-    - Evaluation
+    ## ✔ EDA
+    - Risk score distribution analyzed
+    - MP count relationship studied
+    - Risk level differences compared
 
-    ## 🚀 STATUS
-    SYSTEM IS NOW STABLE (ZERO CRASH VERSION)
+    ## ✔ Feature Engineering
+    - Scaling applied
+    - Feature selection performed
+
+    ## ✔ Modeling
+    - SMOTE applied for imbalance
+    - Multiple ML models trained
+    - Best model selected
+
+    ## ✔ Interpretation
+    - Feature importance extracted
+    - Model performance evaluated
+
+    ## 🚀 SYSTEM COMPLETE
     """)
