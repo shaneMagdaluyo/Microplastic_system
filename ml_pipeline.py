@@ -22,25 +22,30 @@ def load_data(file):
 
 
 # =========================
-# CLEAN DATA (IMPORTANT FIX)
+# CLEAN DATA (FIXED 100%)
 # =========================
 def clean_data(df, target):
 
-    # remove missing target rows (CRITICAL FIX)
+    # remove rows where target is missing
     df = df.dropna(subset=[target])
 
     X = df.drop(columns=[target])
     y = df[target]
 
-    # fill missing values in features
+    # fill missing values safely
     for col in X.columns:
-        if X[col].dtype == "object":
-            X[col] = X[col].fillna("Missing")
-        else:
+
+        # numeric columns
+        if pd.api.types.is_numeric_dtype(X[col]):
             X[col] = X[col].fillna(X[col].mean())
 
-    # fill missing target (safe fallback)
-    y = y.fillna(y.mode()[0])
+        # text columns
+        else:
+            X[col] = X[col].fillna("Missing")
+
+    # target cleanup
+    if y.isnull().sum() > 0:
+        y = y.fillna(y.mode()[0])
 
     return X, y
 
@@ -53,12 +58,10 @@ def build_preprocessor(X):
     cat_cols = X.select_dtypes(include=["object"]).columns
     num_cols = X.select_dtypes(exclude=["object"]).columns
 
-    preprocessor = ColumnTransformer([
+    return ColumnTransformer([
         ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
         ("num", StandardScaler(), num_cols)
     ])
-
-    return preprocessor
 
 
 # =========================
@@ -91,7 +94,6 @@ def train_models(df, target):
     X_train_enc = preprocessor.fit_transform(X_train)
     X_test_enc = preprocessor.transform(X_test)
 
-    # SMOTE balancing
     smote = SMOTE(random_state=42)
     X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
 
@@ -129,5 +131,5 @@ def train_models(df, target):
 # =========================
 # SAVE MODEL
 # =========================
-def save_model(model, name="best_model.pkl"):
-    joblib.dump(model, name)
+def save_model(model, filename="best_model.pkl"):
+    joblib.dump(model, filename)
