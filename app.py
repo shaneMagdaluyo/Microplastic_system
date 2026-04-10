@@ -20,7 +20,7 @@ from imblearn.over_sampling import SMOTE
 # CONFIG
 # =========================
 st.set_page_config(page_title="Polymer Risk ML System", layout="wide")
-st.title("🌊 Enterprise Polymer Risk ML System (Stable Build)")
+st.title("🌊 Enterprise Polymer Risk ML System (FIXED)")
 
 # =========================
 # SESSION STATE
@@ -37,22 +37,24 @@ if "X" not in st.session_state:
 if "y" not in st.session_state:
     st.session_state.y = None
 
+
 # =========================
-# LOAD DATA
+# UPLOAD DATA
 # =========================
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file:
     st.session_state.df = pd.read_csv(uploaded_file)
-    st.sidebar.success("Data Loaded")
+    st.sidebar.success("Data Loaded Successfully")
 
 df = st.session_state.df
+
 
 # =========================
 # MENU
 # =========================
 menu = st.sidebar.radio(
-    "ML Pipeline Steps",
+    "Pipeline Steps",
     [
         "1. Data Overview",
         "2. EDA",
@@ -64,35 +66,48 @@ menu = st.sidebar.radio(
     ]
 )
 
+
 # =========================
-# SAFE CLEAN FUNCTION
+# FIXED CLEAN FUNCTION (IMPORTANT FIX)
 # =========================
 def clean_data(df):
     df = df.copy()
 
     for col in df.columns:
-        if df[col].dtype == "object":
-            df[col] = df[col].fillna("missing")
-        else:
+
+        # try numeric conversion first
+        numeric = pd.to_numeric(df[col], errors="coerce")
+
+        # if mostly numeric → treat as numeric column
+        if numeric.notna().sum() > len(df) * 0.5:
+            df[col] = numeric
             df[col] = df[col].fillna(df[col].median())
+
+        # otherwise treat as categorical/text
+        else:
+            df[col] = df[col].astype(str).fillna("missing")
 
     return df
 
+
 # =========================
-# ENCODING FUNCTION
+# LABEL ENCODING
 # =========================
 def encode(df):
     df = df.copy()
+
     for col in df.select_dtypes(include="object").columns:
         df[col] = LabelEncoder().fit_transform(df[col].astype(str))
+
     return df
+
 
 # =========================
 # 1. DATA OVERVIEW
 # =========================
 if menu == "1. Data Overview":
     if df is not None:
-        st.subheader("Dataset")
+        st.subheader("Dataset Preview")
         st.dataframe(df.head())
 
         st.subheader("Missing Values")
@@ -100,6 +115,7 @@ if menu == "1. Data Overview":
 
         st.subheader("Data Types")
         st.write(df.dtypes)
+
 
 # =========================
 # 2. EDA
@@ -119,8 +135,9 @@ elif menu == "2. EDA":
             sns.scatterplot(x=df["mp_count_per_l"], y=df["risk_score"], ax=ax)
             st.pyplot(fig)
 
+
 # =========================
-# 4. FEATURE ENGINEERING
+# 4. FEATURE ENGINEERING (FIXED)
 # =========================
 elif menu == "4. Feature Engineering":
 
@@ -130,9 +147,10 @@ elif menu == "4. Feature Engineering":
 
         data = clean_data(df)
 
+        # numeric columns only
         num_cols = data.select_dtypes(include=np.number).columns
 
-        # Outlier clipping
+        # outlier clipping
         for col in num_cols:
             q1 = data[col].quantile(0.25)
             q3 = data[col].quantile(0.75)
@@ -143,14 +161,16 @@ elif menu == "4. Feature Engineering":
 
             data[col] = np.clip(data[col], lower, upper)
 
-        # Power transform (fix skew)
-        pt = PowerTransformer()
-        data[num_cols] = pt.fit_transform(data[num_cols])
+        # skew fix
+        if len(num_cols) > 0:
+            pt = PowerTransformer()
+            data[num_cols] = pt.fit_transform(data[num_cols])
 
         st.session_state.processed_df = data
 
-        st.success("Feature Engineering Completed")
+        st.success("Feature Engineering Completed Successfully")
         st.dataframe(data.head())
+
 
 # =========================
 # 5. FEATURE SELECTION
@@ -160,6 +180,7 @@ elif menu == "5. Feature Selection":
     if st.session_state.processed_df is None:
         st.warning("Run Feature Engineering first")
     else:
+
         df2 = encode(st.session_state.processed_df)
 
         target = st.selectbox("Select Target Column", df2.columns)
@@ -177,6 +198,7 @@ elif menu == "5. Feature Selection":
 
         st.session_state.X = X[selected_features]
         st.session_state.y = y
+
 
 # =========================
 # 6. MODEL TRAINING (SMOTE FIXED)
@@ -226,7 +248,8 @@ elif menu == "6. Risk Type Modeling":
         st.session_state.X_test = X_test
         st.session_state.y_test = y_test
 
-        st.success("Models Trained")
+        st.success("Models Trained Successfully")
+
 
 # =========================
 # 7. MODEL EVALUATION
@@ -261,22 +284,23 @@ elif menu == "7. Model Evaluation":
         plt.xticks(rotation=20)
         st.pyplot(fig)
 
+
 # =========================
 # 8. SUMMARY
 # =========================
 elif menu == "8. Summary":
 
     st.markdown("""
-# 🧾 SYSTEM SUMMARY
+# 🧾 SYSTEM SUMMARY (FIXED VERSION)
 
-✔ Data Cleaning  
-✔ Feature Engineering  
-✔ Outlier Handling  
-✔ Skew Correction  
-✔ Feature Selection  
-✔ SMOTE Balancing  
-✔ Model Training  
-✔ Model Comparison  
+✔ Safe data cleaning (no median string crash)  
+✔ Robust numeric detection  
+✔ Outlier handling  
+✔ Skew transformation  
+✔ Feature selection  
+✔ SMOTE balancing  
+✔ Multi-model training  
+✔ Model comparison dashboard  
 
-🚀 SYSTEM NOW STABLE & RUNNABLE
+🚀 SYSTEM NOW FULLY STABLE
 """)
