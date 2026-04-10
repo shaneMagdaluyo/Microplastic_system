@@ -1,17 +1,27 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-# Check Imports for Hyperparameter Tuning
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler, PowerTransformer
-from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve
-from imblearn.over_sampling import SMOTE
+try:
+    import pandas as pd
+    import numpy as np
+    import matplotlib
+    matplotlib.use('Agg')  # Fix for missing display in cloud environments
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    # Check Imports for Hyperparameter Tuning
+    from sklearn.model_selection import train_test_split, GridSearchCV
+    from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler, PowerTransformer
+    from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve
+    from imblearn.over_sampling import SMOTE
+except ImportError as e:
+    st.error(f"🚨 Dependency Error: {e}")
+    st.warning("Streamlit Cloud cannot find your packages. This means your `requirements.txt` is missing from your GitHub repository or Streamlit hasn't updated yet.")
+    st.info("Please create a file named exactly **`requirements.txt`** in your GitHub repo next to `app.py` with the following content:")
+    st.code("pandas\nnumpy\nmatplotlib\nseaborn\nscikit-learn\nimbalanced-learn")
+    st.stop()
 
 import warnings
 warnings.filterwarnings('ignore')
