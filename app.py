@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import streamlit as st
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder, RobustScaler, PowerTransformer
@@ -23,111 +24,70 @@ from sklearn.metrics import (
 from imblearn.over_sampling import SMOTE
 
 
-def generate_dummy_data(n_samples: int = 1000) -> pd.DataFrame:
+st.set_page_config(page_title="Microplastic Risk Analysis", layout="wide")
+
+
+@st.cache_data
+def generate_data(n=1000):
     np.random.seed(42)
     return pd.DataFrame({
-        "risk score": np.random.gamma(2, 2, n_samples) * 10,
-        "mp count per l": np.random.exponential(100, n_samples),
-        "risk level": np.random.choice(["Low", "Medium", "High"], n_samples, p=[0.5, 0.3, 0.2]),
-        "Risk_Type": np.random.choice(["Type A", "Type B"], n_samples, p=[0.8, 0.2]),
-        "Polymer Type": np.random.choice(["PET", "PE", "PP", "PVC", "PS"], n_samples),
+        "risk score": np.random.gamma(2, 2, n) * 10,
+        "mp count per l": np.random.exponential(100, n),
+        "risk level": np.random.choice(["Low", "Medium", "High"], n, p=[0.5, 0.3, 0.2]),
+        "Risk_Type": np.random.choice(["Type A", "Type B"], n, p=[0.8, 0.2]),
+        "Polymer Type": np.random.choice(["PET", "PE", "PP", "PVC", "PS"], n),
     })
 
 
-def preprocess(df: pd.DataFrame):
-    skewed_cols = ["risk score", "mp count per l"]
+@st.cache_data
+def preprocess(df):
+    skewed = ["risk score", "mp count per l"]
 
     pt = PowerTransformer(method="yeo-johnson")
-    df[skewed_cols] = pt.fit_transform(df[skewed_cols])
+    df[skewed] = pt.fit_transform(df[skewed])
 
-    robust_scaler = RobustScaler()
-    df[skewed_cols] = robust_scaler.fit_transform(df[skewed_cols])
+    scaler = RobustScaler()
+    df[skewed] = scaler.fit_transform(df[skewed])
 
     df = pd.get_dummies(df, columns=["risk level", "Polymer Type"], drop_first=True)
 
-    encoder = LabelEncoder()
-    df["Risk_Type"] = encoder.fit_transform(df["Risk_Type"])
+    enc = LabelEncoder()
+    df["Risk_Type"] = enc.fit_transform(df["Risk_Type"])
 
-    return df, encoder
-
-
-def feature_selection(X, y):
-    selector = SelectKBest(score_func=mutual_info_classif, k="all")
-    selector.fit(X, y)
-
-    scores = pd.DataFrame({
-        "Feature": X.columns,
-        "Score": selector.scores_
-    }).sort_values(by="Score", ascending=False)
-
-    return scores
+    return df, enc
 
 
-def train_models(X_train, y_train):
-    models = {
-        "logreg": LogisticRegression(max_iter=1000, random_state=42),
-        "rf": RandomForestClassifier(random_state=42),
-        "gb": GradientBoostingClassifier(random_state=42),
-    }
-
-    trained = {}
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        trained[name] = model
-
-    return trained
-
-
-def evaluate(models, X_test, y_test):
-    results = {}
-
-    for name, model in models.items():
-        y_pred = model.predict(X_test)
-        y_prob = model.predict_proba(X_test)[:, 1]
-
-        results[name] = {
-            "accuracy": accuracy_score(y_test, y_pred),
-            "roc_auc": roc_auc_score(y_test, y_prob),
-        }
-
-    return pd.DataFrame(results).T
-
-
-def tune_logistic(X_train, y_train):
-    grid = {
-        "C": [0.01, 0.1, 1, 10, 100],
-        "penalty": ["l2"],
-    }
-
-    search = GridSearchCV(
-        LogisticRegression(max_iter=1000, random_state=42),
-        grid,
-        cv=5,
-        scoring="roc_auc",
-    )
-    search.fit(X_train, y_train)
-    return search.best_estimator_, search.best_params_
-
-
-def plot_confusion_matrix(y_test, y_pred, labels):
-    cm = confusion_matrix(y_test, y_pred)
-    sns.heatmap(cm, annot=True, fmt="d", xticklabels=labels, yticklabels=labels)
-    plt.title("Confusion Matrix")
-    plt.show()
-
-
-def plot_roc(y_test, y_prob):
-    fpr, tpr, _ = roc_curve(y_test, y_prob)
-    plt.plot(fpr, tpr, label=f"AUC={roc_auc_score(y_test, y_prob):.2f}")
-    plt.plot([0, 1], [0, 1], linestyle="--")
-    plt.legend()
-    plt.title("ROC Curve")
-    plt.show()
+def plot(fig):
+    st.pyplot(fig)
+    plt.close(fig)
 
 
 def main():
-    df = generate_dummy_data()
+    st.title("Microplastic Risk Analysis System")
 
+    df = generate_data()
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head())
+
+    # ================= EDA =================
+    st.subheader("EDA")
+
+    fig1, ax1 = plt.subplots()
+    sns.countplot(data=df, x="Polymer Type", ax=ax1)
+    ax1.set_title("Polymer Distribution")
+    plot(fig1)
+
+    fig2, ax2 = plt.subplots()
+    sns.histplot(df["risk score"], kde=True, ax=ax2)
+    ax2.set_title("Risk Score Distribution")
+    plot(fig2)
+
+    fig3, ax3 = plt.subplots()
+    sns.scatterplot(data=df, x="mp count per l", y="risk score", ax=ax3)
+    ax3.set_title("MP vs Risk Score")
+    plot(fig3)
+
+    # ================= PREPROCESS =================
     df, encoder = preprocess(df)
 
     X = df.drop("Risk_Type", axis=1)
@@ -144,21 +104,59 @@ def main():
     smote = SMOTE(random_state=42)
     X_train, y_train = smote.fit_resample(X_train, y_train)
 
-    models = train_models(X_train, y_train)
+    # ================= MODELS =================
+    models = {
+        "LogReg": LogisticRegression(max_iter=1000),
+        "RF": RandomForestClassifier(),
+        "GB": GradientBoostingClassifier(),
+    }
 
-    print("\nModel Comparison:")
-    print(evaluate(models, X_test, y_test))
+    results = {}
 
-    best_model, params = tune_logistic(X_train, y_train)
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        y_prob = model.predict_proba(X_test)[:, 1]
 
-    y_pred = best_model.predict(X_test)
-    y_prob = best_model.predict_proba(X_test)[:, 1]
+        results[name] = {
+            "Accuracy": accuracy_score(y_test, y_pred),
+            "ROC_AUC": roc_auc_score(y_test, y_prob),
+        }
 
-    print("\nBest Logistic Params:", params)
-    print("\nClassification Report:\n", classification_report(y_test, y_pred))
+    st.subheader("Model Comparison")
+    st.dataframe(pd.DataFrame(results).T)
 
-    plot_confusion_matrix(y_test, y_pred, encoder.classes_)
-    plot_roc(y_test, y_prob)
+    # ================= TUNING =================
+    st.subheader("Tuned Logistic Regression")
+
+    grid = {"C": [0.01, 0.1, 1, 10]}
+    gs = GridSearchCV(LogisticRegression(max_iter=1000), grid, cv=3, scoring="roc_auc")
+    gs.fit(X_train, y_train)
+
+    best = gs.best_estimator_
+    y_pred = best.predict(X_test)
+    y_prob = best.predict_proba(X_test)[:, 1]
+
+    st.write("Best Params:", gs.best_params_)
+    st.text(classification_report(y_test, y_pred))
+
+    # Confusion Matrix
+    fig4, ax4 = plt.subplots()
+    cm = confusion_matrix(y_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt="d", ax=ax4,
+                xticklabels=encoder.classes_,
+                yticklabels=encoder.classes_)
+    ax4.set_title("Confusion Matrix")
+    plot(fig4)
+
+    # ROC Curve
+    fig5, ax5 = plt.subplots()
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    ax5.plot(fpr, tpr, label=f"AUC={roc_auc_score(y_test, y_prob):.2f}")
+    ax5.plot([0, 1], [0, 1], linestyle="--")
+    ax5.legend()
+    ax5.set_title("ROC Curve")
+    plot(fig5)
 
 
 if __name__ == "__main__":
