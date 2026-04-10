@@ -14,172 +14,161 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
 # =========================
-# STREAMLIT CONFIG
+# CONFIG
 # =========================
-st.set_page_config(page_title="Microplastic Risk System", layout="wide")
-st.title("🌊 Microplastic Risk Analysis System")
+st.set_page_config(page_title="Microplastic Dashboard", layout="wide")
+
+st.title("🌊 Microplastic Risk Intelligence Dashboard")
 
 # =========================
-# SAFE SMOTE FUNCTION
+# SIDEBAR NAVIGATION
 # =========================
-def handle_class_imbalance(X_train, y_train, method="smote"):
+menu = st.sidebar.radio(
+    "📊 Navigation",
+    [
+        "📁 Upload Data",
+        "📊 Dataset Overview",
+        "📈 EDA",
+        "⚙️ Preprocessing",
+        "🤖 Model Training",
+        "📉 Evaluation",
+        "🔍 Feature Importance"
+    ]
+)
 
-    if method != "smote":
-        return X_train, y_train
+# =========================
+# SESSION STATE
+# =========================
+if "df" not in st.session_state:
+    st.session_state.df = None
 
-    from imblearn.over_sampling import SMOTE
-
-    class_counts = pd.Series(y_train).value_counts()
-    min_class_size = class_counts.min()
-
-    st.write("### 📊 Class Distribution (Before SMOTE)")
-    st.write(class_counts)
-
-    if min_class_size < 2:
-        st.warning("SMOTE skipped: not enough samples in smallest class")
-        return X_train, y_train
-
-    k = min(5, min_class_size - 1)
-
-    try:
-        smote = SMOTE(random_state=42, k_neighbors=k)
-        X_res, y_res = smote.fit_resample(X_train, y_train)
-
-        st.success("SMOTE Applied Successfully")
-        return X_res, y_res
-
-    except Exception as e:
-        st.warning(f"SMOTE failed safely: {e}")
-        return X_train, y_train
-
+if "data" not in st.session_state:
+    st.session_state.data = None
 
 # =========================
 # UPLOAD DATA
 # =========================
-uploaded_file = st.file_uploader("📂 Upload CSV Dataset", type=["csv"])
+if menu == "📁 Upload Data":
+    uploaded_file = st.file_uploader("Upload CSV Dataset", type=["csv"])
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
+    if uploaded_file is not None:
+        st.session_state.df = pd.read_csv(uploaded_file)
+        st.success("Dataset Loaded Successfully!")
 
-    st.success("Dataset Loaded Successfully")
-    st.dataframe(df.head())
+        st.dataframe(st.session_state.df.head())
 
-    # =========================
-    # TARGET SELECTION
-    # =========================
-    target = st.selectbox("🎯 Select Target Column", df.columns)
+# =========================
+# DATASET OVERVIEW
+# =========================
+elif menu == "📊 Dataset Overview":
 
-    if target:
+    if st.session_state.df is not None:
+        df = st.session_state.df
 
-        # =========================
-        # EDA
-        # =========================
-        st.subheader("📊 Exploratory Data Analysis")
+        st.subheader("Dataset Shape")
+        st.write(df.shape)
 
-        # NUMERIC TARGET
-        if df[target].dtype != "object":
-            fig, ax = plt.subplots(figsize=(10, 5))
-            sns.histplot(df[target], kde=True, ax=ax)
-            plt.tight_layout()
-            st.pyplot(fig)
+        st.subheader("Data Types")
+        st.write(df.dtypes)
 
-        # CATEGORICAL TARGET (FIXED)
-        else:
-            st.write("### Distribution of Target (Top 15 Categories)")
+        st.subheader("Missing Values")
+        st.write(df.isnull().sum())
 
-            top_categories = df[target].value_counts().nlargest(15).index
-            filtered_df = df[df[target].isin(top_categories)]
+        st.subheader("Summary Statistics")
+        st.write(df.describe())
 
-            fig, ax = plt.subplots(figsize=(12, 6))
+    else:
+        st.warning("Upload dataset first")
 
-            sns.countplot(
-                data=filtered_df,
-                x=target,
-                order=top_categories,
-                ax=ax
-            )
+# =========================
+# EDA
+# =========================
+elif menu == "📈 EDA":
 
-            plt.xticks(rotation=45, ha='right')
-            plt.title("Top 15 Most Frequent Categories")
-            plt.tight_layout()
+    if st.session_state.df is not None:
+        df = st.session_state.df
 
-            st.pyplot(fig)
+        st.subheader("Correlation Heatmap")
 
-            # Optional: Horizontal bar (cleaner)
-            st.write("### Alternative View (Horizontal)")
-
-            fig2, ax2 = plt.subplots(figsize=(10, 6))
-            df[target].value_counts().nlargest(15).plot(kind='barh', ax=ax2)
-            plt.tight_layout()
-            st.pyplot(fig2)
-
-        # =========================
-        # CORRELATION
-        # =========================
         num_df = df.select_dtypes(include=np.number)
         if num_df.shape[1] > 1:
-            st.write("### Correlation Heatmap")
             fig, ax = plt.subplots(figsize=(10, 6))
             sns.heatmap(num_df.corr(), annot=True, cmap="coolwarm", ax=ax)
-            plt.tight_layout()
             st.pyplot(fig)
 
-        # =========================
-        # PREPROCESSING
-        # =========================
-        st.subheader("⚙️ Preprocessing")
+        st.subheader("Distribution Plot")
 
-        data = df.copy()
+        col = st.selectbox("Select Column", df.columns)
 
-        num_cols = data.select_dtypes(include=np.number).columns
-        cat_cols = data.select_dtypes(include="object").columns
+        fig, ax = plt.subplots()
 
+        if df[col].dtype != "object":
+            sns.histplot(df[col], kde=True, ax=ax)
+        else:
+            sns.countplot(x=df[col], ax=ax)
+
+        st.pyplot(fig)
+
+    else:
+        st.warning("Upload dataset first")
+
+# =========================
+# PREPROCESSING
+# =========================
+elif menu == "⚙️ Preprocessing":
+
+    if st.session_state.df is not None:
+        df = st.session_state.df.copy()
+
+        st.subheader("Running Preprocessing Pipeline...")
+
+        num_cols = df.select_dtypes(include=np.number).columns
+        cat_cols = df.select_dtypes(include="object").columns
+
+        # numeric
         for col in num_cols:
-            data[col] = pd.to_numeric(data[col], errors='coerce')
-            data[col].fillna(data[col].median(), inplace=True)
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col].fillna(df[col].median(), inplace=True)
 
+        # categorical
         for col in cat_cols:
-            data[col].fillna(data[col].mode()[0], inplace=True)
+            df[col].fillna(df[col].mode()[0], inplace=True)
 
+        # encoding
         encoders = {}
         for col in cat_cols:
             le = LabelEncoder()
-            data[col] = le.fit_transform(data[col].astype(str))
+            df[col] = le.fit_transform(df[col].astype(str))
             encoders[col] = le
 
-        st.success("Preprocessing Completed")
+        st.session_state.data = df
 
-        # =========================
-        # SPLIT DATA
-        # =========================
-        X = data.drop(columns=[target])
-        y = data[target]
+        st.success("Preprocessing Completed")
+        st.dataframe(df.head())
+
+    else:
+        st.warning("Upload dataset first")
+
+# =========================
+# MODEL TRAINING
+# =========================
+elif menu == "🤖 Model Training":
+
+    if st.session_state.data is not None:
+        df = st.session_state.data
+
+        target = st.selectbox("Select Target", df.columns)
+
+        X = df.drop(columns=[target])
+        y = df[target]
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42
         )
 
-        # =========================
-        # CLASS IMBALANCE
-        # =========================
-        st.subheader("⚖️ Class Imbalance Handling")
-
-        use_smote = st.checkbox("Apply SMOTE")
-
-        if use_smote:
-            X_train, y_train = handle_class_imbalance(X_train, y_train)
-
-        # =========================
-        # SCALING
-        # =========================
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
-
-        # =========================
-        # MODEL SELECTION
-        # =========================
-        st.subheader("🤖 Model Training")
 
         model_name = st.selectbox(
             "Choose Model",
@@ -194,12 +183,29 @@ if uploaded_file is not None:
             model = DecisionTreeClassifier()
 
         model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
 
-        # =========================
-        # EVALUATION
-        # =========================
-        st.subheader("📈 Model Evaluation")
+        st.session_state.model = model
+        st.session_state.X_test = X_test
+        st.session_state.y_test = y_test
+        st.session_state.X_columns = X.columns
+
+        st.success("Model Trained Successfully 🚀")
+
+    else:
+        st.warning("Run preprocessing first")
+
+# =========================
+# EVALUATION
+# =========================
+elif menu == "📉 Evaluation":
+
+    if "model" in st.session_state:
+
+        model = st.session_state.model
+        X_test = st.session_state.X_test
+        y_test = st.session_state.y_test
+
+        y_pred = model.predict(X_test)
 
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="weighted")
@@ -207,18 +213,24 @@ if uploaded_file is not None:
         st.write("Accuracy:", acc)
         st.write("F1 Score:", f1)
 
-        st.text("Classification Report")
         st.text(classification_report(y_test, y_pred))
 
-        fig, ax = plt.subplots(figsize=(6, 4))
+        fig, ax = plt.subplots()
         sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d", ax=ax)
-        plt.tight_layout()
         st.pyplot(fig)
 
-        # =========================
-        # FEATURE IMPORTANCE
-        # =========================
-        st.subheader("🔍 Feature Importance")
+    else:
+        st.warning("Train model first")
+
+# =========================
+# FEATURE IMPORTANCE
+# =========================
+elif menu == "🔍 Feature Importance":
+
+    if "model" in st.session_state:
+
+        model = st.session_state.model
+        cols = st.session_state.X_columns
 
         if hasattr(model, "feature_importances_"):
             importance = model.feature_importances_
@@ -229,18 +241,16 @@ if uploaded_file is not None:
 
         if importance is not None:
             feat_df = pd.DataFrame({
-                "Feature": X.columns,
+                "Feature": cols,
                 "Importance": importance
             }).sort_values(by="Importance", ascending=False)
 
+            st.subheader("Feature Importance Ranking")
             st.dataframe(feat_df)
 
-            fig, ax = plt.subplots(figsize=(10, 6))
+            fig, ax = plt.subplots()
             sns.barplot(data=feat_df, x="Importance", y="Feature", ax=ax)
-            plt.tight_layout()
             st.pyplot(fig)
 
-        st.success("Model Completed Successfully 🚀")
-
-else:
-    st.warning("📂 Please upload a dataset to begin")
+    else:
+        st.warning("Train model first")
