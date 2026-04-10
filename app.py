@@ -1,208 +1,187 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import joblib
-import tempfile
+import argparse
+import warnings
+warnings.filterwarnings("ignore")
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, f1_score
+import numpy as np
+import pandas as pd
+
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    ConfusionMatrixDisplay
+)
 
 from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
 
-# =========================
-# CONFIG
-# =========================
-st.set_page_config(page_title="Microplastic AI Pro", layout="wide")
-st.title("🌊 Microplastic AI Pro Dashboard")
 
-# =========================
-# UPLOAD
-# =========================
-uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-
-# =========================
-# CLEAN FUNCTION (ROBUST)
-# =========================
-def clean_data(df):
-    df = df.copy()
-    df = df.replace([np.inf, -np.inf], np.nan)
-
-    for col in df.columns:
-        df[col] = df[col].astype(str)
-        extracted = df[col].str.extract(r'(\d+\.?\d*)')[0]
-        numeric = pd.to_numeric(extracted, errors='coerce')
-
-        if numeric.notna().mean() > 0.5:
-            df[col] = numeric.fillna(numeric.median())
-        else:
-            df[col] = df[col].fillna("Unknown")
-
+# ----------------------------
+# Load Data
+# ----------------------------
+def load_data(path, encoding="utf-8"):
+    df = pd.read_csv(path, encoding=encoding)
     return df
 
 
-# =========================
-# MAIN APP
-# =========================
-if uploaded_file:
+# ----------------------------
+# Preprocessing
+# ----------------------------
+def build_preprocessor(X):
+    categorical_cols = X.select_dtypes(include=["object"]).columns
+    numeric_cols = X.select_dtypes(exclude=["object"]).columns
 
-    df = pd.read_csv(uploaded_file)
-
-    st.subheader("📊 Dataset Preview")
-    st.dataframe(df.head())
-
-    target = st.sidebar.selectbox("🎯 Target Column", df.columns)
-    apply_smote = st.sidebar.checkbox("⚖️ Apply SMOTE")
-    test_size = st.sidebar.slider("Test Size", 0.1, 0.4, 0.2)
-
-    # =========================
-    # CLEAN
-    # =========================
-    data = clean_data(df)
-
-    # =========================
-    # ENCODE
-    # =========================
-    encoders = {}
-    for col in data.select_dtypes(include="object").columns:
-        le = LabelEncoder()
-        data[col] = le.fit_transform(data[col])
-        encoders[col] = le
-
-    X = data.drop(columns=[target])
-    y = data[target]
-
-    X = X.apply(pd.to_numeric, errors='coerce').fillna(0)
-
-    # =========================
-    # SPLIT
-    # =========================
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42, stratify=y
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
+            ("num", "passthrough", numeric_cols),
+        ]
     )
 
-    # =========================
-    # SMOTE
-    # =========================
-    if apply_smote:
-        try:
-            smote = SMOTE()
-            X_train, y_train = smote.fit_resample(X_train, y_train)
-            st.success("SMOTE applied")
-        except:
-            st.warning("SMOTE skipped (data issue)")
+    return preprocessor
 
-    # =========================
-    # SCALING
-    # =========================
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
 
-    # =========================
-    # MODELS (AUTO COMPARE)
-    # =========================
-    models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
-        "Random Forest": RandomForestClassifier(),
-        "Decision Tree": DecisionTreeClassifier(),
-        "Gradient Boosting": GradientBoostingClassifier()
+# ----------------------------
+# Models
+# ----------------------------
+def get_models():
+    return {
+        "LogisticRegression": LogisticRegression(max_iter=1000),
+        "RandomForest": RandomForestClassifier(n_estimators=200),
+        "SVM": SVC(probability=True)
     }
 
-    results = []
-    trained_models = {}
+
+# ----------------------------
+# Evaluation
+# ----------------------------
+def evaluate_model(name, model, X_test, y_test):
+    preds = model.predict(X_test)
+
+    print("\n==============================")
+    print(f"📊 Model: {name}")
+    print("==============================")
+    print("Accuracy:", accuracy_score(y_test, preds))
+    print("\nClassification Report:\n", classification_report(y_test, preds))
+
+    cm = confusion_matrix(y_test, preds)
+    ConfusionMatrixDisplay(cm).plot()
+    plt.title(f"Confusion Matrix - {name}")
+    plt.show()
+
+
+# ----------------------------
+# Feature Importance (Tree model only)
+# ----------------------------
+def feature_importance(model, preprocessor, X):
+    try:
+        feature_names = preprocessor.get_feature_names_out()
+        importances = model.feature_importances_
+
+        feat_df = pd.DataFrame({
+            "feature": feature_names,
+            "importance": importances
+        }).sort_values(by="importance", ascending=False)
+
+        print("\n🔥 Top Features:")
+        print(feat_df.head(10))
+    except:
+        print("Feature importance not available for this model.")
+
+
+# ----------------------------
+# Hyperparameter tuning
+# ----------------------------
+def tune_logistic(X_train, y_train):
+    pipe = Pipeline([
+        ("clf", LogisticRegression(max_iter=1000))
+    ])
+
+    params = {
+        "clf__C": [0.01, 0.1, 1, 10],
+        "clf__penalty": ["l2"],
+        "clf__solver": ["lbfgs"]
+    }
+
+    grid = GridSearchCV(pipe, params, cv=3, scoring="accuracy")
+    grid.fit(X_train, y_train)
+
+    print("\n🏆 Best Logistic Regression Params:", grid.best_params_)
+    return grid.best_estimator_
+
+
+# ----------------------------
+# Main Pipeline
+# ----------------------------
+def main(data_path, target):
+    df = load_data(data_path)
+
+    print("\n📊 Data Loaded:", df.shape)
+    print("\nClass Distribution:\n", df[target].value_counts())
+
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    preprocessor = build_preprocessor(X)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # ---------------- SMOTE ----------------
+    print("\n⚖️ Applying SMOTE...")
+    X_train_encoded = preprocessor.fit_transform(X_train)
+    X_test_encoded = preprocessor.transform(X_test)
+
+    smote = SMOTE(random_state=42)
+    X_train_res, y_train_res = smote.fit_resample(X_train_encoded, y_train)
+
+    # ---------------- Models ----------------
+    models = get_models()
+    results = {}
 
     for name, model in models.items():
-        model.fit(X_train, y_train)
-        pred = model.predict(X_test)
+        print(f"\n🚀 Training {name}...")
 
-        acc = accuracy_score(y_test, pred)
-        f1 = f1_score(y_test, pred, average="weighted")
+        model.fit(X_train_res, y_train_res)
+        results[name] = model
 
-        results.append({
-            "Model": name,
-            "Accuracy": acc,
-            "F1 Score": f1
-        })
+        evaluate_model(name, model, X_test_encoded, y_test)
 
-        trained_models[name] = model
+    # ---------------- Compare Models ----------------
+    print("\n📈 Model Comparison:")
+    for name, model in results.items():
+        acc = accuracy_score(y_test, model.predict(X_test_encoded))
+        print(f"{name}: {acc:.4f}")
 
-    results_df = pd.DataFrame(results)
+    # ---------------- Hyperparameter Tuning ----------------
+    print("\n⚙️ Hyperparameter Tuning Logistic Regression...")
+    best_model = tune_logistic(X_train_res, y_train_res)
 
-    # =========================
-    # BEST MODEL
-    # =========================
-    best_model_name = results_df.sort_values("Accuracy", ascending=False).iloc[0]["Model"]
-    best_model = trained_models[best_model_name]
+    evaluate_model("Tuned Logistic Regression", best_model, X_test_encoded, y_test)
 
-    st.subheader("🏆 Best Model")
-    st.success(f"{best_model_name}")
+    print("\n✅ Pipeline Complete!")
 
-    col1, col2 = st.columns(2)
-    col1.metric("Best Accuracy", round(results_df["Accuracy"].max(), 3))
-    col2.metric("Best F1 Score", round(results_df["F1 Score"].max(), 3))
 
-    fig = px.bar(results_df, x="Model", y=["Accuracy", "F1 Score"], barmode="group")
-    st.plotly_chart(fig, use_container_width=True)
+# ----------------------------
+# Entry Point
+# ----------------------------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data", required=True, help="Path to CSV file")
+    parser.add_argument("--target", required=True, help="Target column name")
 
-    # =========================
-    # SAVE MODEL
-    # =========================
-    model_data = {
-        "model": best_model,
-        "scaler": scaler,
-        "encoders": encoders,
-        "columns": X.columns.tolist()
-    }
+    args = parser.parse_args()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as tmp:
-        joblib.dump(model_data, tmp.name)
-        st.download_button(
-            "⬇️ Download Best Model",
-            open(tmp.name, "rb"),
-            file_name="microplastic_model.pkl"
-        )
-
-    # =========================
-    # FEATURE IMPORTANCE
-    # =========================
-    st.subheader("🔍 Feature Importance")
-
-    if hasattr(best_model, "feature_importances_"):
-        feat_df = pd.DataFrame({
-            "Feature": X.columns,
-            "Importance": best_model.feature_importances_
-        }).sort_values("Importance", ascending=False)
-
-        fig2 = px.bar(feat_df.head(10), x="Importance", y="Feature", orientation="h")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    # =========================
-    # REAL-TIME PREDICTION
-    # =========================
-    st.subheader("🔮 Real-Time Prediction")
-
-    input_data = []
-
-    for col in X.columns:
-        val = st.number_input(f"{col}", value=0.0)
-        input_data.append(val)
-
-    if st.button("Predict"):
-        input_array = np.array(input_data).reshape(1, -1)
-        input_scaled = scaler.transform(input_array)
-
-        prediction = best_model.predict(input_scaled)[0]
-
-        st.success(f"Prediction: {prediction}")
-
-    st.success("🚀 PRO Dashboard Ready!")
-
-else:
-    st.info("Upload a CSV file to start")
+    main(args.data, args.target)
