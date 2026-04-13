@@ -47,25 +47,25 @@ def create_risk_matrix(series, name_series):
 
 
 # =========================
-# K-MEANS FIXED (WORKS ANY DATASET)
+# K-MEANS (ROBUST FIX)
 # =========================
 def run_kmeans(df, k=3):
 
     data = df.copy()
 
-    # convert numeric-like strings
+    # convert everything possible to numeric
     for col in data.columns:
         data[col] = pd.to_numeric(data[col], errors="ignore")
 
-    # encode categorical
+    # encode categorical columns
     data = pd.get_dummies(data, drop_first=True)
 
     # keep numeric only
     data = data.select_dtypes(include="number").fillna(0)
 
-    # safety fallback
+    # FORCE SAFE FEATURE COUNT
     if data.shape[1] < 2:
-        data["extra"] = range(len(data))
+        data["extra_feature"] = range(len(data))
 
     # scale
     scaler = StandardScaler()
@@ -126,7 +126,6 @@ if file:
         "🧩 Clustering"
     ])
 
-
     # =========================
     # TAB 1 - DASHBOARD
     # =========================
@@ -139,16 +138,19 @@ if file:
 
         clean = pd.to_numeric(df[target], errors="coerce").dropna()
 
-        col1, col2 = st.columns(2)
+        if len(clean) > 0:
 
-        fig, ax = plt.subplots()
-        ax.hist(clean, bins=20)
-        col1.pyplot(fig)
+            col1, col2 = st.columns(2)
 
-        fig2, ax2 = plt.subplots()
-        ax2.boxplot(clean)
-        col2.pyplot(fig2)
+            fig, ax = plt.subplots()
+            ax.hist(clean, bins=20)
+            col1.pyplot(fig)
 
+            fig2, ax2 = plt.subplots()
+            ax2.boxplot(clean)
+            col2.pyplot(fig2)
+        else:
+            st.warning("Target column is not numeric enough for plots")
 
         # =========================
         # RISK MATRIX
@@ -162,6 +164,9 @@ if file:
             st.bar_chart(risk_df["Risk Level"].value_counts())
 
             st.dataframe(risk_df, use_container_width=True)
+
+        else:
+            st.warning("Not enough valid data for risk matrix")
 
 
     # =========================
@@ -191,8 +196,7 @@ if file:
             st.pyplot(fig)
 
         else:
-            st.warning("Not enough numeric features")
-
+            st.warning("Not enough numeric features for correlation")
 
         st.divider()
 
@@ -204,12 +208,18 @@ if file:
 
             fig, ax = plt.subplots()
 
-            ax.scatter(df[feature], pd.to_numeric(df[target], errors="coerce"))
+            ax.scatter(
+                df[feature],
+                pd.to_numeric(df[target], errors="coerce")
+            )
 
             ax.set_xlabel(feature)
             ax.set_ylabel("Risk")
 
             st.pyplot(fig)
+
+        else:
+            st.info("Select numeric feature only")
 
 
     # =========================
@@ -285,4 +295,4 @@ if file:
             st.write(result.groupby("Cluster").mean(numeric_only=True))
 
 else:
-    st.info("⬅️ Upload a CSV file to begin")
+    st.info("⬅️ Upload a CSV to begin")
