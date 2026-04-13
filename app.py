@@ -1,14 +1,20 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler, LabelEncoder, MinMaxScaler
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report
+
+from statsmodels.tsa.arima.model import ARIMA
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
 
 from ml_pipeline import load_data, train_models, save_model
 
@@ -31,10 +37,9 @@ def create_risk_matrix(series, name_series):
     min_val = df["Value"].min()
     max_val = df["Value"].max()
 
-    if max_val == min_val:
-        df["Risk Score"] = 50
-    else:
-        df["Risk Score"] = (df["Value"] - min_val) / (max_val - min_val) * 100
+    df["Risk Score"] = 50 if max_val == min_val else (
+        (df["Value"] - min_val) / (max_val - min_val) * 100
+    )
 
     def classify(x):
         if x < 25:
@@ -82,8 +87,7 @@ def run_kmeans(df, k=3):
     if data.shape[1] < 2:
         data["extra"] = range(len(data))
 
-    scaler = StandardScaler()
-    X = scaler.fit_transform(data)
+    X = StandardScaler().fit_transform(data)
 
     model = KMeans(n_clusters=k, random_state=42, n_init=10)
     clusters = model.fit_predict(X)
@@ -101,7 +105,7 @@ def run_kmeans(df, k=3):
 
 
 # =========================
-# CLASSIFICATION FIXED TABLE
+# CLASSIFICATION TABLE
 # =========================
 def build_report_table(y_true, y_pred, model_name):
 
@@ -110,7 +114,6 @@ def build_report_table(y_true, y_pred, model_name):
     rows = []
 
     for label, metrics in report.items():
-
         if label in ["accuracy", "macro avg", "weighted avg"]:
             continue
 
@@ -127,16 +130,68 @@ def build_report_table(y_true, y_pred, model_name):
 
 
 # =========================
-# APP CONFIG
+# TIME SERIES HELPERS
+# =========================
+def prepare_time_series(df, date_col, value_col):
+
+    temp = df[[date_col, value_col]].copy()
+    temp[date_col] = pd.to_datetime(temp[date_col], errors="coerce")
+    temp[value_col] = pd.to_numeric(temp[value_col], errors="coerce")
+
+    temp = temp.dropna().sort_values(date_col)
+    temp = temp.set_index(date_col)
+
+    return temp
+
+
+def run_arima(series, steps=10):
+
+    model = ARIMA(series, order=(5, 1, 0))
+    model_fit = model.fit()
+    return model_fit.forecast(steps=steps)
+
+
+def run_lstm(series, steps=10):
+
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(series.values.reshape(-1, 1))
+
+    X, y = [], []
+
+    for i in range(10, len(scaled)):
+        X.append(scaled[i-10:i])
+        y.append(scaled[i])
+
+    X, y = np.array(X), np.array(y)
+
+    model = Sequential([
+        LSTM(50, activation="relu", input_shape=(X.shape[1], 1)),
+        Dense(1)
+    ])
+
+    model.compile(optimizer="adam", loss="mse")
+    model.fit(X, y, epochs=10, batch_size=8, verbose=0)
+
+    last_seq = scaled[-10:]
+    preds = []
+
+    for _ in range(steps):
+        x_input = last_seq.reshape(1, 10, 1)
+        pred = model.predict(x_input, verbose=0)[0][0]
+        preds.append(pred)
+        last_seq = np.append(last_seq[1:], [[pred]], axis=0)
+
+    preds = scaler.inverse_transform(np.array(preds).reshape(-1, 1))
+
+    return preds.flatten()
+
+
+# =========================
+# APP
 # =========================
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
-
 st.title("🌊 Microplastic Risk Intelligence System")
 
-
-# =========================
-# UPLOAD
-# =========================
 file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if file:
@@ -154,20 +209,16 @@ if file:
     target = st.sidebar.selectbox("🎯 Risk Column", df.columns)
     name_col = st.sidebar.selectbox("🏷️ Name Column", df.columns)
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Dashboard",
         "Risk Analysis",
         "ML Models",
-        "Clustering + Classification"
+        "Clustering + Classification",
+        "Forecasting"
     ])
 
-
-    # =========================
-    # DASHBOARD
-    # =========================
+    # ================= DASHBOARD =================
     with tab1:
-
-        st.subheader("Risk Distribution")
 
         clean = pd.to_numeric(df[target], errors="coerce").dropna()
 
@@ -186,33 +237,16 @@ if file:
 
         df_risk, threshold = high_risk_engine(df, target)
 
-        st.info(f"High Risk Threshold: {threshold:.2f}")
-
+        st.info(f"Threshold: {threshold:.2f}")
         st.bar_chart(df_risk["Risk Category"].value_counts())
+        st.dataframe(df_risk)
 
-        st.dataframe(df_risk[df_risk["Risk Category"] == "HIGH RISK"])
-
-
-        st.subheader("Risk Level Matrix")
-
-        risk_df = create_risk_matrix(df[target], df[name_col])
-
-        if risk_df is not None:
-            st.bar_chart(risk_df["Risk Level"].value_counts())
-            st.dataframe(risk_df)
-
-
-    # =========================
-    # RISK ANALYSIS
-    # =========================
+    # ================= RISK ANALYSIS =================
     with tab2:
-
-        st.subheader("Risk Comparison")
 
         feature = st.selectbox("Select Feature", df.columns)
 
         df_clean = df.dropna(subset=[feature, target]).copy()
-
         df_clean[target] = pd.to_numeric(df_clean[target], errors="coerce")
 
         if pd.api.types.is_numeric_dtype(df_clean[feature]):
@@ -222,102 +256,54 @@ if file:
                 "Risk": df_clean[target]
             }).dropna()
 
-            if len(plot_df) > 0:
-                fig, ax = plt.subplots()
-                ax.scatter(plot_df["Feature"], plot_df["Risk"])
-                st.pyplot(fig)
+            fig, ax = plt.subplots()
+            ax.scatter(plot_df["Feature"], plot_df["Risk"])
+            st.pyplot(fig)
 
         else:
 
-            grouped = (
-                df_clean.groupby(feature)[target]
-                .mean()
-                .dropna()
-                .reset_index()
-            )
-
+            grouped = df_clean.groupby(feature)[target].mean().reset_index()
             grouped.columns = [feature, "Risk"]
 
-            if len(grouped) > 0:
+            st.bar_chart(grouped.set_index(feature))
 
-                st.bar_chart(grouped.set_index(feature))
-
-                st.write("🏆 Highest Risk:",
-                         grouped.loc[grouped["Risk"].idxmax(), feature])
-
-                st.write("⬇️ Lowest Risk:",
-                         grouped.loc[grouped["Risk"].idxmin(), feature])
-
-
-    # =========================
-    # ML MODELS
-    # =========================
+    # ================= ML MODELS =================
     with tab3:
-
-        st.subheader("Random Forest & SVM Comparison Table")
 
         if st.button("Run Models"):
 
             df_ml = df.copy().dropna(subset=[target])
 
-            le = LabelEncoder()
             if df_ml[target].dtype == "object":
-                df_ml[target] = le.fit_transform(df_ml[target].astype(str))
+                df_ml[target] = LabelEncoder().fit_transform(df_ml[target].astype(str))
 
             y = df_ml[target]
-            X = df_ml.drop(columns=[target])
+            X = pd.get_dummies(df_ml.drop(columns=[target]), drop_first=True).fillna(0)
 
-            X = pd.get_dummies(X, drop_first=True).fillna(0)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
-            if X.shape[1] < 1:
-                st.warning("Not enough features")
-            else:
+            rf = RandomForestClassifier(n_estimators=200)
+            rf.fit(X_train, y_train)
+            rf_pred = rf.predict(X_test)
 
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42
-                )
+            svm = SVC()
+            svm.fit(X_train, y_train)
+            svm_pred = svm.predict(X_test)
 
-                # ================= RF =================
-                rf = RandomForestClassifier(n_estimators=200, random_state=42)
-                rf.fit(X_train, y_train)
-                rf_pred = rf.predict(X_test)
+            rf_df = build_report_table(y_test, rf_pred, "Random Forest")
+            svm_df = build_report_table(y_test, svm_pred, "SVM")
 
-                rf_df = build_report_table(y_test, rf_pred, "Random Forest")
+            st.subheader("Classification Table")
+            st.dataframe(pd.concat([rf_df, svm_df]))
 
-                # ================= SVM =================
-                svm = SVC(kernel="rbf")
-                svm.fit(X_train, y_train)
-                svm_pred = svm.predict(X_test)
+            st.subheader("Accuracy")
+            st.bar_chart(pd.DataFrame({
+                "Random Forest": [accuracy_score(y_test, rf_pred)],
+                "SVM": [accuracy_score(y_test, svm_pred)]
+            }).T)
 
-                svm_df = build_report_table(y_test, svm_pred, "SVM")
-
-                # FINAL TABLE
-                final_df = pd.concat([rf_df, svm_df])
-
-                st.subheader("📊 Classification Report Table")
-                st.dataframe(final_df)
-
-                # ACCURACY COMPARISON
-                acc_df = pd.DataFrame({
-                    "Model": ["Random Forest", "SVM"],
-                    "Accuracy": [
-                        accuracy_score(y_test, rf_pred),
-                        accuracy_score(y_test, svm_pred)
-                    ]
-                })
-
-                st.subheader("📈 Model Accuracy Comparison")
-                st.bar_chart(acc_df.set_index("Model"))
-
-                st.success("Done!")
-
-
-    # =========================
-    # CLUSTERING
-    # =========================
+    # ================= CLUSTERING =================
     with tab4:
-
-        st.subheader("K-Means Clustering")
 
         k = st.slider("Clusters", 2, 10, 3)
 
@@ -329,10 +315,46 @@ if file:
 
             fig, ax = plt.subplots()
             ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
-
             st.pyplot(fig)
 
             st.dataframe(result)
+
+    # ================= FORECASTING =================
+    with tab5:
+
+        st.subheader("Time-Series Forecasting")
+
+        date_col = st.selectbox("Date Column", df.columns)
+        value_col = st.selectbox("Value Column", df.columns)
+
+        steps = st.slider("Forecast Steps", 5, 30, 10)
+
+        if st.button("Run Forecast"):
+
+            try:
+                ts = prepare_time_series(df, date_col, value_col)
+
+                st.line_chart(ts[value_col])
+
+                arima_pred = run_arima(ts[value_col], steps)
+                lstm_pred = run_lstm(ts[value_col], steps)
+
+                future_index = pd.date_range(ts.index[-1], periods=steps+1)[1:]
+
+                st.subheader("ARIMA")
+                st.line_chart(pd.concat([
+                    ts[value_col],
+                    pd.Series(arima_pred, index=future_index)
+                ]))
+
+                st.subheader("LSTM")
+                st.line_chart(pd.concat([
+                    ts[value_col],
+                    pd.Series(lstm_pred, index=future_index)
+                ]))
+
+            except Exception as e:
+                st.error(str(e))
 
 else:
     st.info("Upload a CSV to begin")
