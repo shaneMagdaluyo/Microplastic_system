@@ -6,24 +6,32 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
-# RISK MATRIX ENGINE (WITH NAME)
+# RISK MATRIX ENGINE (REAL NAME)
 # =========================
-def create_risk_matrix(series):
+def create_risk_matrix(series, name_series):
 
     numeric = pd.to_numeric(series, errors="coerce")
-    numeric = numeric.dropna()
 
-    if len(numeric) < 3:
+    df = pd.DataFrame({
+        "Name": name_series,
+        "Value": numeric
+    })
+
+    df = df.dropna()
+
+    if len(df) < 3:
         return None
 
-    min_val = numeric.min()
-    max_val = numeric.max()
+    min_val = df["Value"].min()
+    max_val = df["Value"].max()
 
     # Normalize 0–100
     if max_val == min_val:
-        score = pd.Series([50] * len(numeric))
+        df["Risk Score (0–100)"] = 50
     else:
-        score = ((numeric - min_val) / (max_val - min_val)) * 100
+        df["Risk Score (0–100)"] = (
+            (df["Value"] - min_val) / (max_val - min_val)
+        ) * 100
 
     # Risk classification
     def classify(x):
@@ -36,14 +44,9 @@ def create_risk_matrix(series):
         else:
             return "Critical"
 
-    level = score.apply(classify)
+    df["Risk Level"] = df["Risk Score (0–100)"].apply(classify)
 
-    return pd.DataFrame({
-        "Sample Name": [f"Sample {i+1}" for i in range(len(numeric))],
-        "Raw Value": numeric.values,
-        "Risk Score (0–100)": score.values,
-        "Risk Level": level.values
-    })
+    return df
 
 
 # =========================
@@ -84,6 +87,9 @@ if file:
 
     # TARGET
     target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
+
+    # NAME COLUMN (REAL IDENTIFIER)
+    name_col = st.sidebar.selectbox("🏷️ Select Name Column", df.columns)
 
     # TABS
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
@@ -130,10 +136,10 @@ if file:
         # =========================
         st.subheader("⚠️ Risk Matrix Analysis")
 
-        risk_df = create_risk_matrix(df[target])
+        risk_df = create_risk_matrix(df[target], df[name_col])
 
         if risk_df is None:
-            st.warning("Not enough numeric data for risk matrix analysis")
+            st.warning("Not enough valid numeric data for risk matrix")
         else:
 
             col3, col4 = st.columns(2)
@@ -150,7 +156,7 @@ if file:
             col4.pyplot(fig)
 
             # =========================
-            # TABLE (WITH SAMPLE NAME)
+            # TABLE (REAL NAME USED)
             # =========================
             st.subheader("📊 Risk Matrix Table")
 
@@ -159,7 +165,7 @@ if file:
             # =========================
             # TOP RISKS
             # =========================
-            st.subheader("🏆 Highest Risk Samples")
+            st.subheader("🏆 Highest Risk Entries")
 
             st.dataframe(
                 risk_df.sort_values("Risk Score (0–100)", ascending=False).head(10)
@@ -173,10 +179,10 @@ if file:
 
             | Level | Score Range | Meaning |
             |------|------------|---------|
-            | 🟢 Low | 0–24 | Safe contamination level |
-            | 🟡 Medium | 25–49 | Moderate risk |
-            | 🟠 High | 50–74 | Elevated microplastic risk |
-            | 🔴 Critical | 75–100 | Dangerous pollution level |
+            | 🟢 Low | 0–24 | Safe level |
+            | 🟡 Medium | 25–49 | Moderate contamination |
+            | 🟠 High | 50–74 | Elevated risk |
+            | 🔴 Critical | 75–100 | Dangerous pollution |
             """)
 
 
