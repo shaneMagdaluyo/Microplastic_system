@@ -10,7 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report
 
-from ml_pipeline import load_data, train_models, save_model
+from ml_pipeline import load_data
 
 
 # =========================
@@ -67,7 +67,7 @@ def high_risk_engine(df, target):
 
 
 # =========================
-# K-MEANS CLUSTERING
+# K-MEANS
 # =========================
 def run_kmeans(df, k=3):
 
@@ -76,8 +76,7 @@ def run_kmeans(df, k=3):
     for col in data.columns:
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
-    data = pd.get_dummies(data, drop_first=True)
-    data = data.select_dtypes(include="number").fillna(0)
+    data = pd.get_dummies(data, drop_first=True).fillna(0)
 
     if data.shape[1] < 2:
         data["extra"] = range(len(data))
@@ -101,16 +100,12 @@ def run_kmeans(df, k=3):
 
 
 # =========================
-# APP CONFIG
+# APP
 # =========================
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
 
-
-# =========================
-# UPLOAD
-# =========================
 file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if file:
@@ -134,7 +129,6 @@ if file:
         "ML Models",
         "Clustering"
     ])
-
 
     # =========================
     # DASHBOARD
@@ -166,15 +160,13 @@ if file:
 
         st.dataframe(df_risk[df_risk["Risk Category"] == "HIGH RISK"])
 
-
-        st.subheader("Risk Level Matrix")
+        st.subheader("Risk Matrix")
 
         risk_df = create_risk_matrix(df[target], df[name_col])
 
         if risk_df is not None:
             st.bar_chart(risk_df["Risk Level"].value_counts())
             st.dataframe(risk_df)
-
 
     # =========================
     # RISK ANALYSIS
@@ -196,111 +188,78 @@ if file:
                 "Risk": df_clean[target]
             }).dropna()
 
-            if len(plot_df) > 0:
-                fig, ax = plt.subplots()
-                ax.scatter(plot_df["Feature"], plot_df["Risk"])
-                st.pyplot(fig)
+            fig, ax = plt.subplots()
+            ax.scatter(plot_df["Feature"], plot_df["Risk"])
+            st.pyplot(fig)
 
         else:
 
-            grouped = (
-                df_clean.groupby(feature)[target]
-                .mean()
-                .dropna()
-                .reset_index()
-            )
-
+            grouped = df_clean.groupby(feature)[target].mean().reset_index()
             grouped.columns = [feature, "Risk"]
 
-            if len(grouped) > 0:
-                st.bar_chart(grouped.set_index(feature))
+            st.bar_chart(grouped.set_index(feature))
 
-                st.write("🏆 Highest Risk:",
-                         grouped.loc[grouped["Risk"].idxmax(), feature])
+            st.write("🏆 Highest Risk:",
+                     grouped.loc[grouped["Risk"].idxmax(), feature])
 
-                st.write("⬇️ Lowest Risk:",
-                         grouped.loc[grouped["Risk"].idxmin(), feature])
-
+            st.write("⬇️ Lowest Risk:",
+                     grouped.loc[grouped["Risk"].idxmin(), feature])
 
     # =========================
-    # ML MODELS (CLEAN RF + SVM)
+    # ML MODELS (TABLE OUTPUT)
     # =========================
     with tab3:
 
-        st.subheader("🤖 Machine Learning Models")
+        st.subheader("🤖 Random Forest vs SVM")
 
         if st.button("Run Models"):
 
-            try:
-                df_ml = df.copy().dropna(subset=[target])
+            df_ml = df.copy().dropna(subset=[target])
 
-                # Encode target
-                le = LabelEncoder()
-                if df_ml[target].dtype == "object":
-                    df_ml[target] = le.fit_transform(df_ml[target].astype(str))
+            le = LabelEncoder()
+            if df_ml[target].dtype == "object":
+                df_ml[target] = le.fit_transform(df_ml[target].astype(str))
 
-                y = df_ml[target]
-                X = df_ml.drop(columns=[target])
+            y = df_ml[target]
+            X = df_ml.drop(columns=[target])
 
-                X = pd.get_dummies(X, drop_first=True).fillna(0)
+            X = pd.get_dummies(X, drop_first=True).fillna(0)
 
-                if X.shape[1] < 1:
-                    st.warning("Not enough features for ML")
-                else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
 
-                    X_train, X_test, y_train, y_test = train_test_split(
-                        X, y, test_size=0.2, random_state=42
-                    )
+            # RANDOM FOREST
+            rf = RandomForestClassifier(n_estimators=200, random_state=42)
+            rf.fit(X_train, y_train)
+            rf_pred = rf.predict(X_test)
+            rf_acc = accuracy_score(y_test, rf_pred)
 
-                    # =========================
-                    # RANDOM FOREST 🌲
-                    # =========================
-                    st.subheader("🌲 Random Forest")
+            # SVM
+            svm = SVC(kernel="rbf")
+            svm.fit(X_train, y_train)
+            svm_pred = svm.predict(X_test)
+            svm_acc = accuracy_score(y_test, svm_pred)
 
-                    rf = RandomForestClassifier(n_estimators=200, random_state=42)
-                    rf.fit(X_train, y_train)
-                    rf_pred = rf.predict(X_test)
+            # TABLE
+            results_df = pd.DataFrame({
+                "Model": ["Random Forest 🌲", "SVM 📈"],
+                "Accuracy": [rf_acc, svm_acc]
+            })
 
-                    rf_acc = accuracy_score(y_test, rf_pred)
+            st.subheader("Model Results")
+            st.dataframe(results_df, use_container_width=True)
 
-                    st.metric("Random Forest Accuracy", f"{rf_acc:.4f}")
-                    st.text(classification_report(y_test, rf_pred))
+            st.bar_chart(results_df.set_index("Model"))
 
+            best = results_df.loc[results_df["Accuracy"].idxmax(), "Model"]
+            st.success(f"🏆 Best Model: {best}")
 
-                    # =========================
-                    # SVM 📈
-                    # =========================
-                    st.subheader("📈 SVM")
+            with st.expander("Random Forest Report"):
+                st.text(classification_report(y_test, rf_pred))
 
-                    svm = SVC(kernel="rbf")
-                    svm.fit(X_train, y_train)
-                    svm_pred = svm.predict(X_test)
-
-                    svm_acc = accuracy_score(y_test, svm_pred)
-
-                    st.metric("SVM Accuracy", f"{svm_acc:.4f}")
-                    st.text(classification_report(y_test, svm_pred))
-
-
-                    # =========================
-                    # COMPARISON 📊
-                    # =========================
-                    st.subheader("📊 Model Comparison")
-
-                    comp_df = pd.DataFrame({
-                        "Model": ["Random Forest", "SVM"],
-                        "Accuracy": [rf_acc, svm_acc]
-                    })
-
-                    st.bar_chart(comp_df.set_index("Model"))
-                    st.dataframe(comp_df)
-
-                    best = "Random Forest" if rf_acc > svm_acc else "SVM"
-                    st.success(f"🏆 Best Model: {best}")
-
-            except Exception as e:
-                st.error(str(e))
-
+            with st.expander("SVM Report"):
+                st.text(classification_report(y_test, svm_pred))
 
     # =========================
     # CLUSTERING
