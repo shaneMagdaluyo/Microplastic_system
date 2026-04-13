@@ -2,85 +2,127 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from ml_pipeline import train_models
+from ml_pipeline import load_data, train_models, save_model
+
 
 # =========================
-# PAGE CONFIG
+# CONFIG
 # =========================
-st.set_page_config(page_title="Microplastic Dashboard", layout="wide")
+st.set_page_config(page_title="MP Risk System", layout="wide")
 
-st.title("🌊 Microplastic Risk Intelligence Dashboard")
+st.title("🌊 Microplastic Risk Intelligence System")
+
 
 # =========================
-# UPLOAD DATA
+# UPLOAD
 # =========================
-file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+
 
 if file:
 
-    df = pd.read_csv(file)
+    df = load_data(file)
 
-    st.subheader("📊 Dataset Preview")
+    # =========================
+    # DATA OVERVIEW
+    # =========================
+    st.subheader("📌 Dataset Overview")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Rows", df.shape[0])
+    col2.metric("Columns", df.shape[1])
+    col3.metric("Missing", int(df.isnull().sum().sum()))
+
     st.dataframe(df.head())
 
-    target = st.selectbox("Select Target Column", df.columns)
 
     # =========================
-    # TRAIN MODELS
+    # TARGET SELECTION
     # =========================
-    if st.button("🚀 Train Models"):
+    target = st.sidebar.selectbox("🎯 Select MP Risk Column", df.columns)
 
-        results, best_name, best_model, X_test, y_test = train_models(df, target)
+    st.write("### 📊 Risk Distribution Preview")
 
-        st.success(f"🏆 Best Model: {best_name}")
-
-        # =========================
-        # MODEL PERFORMANCE
-        # =========================
-        st.subheader("📈 Model Comparison")
-
-        results_df = pd.DataFrame(results).T
-        st.dataframe(results_df)
-
+    if df[target].dtype == "object":
+        st.bar_chart(df[target].value_counts())
+    else:
+        clean = pd.to_numeric(df[target], errors="coerce").dropna()
         fig, ax = plt.subplots()
-        results_df["accuracy"].plot(kind="bar", ax=ax)
-        ax.set_title("Model Accuracy")
+        ax.hist(clean, bins=20)
         st.pyplot(fig)
 
-        # =========================
-        # PREDICTION TABLE (🔥 MAIN FEATURE)
-        # =========================
-        st.subheader("🎯 Prediction Table (Test Set Results)")
 
-        predictions = best_model.predict(X_test)
+    # =========================
+    # FEATURE COMPARISON
+    # =========================
+    st.subheader("🔬 MP Risk vs Features")
 
-        pred_df = X_test.copy()
-        pred_df["Actual"] = y_test.values
-        pred_df["Predicted"] = predictions
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
-        st.dataframe(pred_df)
+    if target in numeric_cols:
+        numeric_cols.remove(target)
 
-        # =========================
-        # DOWNLOAD BUTTON
-        # =========================
-        csv = pred_df.to_csv(index=False).encode("utf-8")
+    if numeric_cols:
 
-        st.download_button(
-            "📥 Download Predictions",
-            csv,
-            "predictions.csv",
-            "text/csv"
-        )
+        feature = st.selectbox("Select Feature", numeric_cols)
 
-        # =========================
-        # VISUALIZATION
-        # =========================
-        st.subheader("📊 Risk Distribution")
+        try:
+            group = df.groupby(target)[feature].mean()
+            st.bar_chart(group)
+        except:
+            st.warning("Cannot group this column")
 
-        fig, ax = plt.subplots()
-        ax.hist(y_test, bins=20)
-        ax.set_title("Risk Distribution")
-        st.pyplot(fig)
+    else:
+        st.warning("No numeric features found")
+
+
+    # =========================
+    # TRAIN BUTTON
+    # =========================
+    if st.sidebar.button("🚀 Train ML Models"):
+
+        with st.spinner("Training models..."):
+
+            try:
+                results, best_name, best_model = train_models(df, target)
+
+                st.success("Training Completed!")
+
+                # =========================
+                # MODEL COMPARISON
+                # =========================
+                st.subheader("🤖 Model Comparison")
+
+                names = list(results.keys())
+                accs = [results[n]["accuracy"] for n in names]
+
+                fig, ax = plt.subplots()
+                ax.bar(names, accs)
+                ax.set_ylabel("Accuracy")
+                ax.set_title("Model Performance")
+
+                st.pyplot(fig)
+
+                # =========================
+                # BEST MODEL
+                # =========================
+                st.subheader("🏆 Best Model")
+
+                st.success(best_name)
+                st.info(f"Accuracy: {results[best_name]['accuracy']:.4f}")
+
+                # =========================
+                # REPORTS
+                # =========================
+                for name in results:
+                    with st.expander(name):
+                        st.text(results[name]["report"])
+
+                save_model(best_model)
+                st.success("💾 Model saved successfully!")
+
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 else:
-    st.info("⬅️ Upload dataset to start")
+    st.info("⬆️ Upload CSV to start analysis")
