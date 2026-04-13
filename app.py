@@ -102,7 +102,7 @@ def run_kmeans(df, k=3):
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Stable Full Version (Fixed line 267 + no syntax errors)")
+st.caption("Stable Version (Fixed Errors + Safe ML + Risk Engine)")
 
 
 # =========================
@@ -153,18 +153,27 @@ if file:
             ax2.boxplot(clean)
             col2.pyplot(fig2)
 
-        st.subheader("High Risk Detection")
+        # =========================
+        # HIGH RISK
+        # =========================
+        st.subheader("🚨 High Risk Detection")
 
         df_risk, threshold = high_risk_engine(df, target)
 
-        st.info(f"High Risk Threshold: {threshold:.2f}")
+        st.info(f"High Risk Threshold (Top 25%): {threshold:.2f}")
 
         st.bar_chart(df_risk["Risk Category"].value_counts())
 
-        st.dataframe(df_risk[df_risk["Risk Category"] == "HIGH RISK"])
+        st.dataframe(
+            df_risk[df_risk["Risk Category"] == "HIGH RISK"]
+            .sort_values(by=target, ascending=False)
+        )
 
 
-        st.subheader("Risk Level Matrix")
+        # =========================
+        # RISK MATRIX
+        # =========================
+        st.subheader("⚠️ Risk Level Matrix")
 
         risk_df = create_risk_matrix(df[target], df[name_col])
 
@@ -178,9 +187,11 @@ if file:
     # =========================
     with tab2:
 
-        st.subheader("Risk Comparison")
+        st.subheader("⚖️ Risk Comparison")
 
         feature = st.selectbox("Select Feature", df.columns)
+
+        target_numeric = pd.to_numeric(df[target], errors="coerce")
 
         df_clean = df.dropna(subset=[feature, target])
 
@@ -195,20 +206,23 @@ if file:
 
                 fig, ax = plt.subplots()
                 ax.scatter(plot_df["Feature"], plot_df["Risk"])
+                ax.set_xlabel(feature)
+                ax.set_ylabel("Risk")
                 st.pyplot(fig)
 
         else:
 
             grouped = df_clean.groupby(feature)[target].mean().dropna()
 
-            if len(grouped) > 0:
+            if grouped.empty:
+                st.warning("No valid grouped data")
+            else:
 
                 grouped = grouped.reset_index()
                 grouped.columns = [feature, "Risk"]
 
                 st.bar_chart(grouped.set_index(feature))
 
-                # SAFE FIX FOR LINE 267 ERROR
                 if grouped["Risk"].notna().any():
 
                     st.write("🏆 Highest Risk:",
@@ -216,9 +230,6 @@ if file:
 
                     st.write("⬇️ Lowest Risk:",
                              grouped.loc[grouped["Risk"].idxmin(), feature])
-
-                else:
-                    st.warning("No valid risk values")
 
 
     # =========================
@@ -233,7 +244,7 @@ if file:
             try:
                 results, best_name, best_model = train_models(df, target)
 
-                st.success("Training Complete")
+                st.success("Training Done")
 
                 st.dataframe(pd.DataFrame(results).T)
 
