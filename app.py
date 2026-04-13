@@ -67,12 +67,13 @@ def high_risk_engine(df, target):
 
 
 # =========================
-# KMEANS
+# KMEANS CLUSTERING
 # =========================
 def run_kmeans(df, k=3):
 
     data = df.copy()
 
+    # safe numeric conversion
     for col in data.columns:
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
@@ -101,66 +102,11 @@ def run_kmeans(df, k=3):
 
 
 # =========================
-# CLASSIFICATION (NEW)
-# =========================
-def run_classification(df, target):
-
-    df = df.copy()
-    df = df.dropna(subset=[target])
-
-    # encode target if needed
-    le = LabelEncoder()
-    if df[target].dtype == "object":
-        df[target] = le.fit_transform(df[target].astype(str))
-
-    y = df[target]
-    X = df.drop(columns=[target])
-
-    X = pd.get_dummies(X, drop_first=True)
-    X = X.fillna(0)
-
-    if X.shape[1] < 1:
-        return None, None
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    results = {}
-
-    # RANDOM FOREST
-    rf = RandomForestClassifier(n_estimators=100, random_state=42)
-    rf.fit(X_train, y_train)
-    rf_pred = rf.predict(X_test)
-
-    results["Random Forest"] = {
-        "accuracy": accuracy_score(y_test, rf_pred),
-        "report": classification_report(y_test, rf_pred)
-    }
-
-    # SVM
-    svm = SVC(kernel="rbf")
-    svm.fit(X_train, y_train)
-    svm_pred = svm.predict(X_test)
-
-    results["SVM"] = {
-        "accuracy": accuracy_score(y_test, svm_pred),
-        "report": classification_report(y_test, svm_pred)
-    }
-
-    best_name = max(results, key=lambda x: results[x]["accuracy"])
-    best_model = rf if best_name == "Random Forest" else svm
-
-    return results, best_name, best_model
-
-
-# =========================
 # APP CONFIG
 # =========================
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("FULL AI DASHBOARD (Risk + ML + Clustering + Classification)")
 
 
 # =========================
@@ -268,7 +214,6 @@ if file:
             grouped.columns = [feature, "Risk"]
 
             if len(grouped) > 0:
-
                 st.bar_chart(grouped.set_index(feature))
 
                 st.write("🏆 Highest Risk:",
@@ -279,29 +224,79 @@ if file:
 
 
     # =========================
-    # ML MODELS
+    # ML MODELS (RF + SVM ARRANGED)
     # =========================
     with tab3:
 
-        st.subheader("Model Training")
+        st.subheader("🤖 Random Forest vs SVM Comparison")
 
-        if st.button("Train Models"):
+        if st.button("Run Models"):
 
             try:
-                results, best_name, best_model = train_models(df, target)
+                df_ml = df.copy().dropna(subset=[target])
 
-                st.dataframe(pd.DataFrame(results).T)
+                # encode target
+                le = LabelEncoder()
+                if df_ml[target].dtype == "object":
+                    df_ml[target] = le.fit_transform(df_ml[target].astype(str))
 
-                save_model(best_model)
+                y = df_ml[target]
+                X = df_ml.drop(columns=[target])
 
-                st.success(f"Best Model: {best_name}")
+                X = pd.get_dummies(X, drop_first=True).fillna(0)
+
+                if X.shape[1] < 1:
+                    st.warning("Not enough features for ML")
+                else:
+
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, random_state=42
+                    )
+
+                    results = {}
+
+                    # RANDOM FOREST
+                    rf = RandomForestClassifier(n_estimators=200, random_state=42)
+                    rf.fit(X_train, y_train)
+                    rf_pred = rf.predict(X_test)
+
+                    results["Random Forest"] = {
+                        "accuracy": accuracy_score(y_test, rf_pred),
+                        "report": classification_report(y_test, rf_pred)
+                    }
+
+                    # SVM
+                    svm = SVC(kernel="rbf")
+                    svm.fit(X_train, y_train)
+                    svm_pred = svm.predict(X_test)
+
+                    results["SVM"] = {
+                        "accuracy": accuracy_score(y_test, svm_pred),
+                        "report": classification_report(y_test, svm_pred)
+                    }
+
+                    # RESULTS
+                    acc_df = pd.DataFrame({
+                        "Model": list(results.keys()),
+                        "Accuracy": [results[m]["accuracy"] for m in results]
+                    })
+
+                    st.bar_chart(acc_df.set_index("Model"))
+                    st.dataframe(acc_df)
+
+                    best = max(results, key=lambda x: results[x]["accuracy"])
+                    st.success(f"Best Model: {best}")
+
+                    for m in results:
+                        with st.expander(m):
+                            st.text(results[m]["report"])
 
             except Exception as e:
                 st.error(str(e))
 
 
     # =========================
-    # CLUSTERING + CLASSIFICATION
+    # CLUSTERING
     # =========================
     with tab4:
 
@@ -317,36 +312,10 @@ if file:
 
             fig, ax = plt.subplots()
             ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
+
             st.pyplot(fig)
 
             st.dataframe(result)
-
-        st.divider()
-
-        st.subheader("Classification (SVM vs Random Forest)")
-
-        if st.button("Run Classification"):
-
-            results, best_name, best_model = run_classification(df, target)
-
-            if results is None:
-                st.warning("Not enough data for classification")
-            else:
-
-                acc_df = pd.DataFrame({
-                    model: [results[model]["accuracy"]]
-                    for model in results
-                }).T
-
-                acc_df.columns = ["Accuracy"]
-
-                st.bar_chart(acc_df)
-
-                st.success(f"Best Model: {best_name}")
-
-                for model in results:
-                    with st.expander(model):
-                        st.text(results[model]["report"])
 
 else:
     st.info("Upload a CSV to begin")
