@@ -6,6 +6,28 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
+# RISK LEVEL FUNCTION
+# =========================
+def create_risk_level(series):
+    numeric = pd.to_numeric(series, errors="coerce")
+
+    q1 = numeric.quantile(0.33)
+    q2 = numeric.quantile(0.66)
+
+    def label(x):
+        if pd.isna(x):
+            return "Unknown"
+        elif x <= q1:
+            return "Low"
+        elif x <= q2:
+            return "Medium"
+        else:
+            return "High"
+
+    return numeric.apply(label)
+
+
+# =========================
 # CONFIG
 # =========================
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
@@ -29,7 +51,7 @@ if file:
     df = load_data(file)
 
     # =========================
-    # KPIs
+    # OVERVIEW
     # =========================
     st.subheader("📊 Overview")
 
@@ -44,8 +66,12 @@ if file:
     # TARGET
     target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
 
+    # RISK LEVEL (GLOBAL)
+    risk_level = create_risk_level(df[target])
+
     # TABS
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
+
 
     # ==================================================
     # TAB 1: DASHBOARD
@@ -72,6 +98,7 @@ if file:
             col2.pyplot(fig)
 
         else:
+
             clean = pd.to_numeric(target_data, errors="coerce").dropna()
 
             fig, ax = plt.subplots()
@@ -82,8 +109,31 @@ if file:
             ax2.boxplot(clean)
             col2.pyplot(fig2)
 
+        # =========================
+        # RISK LEVEL SECTION
+        # =========================
+        st.subheader("⚠️ Risk Level Classification")
+
+        level_counts = risk_level.value_counts()
+
+        col3, col4 = st.columns(2)
+
+        col3.bar_chart(level_counts)
+
+        fig, ax = plt.subplots()
+        ax.pie(level_counts, labels=level_counts.index, autopct="%1.1f%%")
+        col4.pyplot(fig)
+
+        st.markdown("""
+        ### 📊 Risk Interpretation
+        - 🟢 Low → Safe contamination level  
+        - 🟡 Medium → Moderate risk  
+        - 🔴 High → Dangerous microplastic concentration  
+        """)
+
+
     # ==================================================
-    # TAB 2: ANALYSIS (🔥 FULLY FUNCTIONAL)
+    # TAB 2: ANALYSIS
     # ==================================================
     with tab2:
 
@@ -96,7 +146,6 @@ if file:
 
         col1, col2 = st.columns(2)
 
-        # NUMERIC
         if pd.api.types.is_numeric_dtype(df[feature]):
 
             agg = st.selectbox("Aggregation", ["Mean", "Median"])
@@ -122,7 +171,6 @@ if file:
             except Exception as e:
                 st.warning(str(e))
 
-        # CATEGORICAL
         else:
 
             try:
@@ -138,11 +186,12 @@ if file:
             except Exception as e:
                 st.warning(str(e))
 
+
         st.divider()
 
-        # ==================================================
-        # 🔥 CORRELATION MATRIX (ENHANCED)
-        # ==================================================
+        # =========================
+        # CORRELATION MATRIX
+        # =========================
         st.subheader("🔥 Correlation Matrix")
 
         num_df = df.select_dtypes(include="number").copy()
@@ -151,18 +200,15 @@ if file:
             st.warning("Not enough numeric features")
         else:
 
-            method = st.selectbox(
-                "Correlation Method",
-                ["pearson", "spearman", "kendall"]
-            )
+            method = st.selectbox("Correlation Method", ["pearson", "spearman", "kendall"])
 
             num_df = num_df.fillna(num_df.mean())
             corr = num_df.corr(method=method)
 
             fig, ax = plt.subplots(figsize=(10, 6))
-            cax = ax.imshow(corr)
+            im = ax.imshow(corr)
 
-            plt.colorbar(cax)
+            plt.colorbar(im)
 
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
@@ -170,43 +216,11 @@ if file:
             ax.set_xticklabels(corr.columns, rotation=45, ha="right")
             ax.set_yticklabels(corr.columns)
 
-            ax.set_title(f"{method.capitalize()} Correlation")
-
             st.pyplot(fig)
 
-            # STRONG RELATIONSHIPS
-            st.subheader("📌 Strong Relationships")
-
-            threshold = st.slider("Threshold", 0.5, 1.0, 0.7)
-
-            strong = []
-            for i in range(len(corr.columns)):
-                for j in range(i + 1, len(corr.columns)):
-                    val = corr.iloc[i, j]
-                    if abs(val) >= threshold:
-                        strong.append((corr.columns[i], corr.columns[j], val))
-
-            if strong:
-                for f1, f2, val in strong:
-                    st.write(f"{f1} ↔ {f2} = {val:.2f}")
-            else:
-                st.info("No strong correlations")
-
-            # TOP CORRELATIONS
-            st.subheader("🏆 Top Correlations")
-
-            top_corr = (
-                corr.abs()
-                .unstack()
-                .sort_values(ascending=False)
-            )
-
-            top_corr = top_corr[top_corr < 1].drop_duplicates().head(5)
-
-            st.write(top_corr)
 
     # ==================================================
-    # TAB 3: ML
+    # TAB 3: ML MODELS
     # ==================================================
     with tab3:
 
@@ -221,11 +235,11 @@ if file:
 
                     st.success("Training Complete")
 
-                    names = list(results.keys())
-                    accs = [results[n]["accuracy"] for n in names]
+                    results_df = pd.DataFrame(results).T
+                    st.dataframe(results_df)
 
                     fig, ax = plt.subplots()
-                    ax.bar(names, accs)
+                    results_df["accuracy"].plot(kind="bar", ax=ax)
                     st.pyplot(fig)
 
                     st.success(f"Best Model: {best_name}")
