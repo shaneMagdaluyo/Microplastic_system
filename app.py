@@ -22,14 +22,14 @@ file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 
 # =========================
-# MAIN
+# MAIN APP
 # =========================
 if file:
 
     df = load_data(file)
 
     # =========================
-    # DASHBOARD KPIs
+    # OVERVIEW KPI
     # =========================
     st.subheader("📊 Overview")
 
@@ -47,6 +47,7 @@ if file:
     # TABS
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
 
+
     # ==================================================
     # TAB 1: DASHBOARD
     # ==================================================
@@ -61,7 +62,6 @@ if file:
 
         col1, col2 = st.columns(2)
 
-        # FIXED HISTOGRAM ERROR HERE
         if target_data.dtype == "object":
 
             counts = target_data.value_counts()
@@ -73,18 +73,22 @@ if file:
             col2.pyplot(fig)
 
         else:
+
             clean = pd.to_numeric(target_data, errors="coerce").dropna()
 
             fig, ax = plt.subplots()
             ax.hist(clean, bins=20)
+            ax.set_title("Risk Distribution")
             col1.pyplot(fig)
 
             fig2, ax2 = plt.subplots()
             ax2.boxplot(clean)
+            ax2.set_title("Risk Boxplot")
             col2.pyplot(fig2)
 
+
     # ==================================================
-    # TAB 2: FEATURE ANALYSIS (🔥 FIXED)
+    # TAB 2: FEATURE ANALYSIS
     # ==================================================
     with tab2:
 
@@ -112,12 +116,13 @@ if file:
 
                 fig, ax = plt.subplots()
                 df.boxplot(column=feature, by=target, ax=ax)
+                ax.set_title(f"{feature} by {target}")
                 col2.pyplot(fig)
 
                 st.markdown(f"""
                 ### 📌 Insights
-                - Highest value group: **{grouped.idxmax()}**
-                - Lowest value group: **{grouped.idxmin()}**
+                - Highest group: **{grouped.idxmax()}**
+                - Lowest group: **{grouped.idxmin()}**
                 """)
 
             except Exception as e:
@@ -133,34 +138,50 @@ if file:
 
                 st.markdown(f"""
                 ### 📌 Insights
-                - Most common: **{df[feature].value_counts().idxmax()}**
-                - Total categories: **{df[feature].nunique()}**
+                - Most common category: **{df[feature].value_counts().idxmax()}**
+                - Unique categories: **{df[feature].nunique()}**
                 """)
 
             except Exception as e:
                 st.warning(str(e))
 
+
         st.divider()
 
-        # CORRELATION
+
+        # ==================================================
+        # 🔥 FIXED CORRELATION MATRIX (MAIN FIX)
+        # ==================================================
         st.subheader("🔥 Correlation Matrix")
 
-        corr = df.select_dtypes(include="number").corr()
+        numeric_df = df.select_dtypes(include="number").copy()
 
-        if not corr.empty:
-            fig, ax = plt.subplots()
-            cax = ax.imshow(corr)
-            plt.colorbar(cax)
+        numeric_df = numeric_df.dropna(axis=1, how="all")
+        numeric_df = numeric_df.loc[:, numeric_df.nunique() > 1]
+
+        if numeric_df.shape[1] < 2:
+            st.warning("Not enough numeric features for correlation matrix")
+        else:
+
+            corr = numeric_df.corr()
+            corr = corr.fillna(0)
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+
+            im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
+            plt.colorbar(im, ax=ax)
 
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
+
             ax.set_xticklabels(corr.columns, rotation=90)
             ax.set_yticklabels(corr.columns)
 
             st.pyplot(fig)
 
+
     # ==================================================
-    # TAB 3: ML
+    # TAB 3: ML MODELS
     # ==================================================
     with tab3:
 
@@ -168,29 +189,26 @@ if file:
 
         if st.button("Train Models"):
 
-            with st.spinner("Training..."):
+            with st.spinner("Training models..."):
 
                 try:
                     results, best_name, best_model = train_models(df, target)
 
-                    st.success("Training Done")
+                    st.success("Training Completed")
 
                     names = list(results.keys())
                     accs = [results[n]["accuracy"] for n in names]
 
                     fig, ax = plt.subplots()
                     ax.bar(names, accs)
+                    ax.set_title("Model Accuracy Comparison")
                     st.pyplot(fig)
 
                     st.success(f"Best Model: {best_name}")
                     st.info(f"Accuracy: {results[best_name]['accuracy']:.4f}")
 
-                    for name in results:
-                        with st.expander(name):
-                            st.text(results[name]["report"])
-
                     save_model(best_model)
-                    st.success("Model Saved!")
+                    st.success("Model Saved Successfully")
 
                 except Exception as e:
                     st.error(str(e))
