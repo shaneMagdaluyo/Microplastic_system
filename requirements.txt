@@ -4,4 +4,4 @@ matplotlib
 numpy
 scikit-learn
 statsmodels
-tensorflow
+
