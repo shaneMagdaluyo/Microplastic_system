@@ -47,38 +47,38 @@ def create_risk_matrix(series, name_series):
 
 
 # =========================
-# K-MEANS (ROBUST FIX)
+# FIXED K-MEANS FUNCTION
 # =========================
 def run_kmeans(df, k=3):
 
     data = df.copy()
 
-    # convert everything possible to numeric
+    # ✅ FIX: use "coerce" instead of "ignore"
     for col in data.columns:
-        data[col] = pd.to_numeric(data[col], errors="ignore")
+        data[col] = pd.to_numeric(data[col], errors="coerce")
 
-    # encode categorical columns
+    # encode categorical values
     data = pd.get_dummies(data, drop_first=True)
 
-    # keep numeric only
+    # keep only numeric
     data = data.select_dtypes(include="number").fillna(0)
 
-    # FORCE SAFE FEATURE COUNT
+    # safety fallback
     if data.shape[1] < 2:
         data["extra_feature"] = range(len(data))
 
-    # scale
+    # scaling
     scaler = StandardScaler()
     X = scaler.fit_transform(data)
 
-    # kmeans
-    model = KMeans(n_clusters=k, random_state=42, n_init=10)
-    clusters = model.fit_predict(X)
+    # clustering
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    clusters = kmeans.fit_predict(X)
 
     result = df.copy()
     result["Cluster"] = clusters
 
-    # PCA
+    # PCA for visualization
     pca = PCA(n_components=2)
     comp = pca.fit_transform(X)
 
@@ -94,7 +94,7 @@ def run_kmeans(df, k=3):
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Full AI Dashboard (Risk + ML + Clustering)")
+st.caption("Stable ML + Risk + Clustering Dashboard")
 
 
 # =========================
@@ -126,6 +126,7 @@ if file:
         "🧩 Clustering"
     ])
 
+
     # =========================
     # TAB 1 - DASHBOARD
     # =========================
@@ -138,23 +139,17 @@ if file:
 
         clean = pd.to_numeric(df[target], errors="coerce").dropna()
 
-        if len(clean) > 0:
+        col1, col2 = st.columns(2)
 
-            col1, col2 = st.columns(2)
+        fig, ax = plt.subplots()
+        ax.hist(clean, bins=20)
+        col1.pyplot(fig)
 
-            fig, ax = plt.subplots()
-            ax.hist(clean, bins=20)
-            col1.pyplot(fig)
+        fig2, ax2 = plt.subplots()
+        ax2.boxplot(clean)
+        col2.pyplot(fig2)
 
-            fig2, ax2 = plt.subplots()
-            ax2.boxplot(clean)
-            col2.pyplot(fig2)
-        else:
-            st.warning("Target column is not numeric enough for plots")
 
-        # =========================
-        # RISK MATRIX
-        # =========================
         st.subheader("⚠️ Risk Matrix")
 
         risk_df = create_risk_matrix(df[target], df[name_col])
@@ -162,11 +157,10 @@ if file:
         if risk_df is not None:
 
             st.bar_chart(risk_df["Risk Level"].value_counts())
-
             st.dataframe(risk_df, use_container_width=True)
 
         else:
-            st.warning("Not enough valid data for risk matrix")
+            st.warning("Not enough data for risk matrix")
 
 
     # =========================
@@ -196,7 +190,7 @@ if file:
             st.pyplot(fig)
 
         else:
-            st.warning("Not enough numeric features for correlation")
+            st.warning("Not enough numeric features")
 
         st.divider()
 
@@ -217,9 +211,6 @@ if file:
             ax.set_ylabel("Risk")
 
             st.pyplot(fig)
-
-        else:
-            st.info("Select numeric feature only")
 
 
     # =========================
@@ -256,7 +247,7 @@ if file:
     # =========================
     with tab4:
 
-        st.subheader("🧩 K-Means Clustering")
+        st.subheader("🧩 K-Means Clustering (FIXED)")
 
         k = st.slider("Number of Clusters", 2, 10, 3)
 
@@ -291,8 +282,7 @@ if file:
             st.dataframe(result, use_container_width=True)
 
             st.subheader("📊 Cluster Insights")
-
             st.write(result.groupby("Cluster").mean(numeric_only=True))
 
 else:
-    st.info("⬅️ Upload a CSV to begin")
+    st.info("⬅️ Upload a CSV file to begin")
