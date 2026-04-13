@@ -10,7 +10,7 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
-# RISK MATRIX FUNCTION
+# RISK MATRIX
 # =========================
 def create_risk_matrix(series, name_series):
 
@@ -52,7 +52,6 @@ def create_risk_matrix(series, name_series):
 def high_risk_engine(df, target):
 
     values = pd.to_numeric(df[target], errors="coerce")
-
     threshold = values.quantile(0.75)
 
     df = df.copy()
@@ -64,7 +63,7 @@ def high_risk_engine(df, target):
 
 
 # =========================
-# K-MEANS CLUSTERING
+# KMEANS
 # =========================
 def run_kmeans(df, k=3):
 
@@ -103,7 +102,7 @@ def run_kmeans(df, k=3):
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Stable Dashboard with High Risk Detection + ML + Clustering")
+st.caption("Stable Version (Fixed Errors + Safe ML + Risk Engine)")
 
 
 # =========================
@@ -120,22 +119,22 @@ if file:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Rows", df.shape[0])
     c2.metric("Columns", df.shape[1])
-    c3.metric("Missing Values", int(df.isnull().sum().sum()))
-    c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
+    c3.metric("Missing", int(df.isnull().sum().sum()))
+    c4.metric("Numeric", df.select_dtypes(include="number").shape[1])
 
     target = st.sidebar.selectbox("🎯 Risk Column", df.columns)
     name_col = st.sidebar.selectbox("🏷️ Name Column", df.columns)
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Dashboard",
-        "⚖️ Risk Analysis",
-        "🤖 ML Models",
-        "🧩 Clustering"
+        "Dashboard",
+        "Risk Analysis",
+        "ML Models",
+        "Clustering"
     ])
 
 
     # =========================
-    # TAB 1 - DASHBOARD
+    # DASHBOARD
     # =========================
     with tab1:
 
@@ -155,7 +154,7 @@ if file:
             col2.pyplot(fig2)
 
         # =========================
-        # HIGH RISK SECTION
+        # HIGH RISK
         # =========================
         st.subheader("🚨 High Risk Detection")
 
@@ -184,7 +183,7 @@ if file:
 
 
     # =========================
-    # TAB 2 - RISK ANALYSIS
+    # RISK ANALYSIS
     # =========================
     with tab2:
 
@@ -194,39 +193,62 @@ if file:
 
         target_numeric = pd.to_numeric(df[target], errors="coerce")
 
+        # DROP INVALID ROWS (IMPORTANT FIX)
+        df_clean = df.dropna(subset=[feature, target])
+
+        # =========================
         # NUMERIC FEATURE
-        if pd.api.types.is_numeric_dtype(df[feature]):
+        # =========================
+        if pd.api.types.is_numeric_dtype(df_clean[feature]):
 
             plot_df = pd.DataFrame({
-                "Feature": pd.to_numeric(df[feature], errors="coerce"),
-                "Risk": target_numeric
+                "Feature": pd.to_numeric(df_clean[feature], errors="coerce"),
+                "Risk": pd.to_numeric(df_clean[target], errors="coerce")
             }).dropna()
 
-            fig, ax = plt.subplots()
-            ax.scatter(plot_df["Feature"], plot_df["Risk"])
-            ax.set_xlabel(feature)
-            ax.set_ylabel("Risk")
-            st.pyplot(fig)
+            if len(plot_df) > 0:
 
-        # CATEGORICAL FEATURE
+                fig, ax = plt.subplots()
+                ax.scatter(plot_df["Feature"], plot_df["Risk"])
+                ax.set_xlabel(feature)
+                ax.set_ylabel("Risk")
+                st.pyplot(fig)
+
+            else:
+                st.warning("No valid numeric data for plotting")
+
+
+        # =========================
+        # CATEGORICAL FEATURE (FIXED CRASH)
+        # =========================
         else:
 
-            grouped = df.copy()
-            grouped[target] = pd.to_numeric(grouped[target], errors="coerce")
+            grouped = df_clean.groupby(feature)[target].mean().dropna()
 
-            grouped = grouped.groupby(feature)[target].mean().dropna()
+            if grouped.empty:
+                st.warning("No valid grouped data")
+            else:
 
-            grouped = grouped.reset_index()
-            grouped.columns = [feature, "Risk"]
+                grouped = grouped.reset_index()
+                grouped.columns = [feature, "Risk"]
 
-            st.bar_chart(grouped.set_index(feature))
+                st.bar_chart(grouped.set_index(feature))
 
-            st.write("🏆 Highest Risk:", grouped.loc[grouped["Risk"].idxmax(), feature])
-            st.write("⬇️ Lowest Risk:", grouped.loc[grouped["Risk"].idxmin(), feature])
+                # SAFE IDXMAX FIX
+                if grouped["Risk"].notna().any():
+
+                    st.write("🏆 Highest Risk:",
+                             grouped.loc[grouped["Risk"].idxmax(), feature])
+
+                    st.write("⬇️ Lowest Risk:",
+                             grouped.loc[grouped["Risk"].idxmin(), feature])
+
+                else:
+                    st.warning("No valid risk values")
 
 
     # =========================
-    # TAB 3 - ML MODELS
+    # ML MODELS
     # =========================
     with tab3:
 
@@ -250,13 +272,13 @@ if file:
 
 
     # =========================
-    # TAB 4 - CLUSTERING
-    # =========================
+    # CLUSTERING
+    =========================
     with tab4:
 
         st.subheader("K-Means Clustering")
 
-        k = st.slider("Number of Clusters", 2, 10, 3)
+        k = st.slider("Clusters", 2, 10, 3)
 
         if st.button("Run Clustering"):
 
@@ -266,9 +288,10 @@ if file:
 
             fig, ax = plt.subplots()
             ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
+
             st.pyplot(fig)
 
             st.dataframe(result)
 
 else:
-    st.info("⬅️ Upload a CSV file to begin")
+    st.info("Upload a CSV to begin")
