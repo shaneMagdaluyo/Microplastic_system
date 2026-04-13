@@ -11,7 +11,7 @@ from ml_pipeline import load_data, train_models, save_model
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Professional Dashboard with ML & Risk Analytics")
+st.caption("Advanced Dashboard with Analytics & Machine Learning")
 
 
 # =========================
@@ -22,14 +22,14 @@ file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 
 # =========================
-# MAIN
+# MAIN APP
 # =========================
 if file:
 
     df = load_data(file)
 
     # =========================
-    # DASHBOARD KPIs
+    # KPIs
     # =========================
     st.subheader("📊 Overview")
 
@@ -61,7 +61,6 @@ if file:
 
         col1, col2 = st.columns(2)
 
-        # FIXED HISTOGRAM ERROR HERE
         if target_data.dtype == "object":
 
             counts = target_data.value_counts()
@@ -84,7 +83,7 @@ if file:
             col2.pyplot(fig2)
 
     # ==================================================
-    # TAB 2: FEATURE ANALYSIS (🔥 FIXED)
+    # TAB 2: ANALYSIS (🔥 FULLY FUNCTIONAL)
     # ==================================================
     with tab2:
 
@@ -97,7 +96,7 @@ if file:
 
         col1, col2 = st.columns(2)
 
-        # NUMERIC FEATURE
+        # NUMERIC
         if pd.api.types.is_numeric_dtype(df[feature]):
 
             agg = st.selectbox("Aggregation", ["Mean", "Median"])
@@ -116,25 +115,24 @@ if file:
 
                 st.markdown(f"""
                 ### 📌 Insights
-                - Highest value group: **{grouped.idxmax()}**
-                - Lowest value group: **{grouped.idxmin()}**
+                - Highest: **{grouped.idxmax()}**
+                - Lowest: **{grouped.idxmin()}**
                 """)
 
             except Exception as e:
                 st.warning(str(e))
 
-        # CATEGORICAL FEATURE
+        # CATEGORICAL
         else:
 
             try:
                 cross = pd.crosstab(df[target], df[feature])
-
                 col1.bar_chart(cross)
 
                 st.markdown(f"""
                 ### 📌 Insights
                 - Most common: **{df[feature].value_counts().idxmax()}**
-                - Total categories: **{df[feature].nunique()}**
+                - Categories: **{df[feature].nunique()}**
                 """)
 
             except Exception as e:
@@ -142,22 +140,70 @@ if file:
 
         st.divider()
 
-        # CORRELATION
+        # ==================================================
+        # 🔥 CORRELATION MATRIX (ENHANCED)
+        # ==================================================
         st.subheader("🔥 Correlation Matrix")
 
-        corr = df.select_dtypes(include="number").corr()
+        num_df = df.select_dtypes(include="number").copy()
 
-        if not corr.empty:
-            fig, ax = plt.subplots()
+        if num_df.shape[1] < 2:
+            st.warning("Not enough numeric features")
+        else:
+
+            method = st.selectbox(
+                "Correlation Method",
+                ["pearson", "spearman", "kendall"]
+            )
+
+            num_df = num_df.fillna(num_df.mean())
+            corr = num_df.corr(method=method)
+
+            fig, ax = plt.subplots(figsize=(10, 6))
             cax = ax.imshow(corr)
+
             plt.colorbar(cax)
 
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
-            ax.set_xticklabels(corr.columns, rotation=90)
+
+            ax.set_xticklabels(corr.columns, rotation=45, ha="right")
             ax.set_yticklabels(corr.columns)
 
+            ax.set_title(f"{method.capitalize()} Correlation")
+
             st.pyplot(fig)
+
+            # STRONG RELATIONSHIPS
+            st.subheader("📌 Strong Relationships")
+
+            threshold = st.slider("Threshold", 0.5, 1.0, 0.7)
+
+            strong = []
+            for i in range(len(corr.columns)):
+                for j in range(i + 1, len(corr.columns)):
+                    val = corr.iloc[i, j]
+                    if abs(val) >= threshold:
+                        strong.append((corr.columns[i], corr.columns[j], val))
+
+            if strong:
+                for f1, f2, val in strong:
+                    st.write(f"{f1} ↔ {f2} = {val:.2f}")
+            else:
+                st.info("No strong correlations")
+
+            # TOP CORRELATIONS
+            st.subheader("🏆 Top Correlations")
+
+            top_corr = (
+                corr.abs()
+                .unstack()
+                .sort_values(ascending=False)
+            )
+
+            top_corr = top_corr[top_corr < 1].drop_duplicates().head(5)
+
+            st.write(top_corr)
 
     # ==================================================
     # TAB 3: ML
@@ -173,7 +219,7 @@ if file:
                 try:
                     results, best_name, best_model = train_models(df, target)
 
-                    st.success("Training Done")
+                    st.success("Training Complete")
 
                     names = list(results.keys())
                     accs = [results[n]["accuracy"] for n in names]
@@ -196,4 +242,4 @@ if file:
                     st.error(str(e))
 
 else:
-    st.info("⬅️ Upload a CSV file to start")
+    st.info("⬅️ Upload a CSV file to begin")
