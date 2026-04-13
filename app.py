@@ -101,57 +101,29 @@ def run_kmeans(df, k=3):
 
 
 # =========================
-# CLASSIFICATION (NEW)
+# CLASSIFICATION FIXED TABLE
 # =========================
-def run_classification(df, target):
+def build_report_table(y_true, y_pred, model_name):
 
-    df = df.copy()
-    df = df.dropna(subset=[target])
+    report = classification_report(y_true, y_pred, output_dict=True)
 
-    # encode target if needed
-    le = LabelEncoder()
-    if df[target].dtype == "object":
-        df[target] = le.fit_transform(df[target].astype(str))
+    rows = []
 
-    y = df[target]
-    X = df.drop(columns=[target])
+    for label, metrics in report.items():
 
-    X = pd.get_dummies(X, drop_first=True)
-    X = X.fillna(0)
+        if label in ["accuracy", "macro avg", "weighted avg"]:
+            continue
 
-    if X.shape[1] < 1:
-        return None, None
+        rows.append({
+            "Model": model_name,
+            "Class": label,
+            "Precision": round(metrics["precision"], 3),
+            "Recall": round(metrics["recall"], 3),
+            "F1-score": round(metrics["f1-score"], 3),
+            "Support": int(metrics["support"])
+        })
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    results = {}
-
-    # RANDOM FOREST
-    rf = RandomForestClassifier(n_estimators=100, random_state=42)
-    rf.fit(X_train, y_train)
-    rf_pred = rf.predict(X_test)
-
-    results["Random Forest"] = {
-        "accuracy": accuracy_score(y_test, rf_pred),
-        "report": classification_report(y_test, rf_pred)
-    }
-
-    # SVM
-    svm = SVC(kernel="rbf")
-    svm.fit(X_train, y_train)
-    svm_pred = svm.predict(X_test)
-
-    results["SVM"] = {
-        "accuracy": accuracy_score(y_test, svm_pred),
-        "report": classification_report(y_test, svm_pred)
-    }
-
-    best_name = max(results, key=lambda x: results[x]["accuracy"])
-    best_model = rf if best_name == "Random Forest" else svm
-
-    return results, best_name, best_model
+    return pd.DataFrame(rows)
 
 
 # =========================
@@ -160,7 +132,6 @@ def run_classification(df, target):
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("FULL AI DASHBOARD (Risk + ML + Clustering + Classification)")
 
 
 # =========================
@@ -283,25 +254,66 @@ if file:
     # =========================
     with tab3:
 
-        st.subheader("Model Training")
+        st.subheader("Random Forest & SVM Comparison Table")
 
-        if st.button("Train Models"):
+        if st.button("Run Models"):
 
-            try:
-                results, best_name, best_model = train_models(df, target)
+            df_ml = df.copy().dropna(subset=[target])
 
-                st.dataframe(pd.DataFrame(results).T)
+            le = LabelEncoder()
+            if df_ml[target].dtype == "object":
+                df_ml[target] = le.fit_transform(df_ml[target].astype(str))
 
-                save_model(best_model)
+            y = df_ml[target]
+            X = df_ml.drop(columns=[target])
 
-                st.success(f"Best Model: {best_name}")
+            X = pd.get_dummies(X, drop_first=True).fillna(0)
 
-            except Exception as e:
-                st.error(str(e))
+            if X.shape[1] < 1:
+                st.warning("Not enough features")
+            else:
+
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+
+                # ================= RF =================
+                rf = RandomForestClassifier(n_estimators=200, random_state=42)
+                rf.fit(X_train, y_train)
+                rf_pred = rf.predict(X_test)
+
+                rf_df = build_report_table(y_test, rf_pred, "Random Forest")
+
+                # ================= SVM =================
+                svm = SVC(kernel="rbf")
+                svm.fit(X_train, y_train)
+                svm_pred = svm.predict(X_test)
+
+                svm_df = build_report_table(y_test, svm_pred, "SVM")
+
+                # FINAL TABLE
+                final_df = pd.concat([rf_df, svm_df])
+
+                st.subheader("📊 Classification Report Table")
+                st.dataframe(final_df)
+
+                # ACCURACY COMPARISON
+                acc_df = pd.DataFrame({
+                    "Model": ["Random Forest", "SVM"],
+                    "Accuracy": [
+                        accuracy_score(y_test, rf_pred),
+                        accuracy_score(y_test, svm_pred)
+                    ]
+                })
+
+                st.subheader("📈 Model Accuracy Comparison")
+                st.bar_chart(acc_df.set_index("Model"))
+
+                st.success("Done!")
 
 
     # =========================
-    # CLUSTERING + CLASSIFICATION
+    # CLUSTERING
     # =========================
     with tab4:
 
@@ -317,36 +329,10 @@ if file:
 
             fig, ax = plt.subplots()
             ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
+
             st.pyplot(fig)
 
             st.dataframe(result)
-
-        st.divider()
-
-        st.subheader("Classification (SVM vs Random Forest)")
-
-        if st.button("Run Classification"):
-
-            results, best_name, best_model = run_classification(df, target)
-
-            if results is None:
-                st.warning("Not enough data for classification")
-            else:
-
-                acc_df = pd.DataFrame({
-                    model: [results[model]["accuracy"]]
-                    for model in results
-                }).T
-
-                acc_df.columns = ["Accuracy"]
-
-                st.bar_chart(acc_df)
-
-                st.success(f"Best Model: {best_name}")
-
-                for model in results:
-                    with st.expander(model):
-                        st.text(results[model]["report"])
 
 else:
     st.info("Upload a CSV to begin")
