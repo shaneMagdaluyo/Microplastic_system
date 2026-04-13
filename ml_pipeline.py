@@ -1,5 +1,5 @@
 import pandas as pd
-import joblib
+import numpy as np
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -8,40 +8,49 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score
 
 
-def load_data(file):
-    return pd.read_csv(file)
+# =========================
+# PREPROCESS DATA
+# =========================
+def preprocess_data(df, target):
 
-
-def clean_data(df, target):
     df = df.copy()
+
+    # Encode target if needed
+    if df[target].dtype == "object":
+        df[target] = LabelEncoder().fit_transform(df[target].astype(str))
 
     y = df[target]
     X = df.drop(columns=[target])
 
-    if y.dtype == "object":
-        y = LabelEncoder().fit_transform(y.astype(str))
-
+    # Encode categorical features
     for col in X.columns:
         if X[col].dtype == "object":
             X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
-    X = SimpleImputer(strategy="mean").fit_transform(X)
-    X = pd.DataFrame(X)
+    # Convert to numeric safely
+    X = X.apply(pd.to_numeric, errors="coerce")
+
+    # Fill missing values
+    imputer = SimpleImputer(strategy="mean")
+    X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
 
     return X, y
 
 
+# =========================
+# TRAIN MODELS
+# =========================
 def train_models(df, target):
-    X, y = clean_data(df, target)
-    y = pd.Series(y)
 
-    if y.nunique() < 2:
+    X, y = preprocess_data(df, target)
+
+    if len(np.unique(y)) < 2:
         raise ValueError("Target must have at least 2 classes")
 
-    stratify = y if y.value_counts().min() >= 2 else None
+    stratify = y if pd.Series(y).value_counts().min() >= 2 else None
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
@@ -66,19 +75,11 @@ def train_models(df, target):
         preds = model.predict(X_test)
 
         acc = accuracy_score(y_test, preds)
-
-        results[name] = {
-            "accuracy": acc,
-            "report": classification_report(y_test, preds)
-        }
+        results[name] = {"accuracy": acc}
 
         if acc > best_acc:
             best_acc = acc
             best_model = model
             best_name = name
 
-    return results, best_name, best_model
-
-
-def save_model(model):
-    joblib.dump(model, "best_model.pkl")
+    return results, best_name, best_model, X
