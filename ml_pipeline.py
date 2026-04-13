@@ -1,140 +1,85 @@
-import argparse
-import traceback
-
 import pandas as pd
 import numpy as np
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import LabelEncoder
+from sklearn.impute import SimpleImputer
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
-from sklearn.metrics import accuracy_score, classification_report
-
-from imblearn.over_sampling import SMOTE
-
-
-print("\n🚀 ML PIPELINE STARTED")
+from sklearn.metrics import accuracy_score
 
 
 # =========================
-# LOAD DATA
+# PREPROCESS DATA
 # =========================
-def load_data(path):
-    print("\n📥 Loading data...")
-    df = pd.read_csv(path)
-    print("Shape:", df.shape)
-    return df
+def preprocess_data(df, target):
+
+    df = df.copy()
+
+    # Encode target if needed
+    if df[target].dtype == "object":
+        df[target] = LabelEncoder().fit_transform(df[target].astype(str))
+
+    y = df[target]
+    X = df.drop(columns=[target])
+
+    # Encode categorical features
+    for col in X.columns:
+        if X[col].dtype == "object":
+            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
+
+    # Convert to numeric safely
+    X = X.apply(pd.to_numeric, errors="coerce")
+
+    # Fill missing values
+    imputer = SimpleImputer(strategy="mean")
+    X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
+
+    return X, y
 
 
 # =========================
-# PREPROCESS
+# TRAIN MODELS
 # =========================
-def preprocess(X):
-    cat_cols = X.select_dtypes(include=["object"]).columns
-    num_cols = X.select_dtypes(exclude=["object"]).columns
+def train_models(df, target):
 
-    print("\n🔧 Categorical:", list(cat_cols))
-    print("🔧 Numerical:", list(num_cols))
+    X, y = preprocess_data(df, target)
 
-    return ColumnTransformer([
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-        ("num", "passthrough", num_cols)
-    ])
+    if len(np.unique(y)) < 2:
+        raise ValueError("Target must have at least 2 classes")
 
+    stratify = y if pd.Series(y).value_counts().min() >= 2 else None
 
-# =========================
-# MODELS
-# =========================
-def get_models():
-    return {
-        "LogisticRegression": LogisticRegression(max_iter=1000),
-        "RandomForest": RandomForestClassifier(n_estimators=200),
-        "SVM": SVC()
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=0.2,
+        random_state=42,
+        stratify=stratify
+    )
+
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Random Forest": RandomForestClassifier(),
+        "Gradient Boosting": GradientBoostingClassifier()
     }
 
+    results = {}
+    best_model = None
+    best_name = ""
+    best_acc = 0
 
-# =========================
-# MAIN PIPELINE
-# =========================
-def main(data_path, target):
-    try:
-        df = load_data(data_path)
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
 
-        print("\n📊 Columns:", list(df.columns))
+        acc = accuracy_score(y_test, preds)
+        results[name] = {"accuracy": acc}
 
-        if target not in df.columns:
-            raise Exception(f"Target '{target}' not found in dataset!")
+        if acc > best_acc:
+            best_acc = acc
+            best_model = model
+            best_name = name
 
-        X = df.drop(columns=[target])
-        y = df[target]
-
-        print("\n📊 Class distribution:")
-        print(y.value_counts())
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y,
-            test_size=0.2,
-            random_state=42,
-            stratify=y
-        )
-
-        preprocessor = preprocess(X)
-
-        print("\n⚙️ Encoding...")
-        X_train_enc = preprocessor.fit_transform(X_train)
-        X_test_enc = preprocessor.transform(X_test)
-
-        print("\n⚖️ Applying SMOTE...")
-        smote = SMOTE(random_state=42)
-        X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
-
-        models = get_models()
-
-        best_acc = 0
-        best_model_name = ""
-        best_model = None
-
-        for name, model in models.items():
-            print(f"\n🤖 Training {name}...")
-
-            model.fit(X_train_bal, y_train_bal)
-            preds = model.predict(X_test_enc)
-
-            acc = accuracy_score(y_test, preds)
-
-            print(f"\n📊 {name} Accuracy: {acc:.4f}")
-            print(classification_report(y_test, preds))
-
-            if acc > best_acc:
-                best_acc = acc
-                best_model_name = name
-                best_model = model
-
-        print("\n🏆 BEST MODEL:", best_model_name)
-        print("🏆 BEST ACCURACY:", best_acc)
-
-        print("\n✅ PIPELINE COMPLETE SUCCESSFULLY")
-
-    except Exception as e:
-        print("\n❌ ERROR OCCURRED")
-        print(str(e))
-        traceback.print_exc()
-        input("\nPress Enter to exit...")
-
-
-# =========================
-# ENTRY POINT
-# =========================
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--data", required=True, help="Path to CSV dataset")
-    parser.add_argument("--target", required=True, help="Target column name")
-
-    args = parser.parse_args()
-
-    main(args.data, args.target)
+    return results, best_name, best_model, X
