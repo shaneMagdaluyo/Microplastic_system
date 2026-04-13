@@ -5,11 +5,11 @@ import matplotlib.pyplot as plt
 from ml_pipeline import train_models
 
 # =========================
-# UI SETUP
+# PAGE CONFIG
 # =========================
-st.set_page_config(page_title="Microplastic Risk System", layout="wide")
+st.set_page_config(page_title="Microplastic Dashboard", layout="wide")
 
-st.title("🌊 Microplastic Risk Intelligence System")
+st.title("🌊 Microplastic Risk Intelligence Dashboard")
 
 # =========================
 # UPLOAD DATA
@@ -25,64 +25,62 @@ if file:
 
     target = st.selectbox("Select Target Column", df.columns)
 
+    # =========================
+    # TRAIN MODELS
+    # =========================
     if st.button("🚀 Train Models"):
 
-        try:
-            results, best_name, best_model, X_processed = train_models(df, target)
+        results, best_name, best_model, X_test, y_test = train_models(df, target)
 
-            st.success(f"🏆 Best Model: {best_name}")
+        st.success(f"🏆 Best Model: {best_name}")
 
-            # =========================
-            # MODEL COMPARISON
-            # =========================
-            st.subheader("📈 Model Performance")
+        # =========================
+        # MODEL PERFORMANCE
+        # =========================
+        st.subheader("📈 Model Comparison")
 
-            results_df = pd.DataFrame(results).T
-            st.dataframe(results_df)
+        results_df = pd.DataFrame(results).T
+        st.dataframe(results_df)
 
-            fig, ax = plt.subplots()
-            results_df["accuracy"].plot(kind="bar", ax=ax)
-            ax.set_title("Model Accuracy Comparison")
-            st.pyplot(fig)
+        fig, ax = plt.subplots()
+        results_df["accuracy"].plot(kind="bar", ax=ax)
+        ax.set_title("Model Accuracy")
+        st.pyplot(fig)
 
-            # =========================
-            # RISK DISTRIBUTION
-            # =========================
-            st.subheader("📊 Risk Distribution")
+        # =========================
+        # PREDICTION TABLE (🔥 MAIN FEATURE)
+        # =========================
+        st.subheader("🎯 Prediction Table (Test Set Results)")
 
-            if df[target].dtype == "object":
-                encoded = df[target].astype("category").cat.codes
-            else:
-                encoded = pd.to_numeric(df[target], errors="coerce")
+        predictions = best_model.predict(X_test)
 
-            fig, ax = plt.subplots()
-            ax.hist(encoded.dropna(), bins=20)
-            ax.set_title("Risk Distribution")
-            st.pyplot(fig)
+        pred_df = X_test.copy()
+        pred_df["Actual"] = y_test.values
+        pred_df["Predicted"] = predictions
 
-            # =========================
-            # CORRELATION MATRIX
-            # =========================
-            st.subheader("📌 Correlation Matrix")
+        st.dataframe(pred_df)
 
-            corr_df = X_processed.copy()
-            corr_df["target"] = pd.factorize(df[target])[0]
+        # =========================
+        # DOWNLOAD BUTTON
+        # =========================
+        csv = pred_df.to_csv(index=False).encode("utf-8")
 
-            corr = corr_df.corr()
+        st.download_button(
+            "📥 Download Predictions",
+            csv,
+            "predictions.csv",
+            "text/csv"
+        )
 
-            fig, ax = plt.subplots(figsize=(8, 5))
-            cax = ax.imshow(corr)
-            plt.colorbar(cax)
+        # =========================
+        # VISUALIZATION
+        # =========================
+        st.subheader("📊 Risk Distribution")
 
-            ax.set_xticks(range(len(corr.columns)))
-            ax.set_yticks(range(len(corr.columns)))
-            ax.set_xticklabels(corr.columns, rotation=45)
-            ax.set_yticklabels(corr.columns)
-
-            st.pyplot(fig)
-
-        except Exception as e:
-            st.error(str(e))
+        fig, ax = plt.subplots()
+        ax.hist(y_test, bins=20)
+        ax.set_title("Risk Distribution")
+        st.pyplot(fig)
 
 else:
     st.info("⬅️ Upload dataset to start")
