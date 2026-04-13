@@ -1,135 +1,140 @@
-import streamlit as st
+import argparse
+import traceback
+
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
 
-from ml_pipeline import train_models
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
 
-st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
 
-st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Dashboard • Analysis • ML • Risk Scoring Engine")
+from sklearn.metrics import accuracy_score, classification_report
+
+from imblearn.over_sampling import SMOTE
+
+
+print("\n🚀 ML PIPELINE STARTED")
+
 
 # =========================
-# UPLOAD
+# LOAD DATA
 # =========================
-file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+def load_data(path):
+    print("\n📥 Loading data...")
+    df = pd.read_csv(path)
+    print("Shape:", df.shape)
+    return df
 
-if file:
 
-    df = pd.read_csv(file)
+# =========================
+# PREPROCESS
+# =========================
+def preprocess(X):
+    cat_cols = X.select_dtypes(include=["object"]).columns
+    num_cols = X.select_dtypes(exclude=["object"]).columns
 
-    # =========================
-    # OVERVIEW
-    # =========================
-    st.subheader("📊 Dataset Overview")
+    print("\n🔧 Categorical:", list(cat_cols))
+    print("🔧 Numerical:", list(num_cols))
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Rows", df.shape[0])
-    c2.metric("Columns", df.shape[1])
-    c3.metric("Missing", int(df.isnull().sum().sum()))
-    c4.metric("Numeric", df.select_dtypes(include="number").shape[1])
+    return ColumnTransformer([
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+        ("num", "passthrough", num_cols)
+    ])
 
-    st.dataframe(df.head())
 
-    # =========================
-    # TARGET
-    # =========================
-    target = st.selectbox("Select Target Column (Risk)", df.columns)
+# =========================
+# MODELS
+# =========================
+def get_models():
+    return {
+        "LogisticRegression": LogisticRegression(max_iter=1000),
+        "RandomForest": RandomForestClassifier(n_estimators=200),
+        "SVM": SVC()
+    }
 
-    if st.button("🚀 Run Full Analysis"):
 
-        # =========================
-        # TRAIN MODELS
-        # =========================
-        results, best_name, best_model, X_processed = train_models(df, target)
+# =========================
+# MAIN PIPELINE
+# =========================
+def main(data_path, target):
+    try:
+        df = load_data(data_path)
 
-        st.success(f"🏆 Best Model: {best_name}")
+        print("\n📊 Columns:", list(df.columns))
 
-        # =========================
-        # MODEL COMPARISON
-        # =========================
-        st.subheader("📊 Model Comparison")
+        if target not in df.columns:
+            raise Exception(f"Target '{target}' not found in dataset!")
 
-        results_df = pd.DataFrame(results).T
-        st.dataframe(results_df)
+        X = df.drop(columns=[target])
+        y = df[target]
 
-        fig, ax = plt.subplots()
-        results_df["accuracy"].plot(kind="bar", ax=ax)
-        st.pyplot(fig)
+        print("\n📊 Class distribution:")
+        print(y.value_counts())
 
-        # =========================
-        # RISK DISTRIBUTION
-        # =========================
-        st.subheader("🌊 Risk Distribution")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y,
+            test_size=0.2,
+            random_state=42,
+            stratify=y
+        )
 
-        if df[target].dtype == "object":
-            encoded = df[target].astype("category").cat.codes
-        else:
-            encoded = pd.to_numeric(df[target], errors="coerce")
+        preprocessor = preprocess(X)
 
-        fig, ax = plt.subplots()
-        ax.hist(encoded.dropna(), bins=20)
-        st.pyplot(fig)
+        print("\n⚙️ Encoding...")
+        X_train_enc = preprocessor.fit_transform(X_train)
+        X_test_enc = preprocessor.transform(X_test)
 
-        # =========================
-        # CORRELATION MATRIX (AUTO SAFE)
-        # =========================
-        st.subheader("🔥 Correlation Matrix")
+        print("\n⚖️ Applying SMOTE...")
+        smote = SMOTE(random_state=42)
+        X_train_bal, y_train_bal = smote.fit_resample(X_train_enc, y_train)
 
-        corr_df = X_processed.copy()
-        corr_df["target"] = pd.factorize(df[target])[0]
+        models = get_models()
 
-        if corr_df.shape[1] < 2:
-            st.warning("Not enough numeric features")
-        else:
-            corr = corr_df.corr()
+        best_acc = 0
+        best_model_name = ""
+        best_model = None
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            cax = ax.imshow(corr)
-            plt.colorbar(cax)
+        for name, model in models.items():
+            print(f"\n🤖 Training {name}...")
 
-            ax.set_xticks(range(len(corr.columns)))
-            ax.set_yticks(range(len(corr.columns)))
-            ax.set_xticklabels(corr.columns, rotation=45)
-            ax.set_yticklabels(corr.columns)
+            model.fit(X_train_bal, y_train_bal)
+            preds = model.predict(X_test_enc)
 
-            st.pyplot(fig)
+            acc = accuracy_score(y_test, preds)
 
-        # =========================
-        # 🎯 RISK SCORE ENGINE
-        # =========================
-        st.subheader("🎯 Microplastic Risk Score Engine")
+            print(f"\n📊 {name} Accuracy: {acc:.4f}")
+            print(classification_report(y_test, preds))
 
-        input_data = {}
+            if acc > best_acc:
+                best_acc = acc
+                best_model_name = name
+                best_model = model
 
-        st.write("Enter environmental parameters:")
+        print("\n🏆 BEST MODEL:", best_model_name)
+        print("🏆 BEST ACCURACY:", best_acc)
 
-        for col in X_processed.columns:
-            input_data[col] = st.number_input(f"{col}", value=0.0)
+        print("\n✅ PIPELINE COMPLETE SUCCESSFULLY")
 
-        if st.button("Predict Risk Score"):
+    except Exception as e:
+        print("\n❌ ERROR OCCURRED")
+        print(str(e))
+        traceback.print_exc()
+        input("\nPress Enter to exit...")
 
-            input_df = pd.DataFrame([input_data])
 
-            # Probability → Score
-            if hasattr(best_model, "predict_proba"):
-                prob = best_model.predict_proba(input_df)[0][1]
-            else:
-                prob = best_model.predict(input_df)[0]
+# =========================
+# ENTRY POINT
+# =========================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
 
-            risk_score = prob * 100
+    parser.add_argument("--data", required=True, help="Path to CSV dataset")
+    parser.add_argument("--target", required=True, help="Target column name")
 
-            # Risk Level
-            if risk_score < 33:
-                level = "🟢 Low"
-            elif risk_score < 66:
-                level = "🟡 Medium"
-            else:
-                level = "🔴 High"
+    args = parser.parse_args()
 
-            st.metric("Risk Score", f"{risk_score:.2f}/100")
-            st.progress(int(risk_score))
-            st.success(f"Risk Level: {level}")
-
-else:
-    st.info("⬅️ Upload a dataset to begin")
+    main(args.data, args.target)
