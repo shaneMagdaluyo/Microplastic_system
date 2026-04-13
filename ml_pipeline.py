@@ -11,53 +11,36 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
 
-# =========================
-# LOAD DATA
-# =========================
 def load_data(file):
     return pd.read_csv(file)
 
 
-# =========================
-# CLEAN DATA (ROBUST)
-# =========================
 def clean_data(df, target):
-
     df = df.copy()
 
     y = df[target]
     X = df.drop(columns=[target])
 
-    # encode target safely
     if y.dtype == "object":
         y = LabelEncoder().fit_transform(y.astype(str))
 
-    # encode features safely
     for col in X.columns:
         if X[col].dtype == "object":
             X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
-    # fill missing values
     X = SimpleImputer(strategy="mean").fit_transform(X)
     X = pd.DataFrame(X)
 
     return X, y
 
 
-# =========================
-# TRAIN MODELS (100% SAFE)
-# =========================
 def train_models(df, target):
-
     X, y = clean_data(df, target)
-
     y = pd.Series(y)
 
-    # safety check
     if y.nunique() < 2:
-        raise ValueError("❌ Target must have at least 2 classes")
+        raise ValueError("Target must have at least 2 classes")
 
-    # auto stratify safety
     stratify = y if y.value_counts().min() >= 2 else None
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -97,8 +80,5 @@ def train_models(df, target):
     return results, best_name, best_model
 
 
-# =========================
-# SAVE MODEL
-# =========================
 def save_model(model):
     joblib.dump(model, "best_model.pkl")
