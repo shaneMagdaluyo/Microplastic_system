@@ -6,13 +6,11 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
-# RISK MATRIX ENGINE (FIXED)
+# RISK MATRIX ENGINE (WITH NAME)
 # =========================
 def create_risk_matrix(series):
 
     numeric = pd.to_numeric(series, errors="coerce")
-
-    # Keep only valid values
     numeric = numeric.dropna()
 
     if len(numeric) < 3:
@@ -41,6 +39,7 @@ def create_risk_matrix(series):
     level = score.apply(classify)
 
     return pd.DataFrame({
+        "Sample Name": [f"Sample {i+1}" for i in range(len(numeric))],
         "Raw Value": numeric.values,
         "Risk Score (0–100)": score.values,
         "Risk Level": level.values
@@ -104,7 +103,6 @@ if file:
 
         col1, col2 = st.columns(2)
 
-        # Object target
         if target_data.dtype == "object":
 
             counts = target_data.value_counts()
@@ -115,7 +113,6 @@ if file:
             ax.pie(counts, labels=counts.index, autopct="%1.1f%%")
             col2.pyplot(fig)
 
-        # Numeric target
         else:
 
             clean = pd.to_numeric(target_data, errors="coerce").dropna()
@@ -141,7 +138,6 @@ if file:
 
             col3, col4 = st.columns(2)
 
-            # Risk level counts
             level_counts = risk_df["Risk Level"].value_counts()
 
             order = ["Low", "Medium", "High", "Critical"]
@@ -153,17 +149,25 @@ if file:
             ax.pie(level_counts, labels=level_counts.index, autopct="%1.1f%%")
             col4.pyplot(fig)
 
-            # TABLE
+            # =========================
+            # TABLE (WITH SAMPLE NAME)
+            # =========================
             st.subheader("📊 Risk Matrix Table")
+
             st.dataframe(risk_df, use_container_width=True)
 
+            # =========================
             # TOP RISKS
+            # =========================
             st.subheader("🏆 Highest Risk Samples")
+
             st.dataframe(
                 risk_df.sort_values("Risk Score (0–100)", ascending=False).head(10)
             )
 
+            # =========================
             # INTERPRETATION
+            # =========================
             st.markdown("""
             ### 📌 Risk Interpretation Matrix
 
