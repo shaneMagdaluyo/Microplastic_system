@@ -1,85 +1,135 @@
+import streamlit as st
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from sklearn.impute import SimpleImputer
+from ml_pipeline import train_models
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
-from sklearn.metrics import accuracy_score
-
+st.title("🌊 Microplastic Risk Intelligence System")
+st.caption("Dashboard • Analysis • ML • Risk Scoring Engine")
 
 # =========================
-# PREPROCESS DATA
+# UPLOAD
 # =========================
-def preprocess_data(df, target):
+file = st.file_uploader("Upload CSV Dataset", type=["csv"])
 
-    df = df.copy()
+if file:
 
-    # Encode target if needed
-    if df[target].dtype == "object":
-        df[target] = LabelEncoder().fit_transform(df[target].astype(str))
+    df = pd.read_csv(file)
 
-    y = df[target]
-    X = df.drop(columns=[target])
+    # =========================
+    # OVERVIEW
+    # =========================
+    st.subheader("📊 Dataset Overview")
 
-    # Encode categorical features
-    for col in X.columns:
-        if X[col].dtype == "object":
-            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows", df.shape[0])
+    c2.metric("Columns", df.shape[1])
+    c3.metric("Missing", int(df.isnull().sum().sum()))
+    c4.metric("Numeric", df.select_dtypes(include="number").shape[1])
 
-    # Convert to numeric safely
-    X = X.apply(pd.to_numeric, errors="coerce")
+    st.dataframe(df.head())
 
-    # Fill missing values
-    imputer = SimpleImputer(strategy="mean")
-    X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns)
+    # =========================
+    # TARGET
+    # =========================
+    target = st.selectbox("Select Target Column (Risk)", df.columns)
 
-    return X, y
+    if st.button("🚀 Run Full Analysis"):
 
+        # =========================
+        # TRAIN MODELS
+        # =========================
+        results, best_name, best_model, X_processed = train_models(df, target)
 
-# =========================
-# TRAIN MODELS
-# =========================
-def train_models(df, target):
+        st.success(f"🏆 Best Model: {best_name}")
 
-    X, y = preprocess_data(df, target)
+        # =========================
+        # MODEL COMPARISON
+        # =========================
+        st.subheader("📊 Model Comparison")
 
-    if len(np.unique(y)) < 2:
-        raise ValueError("Target must have at least 2 classes")
+        results_df = pd.DataFrame(results).T
+        st.dataframe(results_df)
 
-    stratify = y if pd.Series(y).value_counts().min() >= 2 else None
+        fig, ax = plt.subplots()
+        results_df["accuracy"].plot(kind="bar", ax=ax)
+        st.pyplot(fig)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
-        test_size=0.2,
-        random_state=42,
-        stratify=stratify
-    )
+        # =========================
+        # RISK DISTRIBUTION
+        # =========================
+        st.subheader("🌊 Risk Distribution")
 
-    models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
-        "Random Forest": RandomForestClassifier(),
-        "Gradient Boosting": GradientBoostingClassifier()
-    }
+        if df[target].dtype == "object":
+            encoded = df[target].astype("category").cat.codes
+        else:
+            encoded = pd.to_numeric(df[target], errors="coerce")
 
-    results = {}
-    best_model = None
-    best_name = ""
-    best_acc = 0
+        fig, ax = plt.subplots()
+        ax.hist(encoded.dropna(), bins=20)
+        st.pyplot(fig)
 
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
+        # =========================
+        # CORRELATION MATRIX (AUTO SAFE)
+        # =========================
+        st.subheader("🔥 Correlation Matrix")
 
-        acc = accuracy_score(y_test, preds)
-        results[name] = {"accuracy": acc}
+        corr_df = X_processed.copy()
+        corr_df["target"] = pd.factorize(df[target])[0]
 
-        if acc > best_acc:
-            best_acc = acc
-            best_model = model
-            best_name = name
+        if corr_df.shape[1] < 2:
+            st.warning("Not enough numeric features")
+        else:
+            corr = corr_df.corr()
 
-    return results, best_name, best_model, X
+            fig, ax = plt.subplots(figsize=(10, 6))
+            cax = ax.imshow(corr)
+            plt.colorbar(cax)
+
+            ax.set_xticks(range(len(corr.columns)))
+            ax.set_yticks(range(len(corr.columns)))
+            ax.set_xticklabels(corr.columns, rotation=45)
+            ax.set_yticklabels(corr.columns)
+
+            st.pyplot(fig)
+
+        # =========================
+        # 🎯 RISK SCORE ENGINE
+        # =========================
+        st.subheader("🎯 Microplastic Risk Score Engine")
+
+        input_data = {}
+
+        st.write("Enter environmental parameters:")
+
+        for col in X_processed.columns:
+            input_data[col] = st.number_input(f"{col}", value=0.0)
+
+        if st.button("Predict Risk Score"):
+
+            input_df = pd.DataFrame([input_data])
+
+            # Probability → Score
+            if hasattr(best_model, "predict_proba"):
+                prob = best_model.predict_proba(input_df)[0][1]
+            else:
+                prob = best_model.predict(input_df)[0]
+
+            risk_score = prob * 100
+
+            # Risk Level
+            if risk_score < 33:
+                level = "🟢 Low"
+            elif risk_score < 66:
+                level = "🟡 Medium"
+            else:
+                level = "🔴 High"
+
+            st.metric("Risk Score", f"{risk_score:.2f}/100")
+            st.progress(int(risk_score))
+            st.success(f"Risk Level: {level}")
+
+else:
+    st.info("⬅️ Upload a dataset to begin")
