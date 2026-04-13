@@ -8,9 +8,9 @@ from ml_pipeline import load_data, train_models
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Microplastic Dashboard", layout="wide")
+st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
-st.title("🌊 Microplastic Research Dashboard")
+st.title("🌊 Microplastic Risk Intelligence System")
 
 
 # =========================
@@ -18,31 +18,34 @@ st.title("🌊 Microplastic Research Dashboard")
 # =========================
 file = st.file_uploader("Upload CSV", type=["csv"])
 
+
 if file:
 
     df = load_data(file)
 
-    st.subheader("📊 Dataset Preview")
-    st.dataframe(df.head())
+    # =========================
+    # OVERVIEW
+    # =========================
+    st.subheader("📊 Overview")
 
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows", df.shape[0])
+    c2.metric("Columns", df.shape[1])
+    c3.metric("Missing Values", int(df.isnull().sum().sum()))
+    c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
 
-    target = st.selectbox("Select Target Column", df.columns)
+    target = st.selectbox("🎯 Select Target Column", df.columns)
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Overview",
-        "🔬 Analysis",
-        "🤖 ML Models",
-        "🧾 Article Comparison"
-    ])
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
 
 
     # =========================
-    # TAB 1 - OVERVIEW
+    # TAB 1 - DASHBOARD
     # =========================
     with tab1:
 
-        st.metric("Rows", df.shape[0])
-        st.metric("Columns", df.shape[1])
+        st.subheader("Dataset Preview")
+        st.dataframe(df.head())
 
         st.subheader("Risk Distribution")
 
@@ -51,27 +54,27 @@ if file:
         if df[target].dtype == "object":
             df[target].value_counts().plot(kind="bar", ax=ax)
         else:
-            ax.hist(pd.to_numeric(df[target], errors="coerce"), bins=20)
+            ax.hist(pd.to_numeric(df[target], errors="coerce").dropna(), bins=20)
 
         st.pyplot(fig)
 
 
     # =========================
-    # TAB 2 - CORRELATION
+    # TAB 2 - CORRELATION MATRIX (FIXED)
     # =========================
     with tab2:
 
         st.subheader("🔥 Correlation Matrix")
 
-        num = df.select_dtypes(include="number")
+        numeric_df = df.select_dtypes(include="number").copy()
 
-        num = num.dropna(axis=1, how="all")
-        num = num.loc[:, num.nunique() > 1]
+        numeric_df = numeric_df.dropna(axis=1, how="all")
+        numeric_df = numeric_df.loc[:, numeric_df.nunique() > 1]
 
-        if num.shape[1] < 2:
-            st.warning("Not enough numeric data")
+        if numeric_df.shape[1] < 2:
+            st.warning("Not enough numeric features")
         else:
-            corr = num.corr().fillna(0)
+            corr = numeric_df.corr().fillna(0)
 
             fig, ax = plt.subplots(figsize=(8, 5))
             im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
@@ -98,61 +101,13 @@ if file:
 
             st.success(f"Best Model: {best_name}")
 
-            res_df = pd.DataFrame(results).T
-            st.dataframe(res_df)
+            results_df = pd.DataFrame(results).T
+            st.dataframe(results_df)
 
             fig, ax = plt.subplots()
-            res_df["accuracy"].plot(kind="bar", ax=ax)
-            st.pyplot(fig)
-
-
-    # =========================
-    # TAB 4 - ARTICLE COMPARISON
-    # =========================
-    with tab4:
-
-        st.subheader("🧾 Microplastic Article Comparison")
-
-        # detect article column
-        article_col = None
-        for col in df.columns:
-            if "article" in col.lower() or "source" in col.lower():
-                article_col = col
-                break
-
-        if article_col is None:
-            st.warning("No Article/Source column found")
-        else:
-
-            numeric_cols = df.select_dtypes(include="number").columns.tolist()
-
-            metric = st.selectbox("Select Metric", numeric_cols)
-
-            comparison = df.groupby(article_col)[metric].agg([
-                "mean", "min", "max", "count"
-            ])
-
-            st.dataframe(comparison)
-
-            st.subheader("📊 Mean Comparison")
-
-            fig, ax = plt.subplots(figsize=(10, 5))
-            comparison["mean"].plot(kind="bar", ax=ax)
-            ax.set_title(f"{metric} by Article")
-            st.pyplot(fig)
-
-            st.subheader("🏆 Top Polluted Articles")
-
-            st.dataframe(comparison.sort_values("mean", ascending=False).head(5))
-
-            st.subheader("📦 Distribution by Article")
-
-            fig, ax = plt.subplots(figsize=(10, 5))
-            df.boxplot(column=metric, by=article_col, ax=ax)
-            plt.xticks(rotation=45)
-
+            results_df["accuracy"].plot(kind="bar", ax=ax)
+            ax.set_title("Model Comparison")
             st.pyplot(fig)
 
 else:
-    st.info("⬅️ Upload CSV file to start")
-    
+    st.info("⬅️ Upload a CSV file to start")
