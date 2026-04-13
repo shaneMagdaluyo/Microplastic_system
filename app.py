@@ -3,8 +3,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, classification_report
 
 from ml_pipeline import load_data, train_models, save_model
 
@@ -97,11 +101,67 @@ def run_kmeans(df, k=3):
 
 
 # =========================
+# CLASSIFICATION (NEW)
+# =========================
+def run_classification(df, target):
+
+    df = df.copy()
+    df = df.dropna(subset=[target])
+
+    # encode target if needed
+    le = LabelEncoder()
+    if df[target].dtype == "object":
+        df[target] = le.fit_transform(df[target].astype(str))
+
+    y = df[target]
+    X = df.drop(columns=[target])
+
+    X = pd.get_dummies(X, drop_first=True)
+    X = X.fillna(0)
+
+    if X.shape[1] < 1:
+        return None, None
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    results = {}
+
+    # RANDOM FOREST
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(X_train, y_train)
+    rf_pred = rf.predict(X_test)
+
+    results["Random Forest"] = {
+        "accuracy": accuracy_score(y_test, rf_pred),
+        "report": classification_report(y_test, rf_pred)
+    }
+
+    # SVM
+    svm = SVC(kernel="rbf")
+    svm.fit(X_train, y_train)
+    svm_pred = svm.predict(X_test)
+
+    results["SVM"] = {
+        "accuracy": accuracy_score(y_test, svm_pred),
+        "report": classification_report(y_test, svm_pred)
+    }
+
+    best_name = max(results, key=lambda x: results[x]["accuracy"])
+    best_model = rf if best_name == "Random Forest" else svm
+
+    return results, best_name, best_model
+
+
+# =========================
 # APP CONFIG
 # =========================
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
+st.caption("FULL AI DASHBOARD (Risk + ML + Clustering + Classification)")
+
 
 # =========================
 # UPLOAD
@@ -127,8 +187,9 @@ if file:
         "Dashboard",
         "Risk Analysis",
         "ML Models",
-        "Clustering"
+        "Clustering + Classification"
     ])
+
 
     # =========================
     # DASHBOARD
@@ -154,13 +215,24 @@ if file:
 
         df_risk, threshold = high_risk_engine(df, target)
 
+        st.info(f"High Risk Threshold: {threshold:.2f}")
+
         st.bar_chart(df_risk["Risk Category"].value_counts())
 
-        st.dataframe(df_risk)
+        st.dataframe(df_risk[df_risk["Risk Category"] == "HIGH RISK"])
+
+
+        st.subheader("Risk Level Matrix")
+
+        risk_df = create_risk_matrix(df[target], df[name_col])
+
+        if risk_df is not None:
+            st.bar_chart(risk_df["Risk Level"].value_counts())
+            st.dataframe(risk_df)
 
 
     # =========================
-    # RISK ANALYSIS (FIXED HERE)
+    # RISK ANALYSIS
     # =========================
     with tab2:
 
@@ -170,7 +242,6 @@ if file:
 
         df_clean = df.dropna(subset=[feature, target]).copy()
 
-        # 🔥 FIX: FORCE NUMERIC TARGET BEFORE GROUPBY
         df_clean[target] = pd.to_numeric(df_clean[target], errors="coerce")
 
         if pd.api.types.is_numeric_dtype(df_clean[feature]):
@@ -181,27 +252,22 @@ if file:
             }).dropna()
 
             if len(plot_df) > 0:
-
                 fig, ax = plt.subplots()
                 ax.scatter(plot_df["Feature"], plot_df["Risk"])
-                ax.set_xlabel(feature)
-                ax.set_ylabel("Risk")
                 st.pyplot(fig)
 
         else:
 
-            # 🔥 FIXED GROUPBY (NO TYPE ERROR)
             grouped = (
-                df_clean
-                .groupby(feature)[target]
+                df_clean.groupby(feature)[target]
                 .mean()
                 .dropna()
+                .reset_index()
             )
 
-            if not grouped.empty:
+            grouped.columns = [feature, "Risk"]
 
-                grouped = grouped.reset_index()
-                grouped.columns = [feature, "Risk"]
+            if len(grouped) > 0:
 
                 st.bar_chart(grouped.set_index(feature))
 
@@ -211,8 +277,6 @@ if file:
                 st.write("⬇️ Lowest Risk:",
                          grouped.loc[grouped["Risk"].idxmin(), feature])
 
-            else:
-                st.warning("No valid grouped data")
 
     # =========================
     # ML MODELS
@@ -237,7 +301,7 @@ if file:
 
 
     # =========================
-    # CLUSTERING
+    # CLUSTERING + CLASSIFICATION
     # =========================
     with tab4:
 
@@ -253,10 +317,36 @@ if file:
 
             fig, ax = plt.subplots()
             ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
-
             st.pyplot(fig)
 
             st.dataframe(result)
+
+        st.divider()
+
+        st.subheader("Classification (SVM vs Random Forest)")
+
+        if st.button("Run Classification"):
+
+            results, best_name, best_model = run_classification(df, target)
+
+            if results is None:
+                st.warning("Not enough data for classification")
+            else:
+
+                acc_df = pd.DataFrame({
+                    model: [results[model]["accuracy"]]
+                    for model in results
+                }).T
+
+                acc_df.columns = ["Accuracy"]
+
+                st.bar_chart(acc_df)
+
+                st.success(f"Best Model: {best_name}")
+
+                for model in results:
+                    with st.expander(model):
+                        st.text(results[model]["report"])
 
 else:
     st.info("Upload a CSV to begin")
