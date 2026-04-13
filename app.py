@@ -11,7 +11,7 @@ from ml_pipeline import load_data, train_models, save_model
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Advanced Dashboard with Analytics & Machine Learning")
+st.caption("Professional Dashboard with ML & Risk Analytics")
 
 
 # =========================
@@ -22,12 +22,15 @@ file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 
 # =========================
-# MAIN APP
+# MAIN
 # =========================
 if file:
 
     df = load_data(file)
 
+    # =========================
+    # DASHBOARD KPIs
+    # =========================
     st.subheader("📊 Overview")
 
     c1, c2, c3, c4 = st.columns(4)
@@ -36,83 +39,147 @@ if file:
     c3.metric("Missing Values", int(df.isnull().sum().sum()))
     c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
 
+    st.divider()
+
+    # TARGET
     target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
 
+    # TABS
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
 
-
-    # =========================
-    # TAB 1
-    # =========================
+    # ==================================================
+    # TAB 1: DASHBOARD
+    # ==================================================
     with tab1:
 
-        st.subheader("Dataset Preview")
-        st.dataframe(df.head())
+        st.subheader("📌 Dataset Preview")
+        st.dataframe(df.head(), use_container_width=True)
 
-        st.subheader("Risk Distribution")
+        st.subheader("🌊 Risk Distribution")
 
-        fig, ax = plt.subplots()
+        target_data = df[target]
 
-        if df[target].dtype == "object":
-            df[target].value_counts().plot(kind="bar", ax=ax)
+        col1, col2 = st.columns(2)
+
+        # FIXED HISTOGRAM ERROR HERE
+        if target_data.dtype == "object":
+
+            counts = target_data.value_counts()
+
+            col1.bar_chart(counts)
+
+            fig, ax = plt.subplots()
+            ax.pie(counts, labels=counts.index, autopct="%1.1f%%")
+            col2.pyplot(fig)
+
         else:
-            ax.hist(pd.to_numeric(df[target], errors="coerce").dropna(), bins=20)
+            clean = pd.to_numeric(target_data, errors="coerce").dropna()
 
-        st.pyplot(fig)
+            fig, ax = plt.subplots()
+            ax.hist(clean, bins=20)
+            col1.pyplot(fig)
 
+            fig2, ax2 = plt.subplots()
+            ax2.boxplot(clean)
+            col2.pyplot(fig2)
 
-    # =========================
-    # TAB 2 (CORRELATION FIXED)
-    # =========================
+    # ==================================================
+    # TAB 2: FEATURE ANALYSIS (🔥 FIXED)
+    # ==================================================
     with tab2:
 
-        st.subheader("🔥 Correlation Matrix")
+        st.subheader("🔬 Feature Comparison by Risk")
 
-        num_df = df.select_dtypes(include="number").copy()
-        num_df = num_df.dropna(axis=1, how="all")
-        num_df = num_df.loc[:, num_df.nunique() > 1]
+        cols = df.columns.tolist()
+        cols.remove(target)
 
-        if num_df.shape[1] < 2:
-            st.warning("Not enough numeric features")
+        feature = st.selectbox("Select Feature", cols)
+
+        col1, col2 = st.columns(2)
+
+        # NUMERIC FEATURE
+        if pd.api.types.is_numeric_dtype(df[feature]):
+
+            agg = st.selectbox("Aggregation", ["Mean", "Median"])
+
+            try:
+                if agg == "Mean":
+                    grouped = df.groupby(target)[feature].mean()
+                else:
+                    grouped = df.groupby(target)[feature].median()
+
+                col1.bar_chart(grouped)
+
+                fig, ax = plt.subplots()
+                df.boxplot(column=feature, by=target, ax=ax)
+                col2.pyplot(fig)
+
+                st.markdown(f"""
+                ### 📌 Insights
+                - Highest value group: **{grouped.idxmax()}**
+                - Lowest value group: **{grouped.idxmin()}**
+                """)
+
+            except Exception as e:
+                st.warning(str(e))
+
+        # CATEGORICAL FEATURE
         else:
 
-            corr = num_df.corr().fillna(0)
+            try:
+                cross = pd.crosstab(df[target], df[feature])
 
-            fig, ax = plt.subplots(figsize=(8, 5))
-            im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
+                col1.bar_chart(cross)
 
-            plt.colorbar(im, ax=ax)
+                st.markdown(f"""
+                ### 📌 Insights
+                - Most common: **{df[feature].value_counts().idxmax()}**
+                - Total categories: **{df[feature].nunique()}**
+                """)
+
+            except Exception as e:
+                st.warning(str(e))
+
+        st.divider()
+
+        # CORRELATION
+        st.subheader("🔥 Correlation Matrix")
+
+        corr = df.select_dtypes(include="number").corr()
+
+        if not corr.empty:
+            fig, ax = plt.subplots()
+            cax = ax.imshow(corr)
+            plt.colorbar(cax)
 
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
-
             ax.set_xticklabels(corr.columns, rotation=90)
             ax.set_yticklabels(corr.columns)
 
             st.pyplot(fig)
 
-
-    # =========================
-    # TAB 3 (ML MODELS)
-    # =========================
+    # ==================================================
+    # TAB 3: ML
+    # ==================================================
     with tab3:
 
         st.subheader("🤖 Model Training")
 
         if st.button("Train Models"):
 
-            with st.spinner("Training models..."):
+            with st.spinner("Training..."):
 
                 try:
                     results, best_name, best_model = train_models(df, target)
 
-                    st.success("Training Completed")
+                    st.success("Training Done")
 
-                    results_df = pd.DataFrame(results).T
-                    st.dataframe(results_df)
+                    names = list(results.keys())
+                    accs = [results[n]["accuracy"] for n in names]
 
                     fig, ax = plt.subplots()
-                    results_df["accuracy"].plot(kind="bar", ax=ax)
+                    ax.bar(names, accs)
                     st.pyplot(fig)
 
                     st.success(f"Best Model: {best_name}")
@@ -123,7 +190,7 @@ if file:
                             st.text(results[name]["report"])
 
                     save_model(best_model)
-                    st.success("Model Saved Successfully")
+                    st.success("Model Saved!")
 
                 except Exception as e:
                     st.error(str(e))
