@@ -47,7 +47,7 @@ def create_risk_matrix(series, name_series):
 
 
 # =========================
-# K-MEANS (STABLE)
+# K-MEANS
 # =========================
 def run_kmeans(df, k=3):
 
@@ -86,7 +86,6 @@ def run_kmeans(df, k=3):
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Fully Fixed Dashboard (Stable + Clean ML + Clustering)")
 
 
 # =========================
@@ -99,41 +98,31 @@ if file:
     df = load_data(file)
 
     st.subheader("📊 Overview")
+    st.dataframe(df.head())
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Rows", df.shape[0])
-    c2.metric("Columns", df.shape[1])
-    c3.metric("Missing", int(df.isnull().sum().sum()))
-    c4.metric("Numeric", df.select_dtypes(include="number").shape[1])
-
-    st.divider()
-
-    target = st.sidebar.selectbox("🎯 Risk Column", df.columns)
-    name_col = st.sidebar.selectbox("🏷️ Name Column", df.columns)
+    target = st.sidebar.selectbox("Risk Column", df.columns)
+    name_col = st.sidebar.selectbox("Name Column", df.columns)
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Dashboard",
-        "🔬 Analysis",
-        "🤖 ML Models",
-        "🧩 Clustering"
+        "Dashboard",
+        "Analysis",
+        "ML Models",
+        "Clustering"
     ])
 
+
     # =========================
-    # TAB 1 - DASHBOARD
+    # DASHBOARD
     # =========================
     with tab1:
 
-        st.subheader("📌 Data Preview")
-        st.dataframe(df.head(), use_container_width=True)
-
-        st.subheader("🌊 Risk Distribution")
+        st.subheader("Risk Distribution")
 
         clean = pd.to_numeric(df[target], errors="coerce").dropna()
 
+        col1, col2 = st.columns(2)
+
         if len(clean) > 0:
-
-            col1, col2 = st.columns(2)
-
             fig, ax = plt.subplots()
             ax.hist(clean, bins=20)
             col1.pyplot(fig)
@@ -142,11 +131,7 @@ if file:
             ax2.boxplot(clean)
             col2.pyplot(fig2)
 
-        else:
-            st.warning("Target is not numeric enough")
-
-
-        st.subheader("⚠️ Risk Matrix")
+        st.subheader("Risk Matrix")
 
         risk_df = create_risk_matrix(df[target], df[name_col])
 
@@ -154,26 +139,20 @@ if file:
             st.bar_chart(risk_df["Risk Level"].value_counts())
             st.dataframe(risk_df)
         else:
-            st.warning("Not enough data for risk matrix")
+            st.warning("Not enough data")
 
 
     # =========================
-    # TAB 2 - ANALYSIS
+    # ANALYSIS
     # =========================
     with tab2:
 
-        # =========================
-        # CORRELATION MATRIX (FIXED)
-        # =========================
-        st.subheader("🔥 Correlation Matrix")
+        st.subheader("Correlation Matrix")
 
-        num_df = df.select_dtypes(include="number").copy()
-        num_df = num_df.dropna(axis=1, how="all")
+        num_df = df.select_dtypes(include="number").dropna(axis=1, how="all")
         num_df = num_df.loc[:, num_df.nunique() > 1]
 
-        if num_df.shape[1] < 2:
-            st.warning("Not enough numeric features for correlation matrix")
-        else:
+        if num_df.shape[1] >= 2:
 
             corr = num_df.corr()
 
@@ -185,56 +164,76 @@ if file:
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
 
-            ax.set_xticklabels(corr.columns, rotation=45, ha="right")
+            ax.set_xticklabels(corr.columns, rotation=45)
             ax.set_yticklabels(corr.columns)
 
             st.pyplot(fig)
 
-        st.divider()
+        else:
+            st.warning("Not enough numeric features")
 
-        # =========================
-        # RISK COMPARISON (FIXED)
-        # =========================
-        st.subheader("⚖️ Risk Comparison")
+
+        st.subheader("Risk Comparison (FIXED)")
 
         feature = st.selectbox("Select Feature", df.columns)
 
         target_numeric = pd.to_numeric(df[target], errors="coerce")
 
+
+        # =========================
+        # NUMERIC FEATURE
+        # =========================
         if pd.api.types.is_numeric_dtype(df[feature]):
 
-            fig, ax = plt.subplots()
+            x = pd.to_numeric(df[feature], errors="coerce")
 
-            ax.scatter(
-                pd.to_numeric(df[feature], errors="coerce"),
-                target_numeric
-            )
+            plot_df = pd.DataFrame({
+                "Feature": x,
+                "Risk": target_numeric
+            }).dropna()
 
-            ax.set_xlabel(feature)
-            ax.set_ylabel("Risk")
+            if len(plot_df) > 0:
 
-            st.pyplot(fig)
+                fig, ax = plt.subplots()
+                ax.scatter(plot_df["Feature"], plot_df["Risk"])
 
+                ax.set_xlabel(feature)
+                ax.set_ylabel("Risk")
+
+                st.pyplot(fig)
+
+            else:
+                st.warning("No valid numeric data")
+
+        # =========================
+        # CATEGORICAL FEATURE
+        # =========================
         else:
 
-            grouped = df.groupby(feature)[target].apply(
-                lambda x: pd.to_numeric(x, errors="coerce").mean()
-            ).dropna()
+            grouped = df.copy()
+            grouped[target] = pd.to_numeric(grouped[target], errors="coerce")
+
+            grouped = grouped.groupby(feature)[target].mean().dropna()
 
             if len(grouped) == 0:
-                st.warning("No valid data for comparison")
+                st.warning("No valid grouped data")
             else:
-                st.bar_chart(grouped)
-                st.write("Highest Risk:", grouped.idxmax())
-                st.write("Lowest Risk:", grouped.idxmin())
+
+                grouped = grouped.reset_index()
+                grouped.columns = [feature, "Risk"]
+
+                st.bar_chart(grouped.set_index(feature))
+
+                st.write("Highest Risk:", grouped.loc[grouped["Risk"].idxmax(), feature])
+                st.write("Lowest Risk:", grouped.loc[grouped["Risk"].idxmin(), feature])
 
 
     # =========================
-    # TAB 3 - ML MODELS
+    # ML MODELS
     # =========================
     with tab3:
 
-        st.subheader("🤖 Model Training")
+        st.subheader("Model Training")
 
         if st.button("Train Models"):
 
@@ -243,12 +242,7 @@ if file:
 
                 st.success("Training Done")
 
-                results_df = pd.DataFrame(results).T
-                st.dataframe(results_df)
-
-                fig, ax = plt.subplots()
-                results_df["accuracy"].plot(kind="bar", ax=ax)
-                st.pyplot(fig)
+                st.dataframe(pd.DataFrame(results).T)
 
                 save_model(best_model)
 
@@ -259,13 +253,13 @@ if file:
 
 
     # =========================
-    # TAB 4 - CLUSTERING
+    # CLUSTERING
     # =========================
     with tab4:
 
-        st.subheader("🧩 K-Means Clustering")
+        st.subheader("K-Means Clustering")
 
-        k = st.slider("Number of Clusters", 2, 10, 3)
+        k = st.slider("Clusters", 2, 10, 3)
 
         if st.button("Run Clustering"):
 
@@ -274,19 +268,11 @@ if file:
             st.bar_chart(result["Cluster"].value_counts())
 
             fig, ax = plt.subplots()
-
-            scatter = ax.scatter(
-                result["PCA1"],
-                result["PCA2"],
-                c=result["Cluster"],
-                cmap="viridis"
-            )
-
-            plt.colorbar(scatter)
+            ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
 
             st.pyplot(fig)
 
             st.dataframe(result)
 
 else:
-    st.info("⬅️ Upload a CSV file to begin")
+    st.info("Upload a CSV to start")
