@@ -28,9 +28,6 @@ if file:
 
     df = load_data(file)
 
-    # =========================
-    # KPIs
-    # =========================
     st.subheader("📊 Overview")
 
     c1, c2, c3, c4 = st.columns(4)
@@ -39,193 +36,83 @@ if file:
     c3.metric("Missing Values", int(df.isnull().sum().sum()))
     c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
 
-    st.divider()
-
-    # TARGET
     target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
 
-    # TABS
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
 
-    # ==================================================
-    # TAB 1: DASHBOARD
-    # ==================================================
+
+    # =========================
+    # TAB 1
+    # =========================
     with tab1:
 
-        st.subheader("📌 Dataset Preview")
-        st.dataframe(df.head(), use_container_width=True)
+        st.subheader("Dataset Preview")
+        st.dataframe(df.head())
 
-        st.subheader("🌊 Risk Distribution")
+        st.subheader("Risk Distribution")
 
-        target_data = df[target]
+        fig, ax = plt.subplots()
 
-        col1, col2 = st.columns(2)
-
-        if target_data.dtype == "object":
-
-            counts = target_data.value_counts()
-
-            col1.bar_chart(counts)
-
-            fig, ax = plt.subplots()
-            ax.pie(counts, labels=counts.index, autopct="%1.1f%%")
-            col2.pyplot(fig)
-
+        if df[target].dtype == "object":
+            df[target].value_counts().plot(kind="bar", ax=ax)
         else:
-            clean = pd.to_numeric(target_data, errors="coerce").dropna()
+            ax.hist(pd.to_numeric(df[target], errors="coerce").dropna(), bins=20)
 
-            fig, ax = plt.subplots()
-            ax.hist(clean, bins=20)
-            col1.pyplot(fig)
+        st.pyplot(fig)
 
-            fig2, ax2 = plt.subplots()
-            ax2.boxplot(clean)
-            col2.pyplot(fig2)
 
-    # ==================================================
-    # TAB 2: ANALYSIS (🔥 FULLY FUNCTIONAL)
-    # ==================================================
+    # =========================
+    # TAB 2 (CORRELATION FIXED)
+    # =========================
     with tab2:
 
-        st.subheader("🔬 Feature Comparison by Risk")
-
-        cols = df.columns.tolist()
-        cols.remove(target)
-
-        feature = st.selectbox("Select Feature", cols)
-
-        col1, col2 = st.columns(2)
-
-        # NUMERIC
-        if pd.api.types.is_numeric_dtype(df[feature]):
-
-            agg = st.selectbox("Aggregation", ["Mean", "Median"])
-
-            try:
-                if agg == "Mean":
-                    grouped = df.groupby(target)[feature].mean()
-                else:
-                    grouped = df.groupby(target)[feature].median()
-
-                col1.bar_chart(grouped)
-
-                fig, ax = plt.subplots()
-                df.boxplot(column=feature, by=target, ax=ax)
-                col2.pyplot(fig)
-
-                st.markdown(f"""
-                ### 📌 Insights
-                - Highest: **{grouped.idxmax()}**
-                - Lowest: **{grouped.idxmin()}**
-                """)
-
-            except Exception as e:
-                st.warning(str(e))
-
-        # CATEGORICAL
-        else:
-
-            try:
-                cross = pd.crosstab(df[target], df[feature])
-                col1.bar_chart(cross)
-
-                st.markdown(f"""
-                ### 📌 Insights
-                - Most common: **{df[feature].value_counts().idxmax()}**
-                - Categories: **{df[feature].nunique()}**
-                """)
-
-            except Exception as e:
-                st.warning(str(e))
-
-        st.divider()
-
-        # ==================================================
-        # 🔥 CORRELATION MATRIX (ENHANCED)
-        # ==================================================
         st.subheader("🔥 Correlation Matrix")
 
         num_df = df.select_dtypes(include="number").copy()
+        num_df = num_df.dropna(axis=1, how="all")
+        num_df = num_df.loc[:, num_df.nunique() > 1]
 
         if num_df.shape[1] < 2:
             st.warning("Not enough numeric features")
         else:
 
-            method = st.selectbox(
-                "Correlation Method",
-                ["pearson", "spearman", "kendall"]
-            )
+            corr = num_df.corr().fillna(0)
 
-            num_df = num_df.fillna(num_df.mean())
-            corr = num_df.corr(method=method)
+            fig, ax = plt.subplots(figsize=(8, 5))
+            im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            cax = ax.imshow(corr)
-
-            plt.colorbar(cax)
+            plt.colorbar(im, ax=ax)
 
             ax.set_xticks(range(len(corr.columns)))
             ax.set_yticks(range(len(corr.columns)))
 
-            ax.set_xticklabels(corr.columns, rotation=45, ha="right")
+            ax.set_xticklabels(corr.columns, rotation=90)
             ax.set_yticklabels(corr.columns)
-
-            ax.set_title(f"{method.capitalize()} Correlation")
 
             st.pyplot(fig)
 
-            # STRONG RELATIONSHIPS
-            st.subheader("📌 Strong Relationships")
 
-            threshold = st.slider("Threshold", 0.5, 1.0, 0.7)
-
-            strong = []
-            for i in range(len(corr.columns)):
-                for j in range(i + 1, len(corr.columns)):
-                    val = corr.iloc[i, j]
-                    if abs(val) >= threshold:
-                        strong.append((corr.columns[i], corr.columns[j], val))
-
-            if strong:
-                for f1, f2, val in strong:
-                    st.write(f"{f1} ↔ {f2} = {val:.2f}")
-            else:
-                st.info("No strong correlations")
-
-            # TOP CORRELATIONS
-            st.subheader("🏆 Top Correlations")
-
-            top_corr = (
-                corr.abs()
-                .unstack()
-                .sort_values(ascending=False)
-            )
-
-            top_corr = top_corr[top_corr < 1].drop_duplicates().head(5)
-
-            st.write(top_corr)
-
-    # ==================================================
-    # TAB 3: ML
-    # ==================================================
+    # =========================
+    # TAB 3 (ML MODELS)
+    # =========================
     with tab3:
 
         st.subheader("🤖 Model Training")
 
         if st.button("Train Models"):
 
-            with st.spinner("Training..."):
+            with st.spinner("Training models..."):
 
                 try:
                     results, best_name, best_model = train_models(df, target)
 
-                    st.success("Training Complete")
+                    st.success("Training Completed")
 
-                    names = list(results.keys())
-                    accs = [results[n]["accuracy"] for n in names]
+                    results_df = pd.DataFrame(results).T
+                    st.dataframe(results_df)
 
                     fig, ax = plt.subplots()
-                    ax.bar(names, accs)
+                    results_df["accuracy"].plot(kind="bar", ax=ax)
                     st.pyplot(fig)
 
                     st.success(f"Best Model: {best_name}")
@@ -236,10 +123,10 @@ if file:
                             st.text(results[name]["report"])
 
                     save_model(best_model)
-                    st.success("Model Saved!")
+                    st.success("Model Saved Successfully")
 
                 except Exception as e:
                     st.error(str(e))
 
 else:
-    st.info("⬅️ Upload a CSV file to begin")
+    st.info("⬅️ Upload a CSV file to start")
