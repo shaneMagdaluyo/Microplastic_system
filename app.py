@@ -6,25 +6,41 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
-# RISK LEVEL FUNCTION
+# RISK MATRIX ENGINE
 # =========================
-def create_risk_level(series):
+def create_risk_matrix(series):
+
     numeric = pd.to_numeric(series, errors="coerce")
 
-    q1 = numeric.quantile(0.33)
-    q2 = numeric.quantile(0.66)
+    min_val = numeric.min()
+    max_val = numeric.max()
 
-    def label(x):
+    # Normalize to 0–100
+    if max_val == min_val:
+        score = pd.Series([50] * len(numeric))
+    else:
+        score = ((numeric - min_val) / (max_val - min_val)) * 100
+
+    # Risk classification
+    def classify(x):
         if pd.isna(x):
             return "Unknown"
-        elif x <= q1:
+        elif x < 25:
             return "Low"
-        elif x <= q2:
+        elif x < 50:
             return "Medium"
-        else:
+        elif x < 75:
             return "High"
+        else:
+            return "Critical"
 
-    return numeric.apply(label)
+    level = score.apply(classify)
+
+    return pd.DataFrame({
+        "Raw Value": numeric,
+        "Risk Score (0–100)": score,
+        "Risk Level": level
+    })
 
 
 # =========================
@@ -65,9 +81,6 @@ if file:
 
     # TARGET
     target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
-
-    # RISK LEVEL (GLOBAL)
-    risk_level = create_risk_level(df[target])
 
     # TABS
     tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
@@ -110,13 +123,16 @@ if file:
             col2.pyplot(fig2)
 
         # =========================
-        # RISK LEVEL SECTION
+        # ⚠️ RISK MATRIX SECTION
         # =========================
-        st.subheader("⚠️ Risk Level Classification")
+        st.subheader("⚠️ Risk Matrix Analysis")
 
-        level_counts = risk_level.value_counts()
+        risk_df = create_risk_matrix(df[target])
 
         col3, col4 = st.columns(2)
+
+        # Distribution
+        level_counts = risk_df["Risk Level"].value_counts()
 
         col3.bar_chart(level_counts)
 
@@ -124,11 +140,26 @@ if file:
         ax.pie(level_counts, labels=level_counts.index, autopct="%1.1f%%")
         col4.pyplot(fig)
 
+        # Table
+        st.subheader("📊 Risk Matrix Table")
+        st.dataframe(risk_df, use_container_width=True)
+
+        # Top risks
+        st.subheader("🏆 Highest Risk Samples")
+        st.dataframe(
+            risk_df.sort_values("Risk Score (0–100)", ascending=False).head(10)
+        )
+
+        # Interpretation
         st.markdown("""
-        ### 📊 Risk Interpretation
-        - 🟢 Low → Safe contamination level  
-        - 🟡 Medium → Moderate risk  
-        - 🔴 High → Dangerous microplastic concentration  
+        ### 📌 Risk Interpretation Matrix
+
+        | Level | Score Range | Meaning |
+        |------|------------|---------|
+        | 🟢 Low | 0–24 | Safe environmental level |
+        | 🟡 Medium | 25–49 | Moderate contamination |
+        | 🟠 High | 50–74 | Elevated microplastic risk |
+        | 🔴 Critical | 75–100 | Dangerous pollution level |
         """)
 
 
@@ -189,9 +220,7 @@ if file:
 
         st.divider()
 
-        # =========================
         # CORRELATION MATRIX
-        # =========================
         st.subheader("🔥 Correlation Matrix")
 
         num_df = df.select_dtypes(include="number").copy()
