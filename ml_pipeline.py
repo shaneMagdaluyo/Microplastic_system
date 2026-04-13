@@ -19,20 +19,25 @@ def preprocess_data(df, target):
 
     df = df.copy()
 
+    # Encode target if categorical
     if df[target].dtype == "object":
         df[target] = LabelEncoder().fit_transform(df[target].astype(str))
 
     y = df[target]
     X = df.drop(columns=[target])
 
+    # Encode categorical features
     for col in X.columns:
         if X[col].dtype == "object":
             X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
+    # Convert numeric safely
     X = X.apply(pd.to_numeric, errors="coerce")
 
+    # Fill missing values
     X = pd.DataFrame(SimpleImputer(strategy="mean").fit_transform(X), columns=X.columns)
 
+    # Scale features
     X = pd.DataFrame(StandardScaler().fit_transform(X), columns=X.columns)
 
     return X, y
