@@ -2,173 +2,80 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from ml_pipeline import load_data, train_models, save_model
+from ml_pipeline import load_data, train_models
 
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
+st.set_page_config(page_title="Microplastic Dashboard", layout="wide")
 
-st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Professional Dashboard with ML & Risk Analytics")
-
-
-# =========================
-# SIDEBAR
-# =========================
-st.sidebar.header("⚙️ Controls")
-file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+st.title("🌊 Microplastic Research Dashboard")
 
 
 # =========================
-# MAIN APP
+# UPLOAD
 # =========================
+file = st.file_uploader("Upload CSV", type=["csv"])
+
 if file:
 
     df = load_data(file)
 
+    st.subheader("📊 Dataset Preview")
+    st.dataframe(df.head())
+
+
+    target = st.selectbox("Select Target Column", df.columns)
+
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Overview",
+        "🔬 Analysis",
+        "🤖 ML Models",
+        "🧾 Article Comparison"
+    ])
+
+
     # =========================
-    # OVERVIEW KPI
+    # TAB 1 - OVERVIEW
     # =========================
-    st.subheader("📊 Overview")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Rows", df.shape[0])
-    c2.metric("Columns", df.shape[1])
-    c3.metric("Missing Values", int(df.isnull().sum().sum()))
-    c4.metric("Numeric Features", df.select_dtypes(include="number").shape[1])
-
-    st.divider()
-
-    # TARGET
-    target = st.sidebar.selectbox("🎯 Select Risk Column", df.columns)
-
-    # TABS
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔬 Analysis", "🤖 ML Models"])
-
-
-    # ==================================================
-    # TAB 1: DASHBOARD
-    # ==================================================
     with tab1:
 
-        st.subheader("📌 Dataset Preview")
-        st.dataframe(df.head(), use_container_width=True)
+        st.metric("Rows", df.shape[0])
+        st.metric("Columns", df.shape[1])
 
-        st.subheader("🌊 Risk Distribution")
+        st.subheader("Risk Distribution")
 
-        target_data = df[target]
+        fig, ax = plt.subplots()
 
-        col1, col2 = st.columns(2)
-
-        if target_data.dtype == "object":
-
-            counts = target_data.value_counts()
-
-            col1.bar_chart(counts)
-
-            fig, ax = plt.subplots()
-            ax.pie(counts, labels=counts.index, autopct="%1.1f%%")
-            col2.pyplot(fig)
-
+        if df[target].dtype == "object":
+            df[target].value_counts().plot(kind="bar", ax=ax)
         else:
+            ax.hist(pd.to_numeric(df[target], errors="coerce"), bins=20)
 
-            clean = pd.to_numeric(target_data, errors="coerce").dropna()
-
-            fig, ax = plt.subplots()
-            ax.hist(clean, bins=20)
-            ax.set_title("Risk Distribution")
-            col1.pyplot(fig)
-
-            fig2, ax2 = plt.subplots()
-            ax2.boxplot(clean)
-            ax2.set_title("Risk Boxplot")
-            col2.pyplot(fig2)
+        st.pyplot(fig)
 
 
-    # ==================================================
-    # TAB 2: FEATURE ANALYSIS
-    # ==================================================
+    # =========================
+    # TAB 2 - CORRELATION
+    # =========================
     with tab2:
 
-        st.subheader("🔬 Feature Comparison by Risk")
-
-        cols = df.columns.tolist()
-        cols.remove(target)
-
-        feature = st.selectbox("Select Feature", cols)
-
-        col1, col2 = st.columns(2)
-
-        # NUMERIC FEATURE
-        if pd.api.types.is_numeric_dtype(df[feature]):
-
-            agg = st.selectbox("Aggregation", ["Mean", "Median"])
-
-            try:
-                if agg == "Mean":
-                    grouped = df.groupby(target)[feature].mean()
-                else:
-                    grouped = df.groupby(target)[feature].median()
-
-                col1.bar_chart(grouped)
-
-                fig, ax = plt.subplots()
-                df.boxplot(column=feature, by=target, ax=ax)
-                ax.set_title(f"{feature} by {target}")
-                col2.pyplot(fig)
-
-                st.markdown(f"""
-                ### 📌 Insights
-                - Highest group: **{grouped.idxmax()}**
-                - Lowest group: **{grouped.idxmin()}**
-                """)
-
-            except Exception as e:
-                st.warning(str(e))
-
-        # CATEGORICAL FEATURE
-        else:
-
-            try:
-                cross = pd.crosstab(df[target], df[feature])
-
-                col1.bar_chart(cross)
-
-                st.markdown(f"""
-                ### 📌 Insights
-                - Most common category: **{df[feature].value_counts().idxmax()}**
-                - Unique categories: **{df[feature].nunique()}**
-                """)
-
-            except Exception as e:
-                st.warning(str(e))
-
-
-        st.divider()
-
-
-        # ==================================================
-        # 🔥 FIXED CORRELATION MATRIX (MAIN FIX)
-        # ==================================================
         st.subheader("🔥 Correlation Matrix")
 
-        numeric_df = df.select_dtypes(include="number").copy()
+        num = df.select_dtypes(include="number")
 
-        numeric_df = numeric_df.dropna(axis=1, how="all")
-        numeric_df = numeric_df.loc[:, numeric_df.nunique() > 1]
+        num = num.dropna(axis=1, how="all")
+        num = num.loc[:, num.nunique() > 1]
 
-        if numeric_df.shape[1] < 2:
-            st.warning("Not enough numeric features for correlation matrix")
+        if num.shape[1] < 2:
+            st.warning("Not enough numeric data")
         else:
-
-            corr = numeric_df.corr()
-            corr = corr.fillna(0)
+            corr = num.corr().fillna(0)
 
             fig, ax = plt.subplots(figsize=(8, 5))
-
             im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
+
             plt.colorbar(im, ax=ax)
 
             ax.set_xticks(range(len(corr.columns)))
@@ -180,38 +87,72 @@ if file:
             st.pyplot(fig)
 
 
-    # ==================================================
-    # TAB 3: ML MODELS
-    # ==================================================
+    # =========================
+    # TAB 3 - ML MODELS
+    # =========================
     with tab3:
-
-        st.subheader("🤖 Model Training")
 
         if st.button("Train Models"):
 
-            with st.spinner("Training models..."):
+            results, best_name, best_model, X_processed = train_models(df, target)
 
-                try:
-                    results, best_name, best_model = train_models(df, target)
+            st.success(f"Best Model: {best_name}")
 
-                    st.success("Training Completed")
+            res_df = pd.DataFrame(results).T
+            st.dataframe(res_df)
 
-                    names = list(results.keys())
-                    accs = [results[n]["accuracy"] for n in names]
+            fig, ax = plt.subplots()
+            res_df["accuracy"].plot(kind="bar", ax=ax)
+            st.pyplot(fig)
 
-                    fig, ax = plt.subplots()
-                    ax.bar(names, accs)
-                    ax.set_title("Model Accuracy Comparison")
-                    st.pyplot(fig)
 
-                    st.success(f"Best Model: {best_name}")
-                    st.info(f"Accuracy: {results[best_name]['accuracy']:.4f}")
+    # =========================
+    # TAB 4 - ARTICLE COMPARISON
+    # =========================
+    with tab4:
 
-                    save_model(best_model)
-                    st.success("Model Saved Successfully")
+        st.subheader("🧾 Microplastic Article Comparison")
 
-                except Exception as e:
-                    st.error(str(e))
+        # detect article column
+        article_col = None
+        for col in df.columns:
+            if "article" in col.lower() or "source" in col.lower():
+                article_col = col
+                break
+
+        if article_col is None:
+            st.warning("No Article/Source column found")
+        else:
+
+            numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+            metric = st.selectbox("Select Metric", numeric_cols)
+
+            comparison = df.groupby(article_col)[metric].agg([
+                "mean", "min", "max", "count"
+            ])
+
+            st.dataframe(comparison)
+
+            st.subheader("📊 Mean Comparison")
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            comparison["mean"].plot(kind="bar", ax=ax)
+            ax.set_title(f"{metric} by Article")
+            st.pyplot(fig)
+
+            st.subheader("🏆 Top Polluted Articles")
+
+            st.dataframe(comparison.sort_values("mean", ascending=False).head(5))
+
+            st.subheader("📦 Distribution by Article")
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            df.boxplot(column=metric, by=article_col, ax=ax)
+            plt.xticks(rotation=45)
+
+            st.pyplot(fig)
 
 else:
-    st.info("⬅️ Upload a CSV file to start")
+    st.info("⬅️ Upload CSV file to start")
+    
