@@ -67,13 +67,12 @@ def high_risk_engine(df, target):
 
 
 # =========================
-# KMEANS CLUSTERING
+# K-MEANS CLUSTERING
 # =========================
 def run_kmeans(df, k=3):
 
     data = df.copy()
 
-    # safe numeric conversion
     for col in data.columns:
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
@@ -133,7 +132,7 @@ if file:
         "Dashboard",
         "Risk Analysis",
         "ML Models",
-        "Clustering + Classification"
+        "Clustering"
     ])
 
 
@@ -224,18 +223,18 @@ if file:
 
 
     # =========================
-    # ML MODELS (RF + SVM ARRANGED)
+    # ML MODELS (CLEAN RF + SVM)
     # =========================
     with tab3:
 
-        st.subheader("🤖 Random Forest vs SVM Comparison")
+        st.subheader("🤖 Machine Learning Models")
 
         if st.button("Run Models"):
 
             try:
                 df_ml = df.copy().dropna(subset=[target])
 
-                # encode target
+                # Encode target
                 le = LabelEncoder()
                 if df_ml[target].dtype == "object":
                     df_ml[target] = le.fit_transform(df_ml[target].astype(str))
@@ -253,43 +252,51 @@ if file:
                         X, y, test_size=0.2, random_state=42
                     )
 
-                    results = {}
+                    # =========================
+                    # RANDOM FOREST 🌲
+                    # =========================
+                    st.subheader("🌲 Random Forest")
 
-                    # RANDOM FOREST
                     rf = RandomForestClassifier(n_estimators=200, random_state=42)
                     rf.fit(X_train, y_train)
                     rf_pred = rf.predict(X_test)
 
-                    results["Random Forest"] = {
-                        "accuracy": accuracy_score(y_test, rf_pred),
-                        "report": classification_report(y_test, rf_pred)
-                    }
+                    rf_acc = accuracy_score(y_test, rf_pred)
 
-                    # SVM
+                    st.metric("Random Forest Accuracy", f"{rf_acc:.4f}")
+                    st.text(classification_report(y_test, rf_pred))
+
+
+                    # =========================
+                    # SVM 📈
+                    # =========================
+                    st.subheader("📈 SVM")
+
                     svm = SVC(kernel="rbf")
                     svm.fit(X_train, y_train)
                     svm_pred = svm.predict(X_test)
 
-                    results["SVM"] = {
-                        "accuracy": accuracy_score(y_test, svm_pred),
-                        "report": classification_report(y_test, svm_pred)
-                    }
+                    svm_acc = accuracy_score(y_test, svm_pred)
 
-                    # RESULTS
-                    acc_df = pd.DataFrame({
-                        "Model": list(results.keys()),
-                        "Accuracy": [results[m]["accuracy"] for m in results]
+                    st.metric("SVM Accuracy", f"{svm_acc:.4f}")
+                    st.text(classification_report(y_test, svm_pred))
+
+
+                    # =========================
+                    # COMPARISON 📊
+                    # =========================
+                    st.subheader("📊 Model Comparison")
+
+                    comp_df = pd.DataFrame({
+                        "Model": ["Random Forest", "SVM"],
+                        "Accuracy": [rf_acc, svm_acc]
                     })
 
-                    st.bar_chart(acc_df.set_index("Model"))
-                    st.dataframe(acc_df)
+                    st.bar_chart(comp_df.set_index("Model"))
+                    st.dataframe(comp_df)
 
-                    best = max(results, key=lambda x: results[x]["accuracy"])
-                    st.success(f"Best Model: {best}")
-
-                    for m in results:
-                        with st.expander(m):
-                            st.text(results[m]["report"])
+                    best = "Random Forest" if rf_acc > svm_acc else "SVM"
+                    st.success(f"🏆 Best Model: {best}")
 
             except Exception as e:
                 st.error(str(e))
