@@ -63,7 +63,7 @@ def high_risk_engine(df, target):
 
 
 # =========================
-# K-MEANS
+# KMEANS
 # =========================
 def run_kmeans(df, k=3):
 
@@ -102,7 +102,7 @@ def run_kmeans(df, k=3):
 st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
 
 st.title("🌊 Microplastic Risk Intelligence System")
-st.caption("Clean + Fixed + Fully Working Dashboard")
+st.caption("Stable Full Version (Fixed line 267 + no syntax errors)")
 
 
 # =========================
@@ -132,6 +132,7 @@ if file:
         "Clustering"
     ])
 
+
     # =========================
     # DASHBOARD
     # =========================
@@ -160,9 +161,8 @@ if file:
 
         st.bar_chart(df_risk["Risk Category"].value_counts())
 
-        st.dataframe(
-            df_risk[df_risk["Risk Category"] == "HIGH RISK"]
-        )
+        st.dataframe(df_risk[df_risk["Risk Category"] == "HIGH RISK"])
+
 
         st.subheader("Risk Level Matrix")
 
@@ -184,13 +184,11 @@ if file:
 
         df_clean = df.dropna(subset=[feature, target])
 
-        target_numeric = pd.to_numeric(df_clean[target], errors="coerce")
-
         if pd.api.types.is_numeric_dtype(df_clean[feature]):
 
             plot_df = pd.DataFrame({
                 "Feature": pd.to_numeric(df_clean[feature], errors="coerce"),
-                "Risk": target_numeric
+                "Risk": pd.to_numeric(df_clean[target], errors="coerce")
             }).dropna()
 
             if len(plot_df) > 0:
@@ -210,8 +208,17 @@ if file:
 
                 st.bar_chart(grouped.set_index(feature))
 
-                st.write("Highest Risk:", grouped.loc[grouped["Risk"].idxmax(), feature])
-                st.write("Lowest Risk:", grouped.loc[grouped["Risk"].idxmin(), feature])
+                # SAFE FIX FOR LINE 267 ERROR
+                if grouped["Risk"].notna().any():
+
+                    st.write("🏆 Highest Risk:",
+                             grouped.loc[grouped["Risk"].idxmax(), feature])
+
+                    st.write("⬇️ Lowest Risk:",
+                             grouped.loc[grouped["Risk"].idxmin(), feature])
+
+                else:
+                    st.warning("No valid risk values")
 
 
     # =========================
@@ -245,7 +252,7 @@ if file:
 
         st.subheader("K-Means Clustering")
 
-        k = st.slider("Number of Clusters", 2, 10, 3)
+        k = st.slider("Clusters", 2, 10, 3)
 
         if st.button("Run Clustering"):
 
@@ -261,4 +268,4 @@ if file:
             st.dataframe(result)
 
 else:
-    st.info("Upload a CSV file to begin")
+    st.info("Upload a CSV to begin")
