@@ -6,16 +6,22 @@ from ml_pipeline import load_data, train_models, save_model
 
 
 # =========================
-# RISK MATRIX ENGINE
+# RISK MATRIX ENGINE (FIXED)
 # =========================
 def create_risk_matrix(series):
 
     numeric = pd.to_numeric(series, errors="coerce")
 
+    # Keep only valid values
+    numeric = numeric.dropna()
+
+    if len(numeric) < 3:
+        return None
+
     min_val = numeric.min()
     max_val = numeric.max()
 
-    # Normalize to 0–100
+    # Normalize 0–100
     if max_val == min_val:
         score = pd.Series([50] * len(numeric))
     else:
@@ -23,9 +29,7 @@ def create_risk_matrix(series):
 
     # Risk classification
     def classify(x):
-        if pd.isna(x):
-            return "Unknown"
-        elif x < 25:
+        if x < 25:
             return "Low"
         elif x < 50:
             return "Medium"
@@ -37,9 +41,9 @@ def create_risk_matrix(series):
     level = score.apply(classify)
 
     return pd.DataFrame({
-        "Raw Value": numeric,
-        "Risk Score (0–100)": score,
-        "Risk Level": level
+        "Raw Value": numeric.values,
+        "Risk Score (0–100)": score.values,
+        "Risk Level": level.values
     })
 
 
@@ -100,6 +104,7 @@ if file:
 
         col1, col2 = st.columns(2)
 
+        # Object target
         if target_data.dtype == "object":
 
             counts = target_data.value_counts()
@@ -110,6 +115,7 @@ if file:
             ax.pie(counts, labels=counts.index, autopct="%1.1f%%")
             col2.pyplot(fig)
 
+        # Numeric target
         else:
 
             clean = pd.to_numeric(target_data, errors="coerce").dropna()
@@ -129,38 +135,45 @@ if file:
 
         risk_df = create_risk_matrix(df[target])
 
-        col3, col4 = st.columns(2)
+        if risk_df is None:
+            st.warning("Not enough numeric data for risk matrix analysis")
+        else:
 
-        # Distribution
-        level_counts = risk_df["Risk Level"].value_counts()
+            col3, col4 = st.columns(2)
 
-        col3.bar_chart(level_counts)
+            # Risk level counts
+            level_counts = risk_df["Risk Level"].value_counts()
 
-        fig, ax = plt.subplots()
-        ax.pie(level_counts, labels=level_counts.index, autopct="%1.1f%%")
-        col4.pyplot(fig)
+            order = ["Low", "Medium", "High", "Critical"]
+            level_counts = level_counts.reindex(order).fillna(0)
 
-        # Table
-        st.subheader("📊 Risk Matrix Table")
-        st.dataframe(risk_df, use_container_width=True)
+            col3.bar_chart(level_counts)
 
-        # Top risks
-        st.subheader("🏆 Highest Risk Samples")
-        st.dataframe(
-            risk_df.sort_values("Risk Score (0–100)", ascending=False).head(10)
-        )
+            fig, ax = plt.subplots()
+            ax.pie(level_counts, labels=level_counts.index, autopct="%1.1f%%")
+            col4.pyplot(fig)
 
-        # Interpretation
-        st.markdown("""
-        ### 📌 Risk Interpretation Matrix
+            # TABLE
+            st.subheader("📊 Risk Matrix Table")
+            st.dataframe(risk_df, use_container_width=True)
 
-        | Level | Score Range | Meaning |
-        |------|------------|---------|
-        | 🟢 Low | 0–24 | Safe environmental level |
-        | 🟡 Medium | 25–49 | Moderate contamination |
-        | 🟠 High | 50–74 | Elevated microplastic risk |
-        | 🔴 Critical | 75–100 | Dangerous pollution level |
-        """)
+            # TOP RISKS
+            st.subheader("🏆 Highest Risk Samples")
+            st.dataframe(
+                risk_df.sort_values("Risk Score (0–100)", ascending=False).head(10)
+            )
+
+            # INTERPRETATION
+            st.markdown("""
+            ### 📌 Risk Interpretation Matrix
+
+            | Level | Score Range | Meaning |
+            |------|------------|---------|
+            | 🟢 Low | 0–24 | Safe contamination level |
+            | 🟡 Medium | 25–49 | Moderate risk |
+            | 🟠 High | 50–74 | Elevated microplastic risk |
+            | 🔴 Critical | 75–100 | Dangerous pollution level |
+            """)
 
 
     # ==================================================
@@ -193,12 +206,6 @@ if file:
                 df.boxplot(column=feature, by=target, ax=ax)
                 col2.pyplot(fig)
 
-                st.markdown(f"""
-                ### 📌 Insights
-                - Highest: **{grouped.idxmax()}**
-                - Lowest: **{grouped.idxmin()}**
-                """)
-
             except Exception as e:
                 st.warning(str(e))
 
@@ -207,12 +214,6 @@ if file:
             try:
                 cross = pd.crosstab(df[target], df[feature])
                 col1.bar_chart(cross)
-
-                st.markdown(f"""
-                ### 📌 Insights
-                - Most common: **{df[feature].value_counts().idxmax()}**
-                - Categories: **{df[feature].nunique()}**
-                """)
 
             except Exception as e:
                 st.warning(str(e))
