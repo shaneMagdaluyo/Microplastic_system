@@ -309,8 +309,8 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-    <h1>🌊 MP-RAS</h1>
-    <div class="subtitle">Microplastic Risk Assessment System</div>
+    <h1>🌊 MP-Risk Modeling</h1>
+    <div class="subtitle">Microplastic Predictive Risk Modeling</div>
     <div class="version">Version 2.0 | Data Mining-Based Predictive Risk Modeling</div>
     <div class="researchers">Viernes, M.J. & Magdaluyo, S.M.R. | ASSCAT 2025</div>
 </div>
