@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report
@@ -27,7 +28,6 @@ except:
 # RISK MATRIX
 # =========================
 def create_risk_matrix(series, name_series):
-
     numeric = pd.to_numeric(series, errors="coerce")
 
     df = pd.DataFrame({
@@ -46,12 +46,9 @@ def create_risk_matrix(series, name_series):
     )
 
     def classify(x):
-        if x < 25:
-            return "Low"
-        elif x < 50:
-            return "Medium"
-        elif x < 75:
-            return "High"
+        if x < 25: return "Low"
+        elif x < 50: return "Medium"
+        elif x < 75: return "High"
         return "Critical"
 
     df["Risk Level"] = df["Risk Score"].apply(classify)
@@ -63,7 +60,6 @@ def create_risk_matrix(series, name_series):
 # HIGH RISK ENGINE
 # =========================
 def high_risk_engine(df, target):
-
     values = pd.to_numeric(df[target], errors="coerce")
     threshold = values.quantile(0.75)
 
@@ -134,33 +130,27 @@ def build_report_table(y_true, y_pred, model_name):
 
 
 # =========================
-# TIME SERIES (FIXED)
+# TIME SERIES FIXED
 # =========================
 def prepare_time_series(df, date_col, value_col):
 
     temp = df[[date_col, value_col]].copy()
 
-    # 🔥 FIX: force single column (avoid duplicate key error)
+    # FIX: handle duplicate columns
     temp = temp.loc[:, ~temp.columns.duplicated()]
 
-    # safer parsing
-    temp[date_col] = pd.to_datetime(
-        temp[date_col],
-        errors="coerce",
-        infer_datetime_format=True
-    )
-
+    temp[date_col] = pd.to_datetime(temp[date_col], errors="coerce")
     temp[value_col] = pd.to_numeric(temp[value_col], errors="coerce")
 
-    temp = temp.dropna()
+    temp = temp.dropna().sort_values(date_col)
+
+    # FIX: remove duplicate dates
+    temp = temp.drop_duplicates(subset=[date_col])
 
     if temp.empty:
         return None
 
-    temp = temp.sort_values(date_col)
-    temp = temp.set_index(date_col)
-
-    return temp
+    return temp.set_index(date_col)
 
 
 def run_arima(series, steps=10):
@@ -179,9 +169,9 @@ def run_arima(series, steps=10):
 # =========================
 # APP
 # =========================
-st.set_page_config(page_title="MP Risk Intelligence", layout="wide")
+st.set_page_config(page_title="Microplastics Intelligence System", layout="wide")
 
-st.title("🌊 Microplastic Risk Intelligence System")
+st.title("🌊 Microplastics Risk Intelligence System")
 
 file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
@@ -189,7 +179,15 @@ if file:
 
     df = load_data(file)
 
-    target = st.sidebar.selectbox("🎯 Risk Column", df.columns)
+    st.subheader("📊 Overview")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows", df.shape[0])
+    c2.metric("Columns", df.shape[1])
+    c3.metric("Missing", int(df.isnull().sum().sum()))
+    c4.metric("Numeric", df.select_dtypes(include="number").shape[1])
+
+    target = st.sidebar.selectbox("🎯 Target Column", df.columns)
     name_col = st.sidebar.selectbox("🏷️ Name Column", df.columns)
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -200,22 +198,49 @@ if file:
         "Forecasting"
     ])
 
-
     # ================= DASHBOARD =================
     with tab1:
 
-        st.subheader("High Risk Detection")
+        clean = pd.to_numeric(df[target], errors="coerce").dropna()
+
+        col1, col2 = st.columns(2)
+
+        if len(clean) > 0:
+            fig, ax = plt.subplots()
+            ax.hist(clean, bins=20)
+            col1.pyplot(fig)
+
+            fig2, ax2 = plt.subplots()
+            ax2.boxplot(clean)
+            col2.pyplot(fig2)
 
         df_risk, threshold = high_risk_engine(df, target)
 
-        st.info(f"Threshold: {threshold:.2f}")
+        st.info(f"High Risk Threshold: {threshold:.2f}")
         st.bar_chart(df_risk["Risk Category"].value_counts())
 
+    # ================= RISK =================
+    with tab2:
 
-    # ================= ML MODELS =================
+        feature = st.selectbox("Feature", df.columns)
+
+        df_clean = df.dropna(subset=[feature, target]).copy()
+        df_clean[target] = pd.to_numeric(df_clean[target], errors="coerce")
+
+        if pd.api.types.is_numeric_dtype(df_clean[feature]):
+
+            fig, ax = plt.subplots()
+            ax.scatter(df_clean[feature], df_clean[target])
+            st.pyplot(fig)
+
+        else:
+
+            grouped = df_clean.groupby(feature)[target].mean().reset_index()
+            grouped.columns = [feature, "Risk"]
+            st.bar_chart(grouped.set_index(feature))
+
+    # ================= ML =================
     with tab3:
-
-        st.subheader("📊 Cross-Validated Models")
 
         if st.button("Run Models"):
 
@@ -227,59 +252,82 @@ if file:
             y = df_ml[target]
             X = pd.get_dummies(df_ml.drop(columns=[target]), drop_first=True).fillna(0)
 
-            if X.shape[1] > 0:
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
-                cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            rf = RandomForestClassifier()
+            svm = SVC()
 
-                rf = RandomForestClassifier(n_estimators=200)
-                svm = SVC()
+            rf.fit(X_train, y_train)
+            svm.fit(X_train, y_train)
 
-                rf_scores = cross_val_score(rf, X, y, cv=cv)
-                svm_scores = cross_val_score(svm, X, y, cv=cv)
+            rf_pred = rf.predict(X_test)
+            svm_pred = svm.predict(X_test)
 
-                result_df = pd.DataFrame({
-                    "Model": ["Random Forest", "SVM"],
-                    "Mean Accuracy": [rf_scores.mean(), svm_scores.mean()],
-                    "Std Dev": [rf_scores.std(), svm_scores.std()]
-                })
+            # CROSS VALIDATION 🔥
+            rf_cv = cross_val_score(rf, X, y, cv=5).mean()
+            svm_cv = cross_val_score(svm, X, y, cv=5).mean()
 
-                st.dataframe(result_df)
-                st.bar_chart(result_df.set_index("Model"))
+            st.subheader("📊 Classification Table")
+            st.dataframe(pd.concat([
+                build_report_table(y_test, rf_pred, "Random Forest"),
+                build_report_table(y_test, svm_pred, "SVM")
+            ]))
 
+            st.subheader("📈 Accuracy + CV")
+            st.dataframe(pd.DataFrame({
+                "Model": ["Random Forest", "SVM"],
+                "Test Accuracy": [
+                    accuracy_score(y_test, rf_pred),
+                    accuracy_score(y_test, svm_pred)
+                ],
+                "CV Score": [rf_cv, svm_cv]
+            }))
 
-    # ================= FORECASTING =================
+    # ================= CLUSTER =================
+    with tab4:
+
+        k = st.slider("Clusters", 2, 10, 3)
+
+        if st.button("Run Clustering"):
+
+            result = run_kmeans(df, k)
+
+            st.bar_chart(result["Cluster"].value_counts())
+
+            fig, ax = plt.subplots()
+            ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
+            st.pyplot(fig)
+
+    # ================= FORECAST =================
     with tab5:
-
-        st.subheader("📈 Time-Series Forecasting")
 
         date_col = st.selectbox("Date Column", df.columns)
         value_col = st.selectbox("Value Column", df.columns)
+
+        steps = st.slider("Steps", 5, 30, 10)
 
         if st.button("Run Forecast"):
 
             ts = prepare_time_series(df, date_col, value_col)
 
             if ts is None or len(ts) < 10:
-                st.warning("Not enough valid time-series data")
+                st.warning("Not enough time-series data")
             else:
 
                 st.line_chart(ts[value_col])
 
-                forecast = run_arima(ts[value_col])
+                forecast = run_arima(ts[value_col], steps)
 
-                if forecast is not None:
+                if forecast is None:
+                    st.warning("ARIMA not installed")
+                else:
 
-                    future_index = pd.date_range(
-                        ts.index[-1],
-                        periods=len(forecast)+1
-                    )[1:]
+                    future_index = pd.date_range(ts.index[-1], periods=steps+1)[1:]
 
                     st.line_chart(pd.concat([
                         ts[value_col],
                         pd.Series(forecast, index=future_index)
                     ]))
-                else:
-                    st.warning("ARIMA not available")
 
 else:
-    st.info("Upload CSV")
+    st.info("Upload CSV to start")
