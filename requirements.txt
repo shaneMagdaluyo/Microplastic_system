@@ -1,17 +1,13 @@
-# requirements.txt for Microplastic Risk Prediction System
-# Install all dependencies with: pip install -r requirements.txt
+# requirements.txt
+# Microplastic Risk Prediction System
+# Based on manuscript requirements: Random Forest, Logistic Regression, Decision Tree
+# 10-Fold Cross Validation | Metrics: Accuracy, Precision, Recall, F1-score, AUC
 
-streamlit>=1.20.0
+streamlit>=1.28.0
 pandas>=1.5.0
 numpy>=1.23.0
 matplotlib>=3.6.0
 seaborn>=0.12.0
-plotly>=5.13.0
 scikit-learn>=1.2.0
-scipy>=1.9.0
-joblib>=1.2.0
 openpyxl>=3.0.0
-
-# Optional - for advanced features (install if needed)
-# imbalanced-learn>=0.10.0
-# xgboost>=1.7.0
+plotly>=5.13.0
