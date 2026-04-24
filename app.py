@@ -51,7 +51,7 @@ from pathlib import Path
 
 # Page configuration
 st.set_page_config(
-    page_title="MP-RAS | Microplastic Risk Assessment System",
+    page_title="Micro Plastics Predictive risk modeling",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded"
