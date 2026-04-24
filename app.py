@@ -1,7 +1,4 @@
-# enhanced_app.py - Complete Microplastic Risk Prediction System
-# MICROPLASTIC RISK ASSESSMENT SYSTEM (MP-RAS)
-# Researchers: Matthew Joseph Viernes & Shane Mark R. Magdaluyo
-# ASSCAT 2025
+
 
 import streamlit as st
 import pandas as pd
@@ -1386,28 +1383,3 @@ pages = {
     "📈 Prediction": page_prediction,
     "📊 Results": page_results,
 }
-
-# Display selected page
-if page in pages:
-    pages[page]()
-
-# ============================================================================
-# FLOATING SYSTEM BADGE
-# ============================================================================
-
-st.markdown("""
-<div class="system-badge">
-    🌊 MP-RAS v2.0
-</div>
-""", unsafe_allow_html=True)
-
-# ============================================================================
-# FOOTER
-# ============================================================================
-
-st.markdown("""
-<div class="footer">
-    <p>🌊 MP-RAS | Microplastic Risk Assessment System | ASSCAT 2025</p>
-    <p>Viernes, M.J. & Magdaluyo, S.M.R. | Data Mining-Based Predictive Risk Modeling</p>
-</div>
-""", unsafe_allow_html=True)
