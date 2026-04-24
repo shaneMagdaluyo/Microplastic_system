@@ -1,5 +1,5 @@
-# app.py - Microplastic Pollution Risk Prediction System (PERSISTENT DATA)
-# Fixed: Data persists across navigation pages
+# app.py - Microplastic Pollution Risk Prediction System (COMPLETELY FIXED)
+# Fixed: Duplicate column names, classification/regression issues
 # Researchers: Matthew Joseph Viernes & Shane Mark R. Magdaluyo
 # ASSCAT - March to December 2025
 
@@ -8,40 +8,23 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
-from scipy.stats import skew, zscore, f_oneway
 import warnings
 warnings.filterwarnings('ignore')
 
 # Machine Learning Libraries
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, KFold
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, PowerTransformer
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, RandomForestRegressor
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, 
-                             confusion_matrix, classification_report, roc_auc_score, 
-                             roc_curve, mean_squared_error, r2_score)
-from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif, RFE
-
-# For handling imbalanced data (optional)
-try:
-    from imblearn.over_sampling import SMOTE
-    SMOTE_AVAILABLE = True
-except ImportError:
-    SMOTE_AVAILABLE = False
+                             confusion_matrix, classification_report, mean_squared_error, r2_score)
 
 # For saving models
 import joblib
 from datetime import datetime
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import io
-import base64
-import os
 
 # Page configuration
 st.set_page_config(
@@ -118,39 +101,33 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# INITIALIZE SESSION STATE WITH PERSISTENT STORAGE
+# INITIALIZE SESSION STATE
 # =============================================================================
 
-# Initialize all session state variables for persistence
 if 'risk_data' not in st.session_state:
     st.session_state.risk_data = None
-if 'risk_data_original' not in st.session_state:
-    st.session_state.risk_data_original = None
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
-if 'data_source' not in st.session_state:
-    st.session_state.data_source = None
 if 'data_filename' not in st.session_state:
     st.session_state.data_filename = None
-    
+if 'data_source' not in st.session_state:
+    st.session_state.data_source = None
 if 'model_trained' not in st.session_state:
     st.session_state.model_trained = False
-if 'predictions' not in st.session_state:
-    st.session_state.predictions = None
-if 'results' not in st.session_state:
-    st.session_state.results = None
 if 'models' not in st.session_state:
-    st.session_state.models = None
-if 'feature_encoders' not in st.session_state:
-    st.session_state.feature_encoders = {}
+    st.session_state.models = {}
+if 'results' not in st.session_state:
+    st.session_state.results = {}
 if 'scaler' not in st.session_state:
     st.session_state.scaler = None
+if 'feature_encoders' not in st.session_state:
+    st.session_state.feature_encoders = {}
+if 'target_encoder' not in st.session_state:
+    st.session_state.target_encoder = None
 if 'selected_features' not in st.session_state:
     st.session_state.selected_features = []
 if 'task_type' not in st.session_state:
     st.session_state.task_type = None
-if 'target_encoder' not in st.session_state:
-    st.session_state.target_encoder = None
 if 'target_column' not in st.session_state:
     st.session_state.target_column = None
 
@@ -158,23 +135,12 @@ if 'target_column' not in st.session_state:
 # HELPER FUNCTIONS
 # =============================================================================
 
-def save_uploaded_data(df, filename=None):
-    """Save uploaded data to session state"""
-    st.session_state.risk_data = df.copy()
-    st.session_state.risk_data_original = df.copy()
-    st.session_state.data_loaded = True
-    if filename:
-        st.session_state.data_filename = filename
-    st.session_state.data_source = "upload"
-
-def load_sample_data():
-    """Load sample data"""
-    df = generate_sample_data(1000)
-    st.session_state.risk_data = df.copy()
-    st.session_state.risk_data_original = df.copy()
-    st.session_state.data_loaded = True
-    st.session_state.data_source = "sample"
-    st.session_state.data_filename = "sample_data.csv"
+def fix_duplicate_columns(df):
+    """Fix duplicate column names in dataframe"""
+    cols = pd.Series(df.columns)
+    for dup in cols[cols.duplicated()].unique():
+        cols[cols[cols == dup].index.values.tolist()] = [dup + '_' + str(i) if i != 0 else dup for i in range(sum(cols == dup))]
+    df.columns = cols
     return df
 
 def generate_sample_data(n_samples=1000):
@@ -186,32 +152,29 @@ def generate_sample_data(n_samples=1000):
                  'Open Ocean', 'Harbor']
     species = ['Fish_A', 'Fish_B', 'Mollusk', 'Crustacean', 'Bird', 'Mammal']
     habitat = ['Marine', 'Freshwater', 'Estuary', 'Coastal']
-    risk_types = ['Ecological Risk', 'Human Health Risk', 'Chemical Hazard', 
-                  'Food Chain Contamination', 'Low Risk', 'Medium Risk', 'High Risk']
     
     data = {
-        'Study_Location': np.random.choice(locations, n_samples),
-        'Species_Name': np.random.choice(species, n_samples),
-        'Habitat_Type': np.random.choice(habitat, n_samples),
-        'MP_Presence': np.random.choice(['Yes', 'No'], n_samples, p=[0.85, 0.15]),
+        'Location': np.random.choice(locations, n_samples),
+        'Species': np.random.choice(species, n_samples),
+        'Habitat': np.random.choice(habitat, n_samples),
         'MP_Concentration': np.random.uniform(0.1, 500, n_samples),
         'Particle_Size_mm': np.random.uniform(0.01, 5.0, n_samples),
-        'Water_Temperature_C': np.random.uniform(10, 35, n_samples),
-        'pH_Level': np.random.uniform(6.0, 8.5, n_samples),
-        'Dissolved_Oxygen_mgL': np.random.uniform(2, 12, n_samples),
-        'Turbidity_NTU': np.random.uniform(1, 100, n_samples),
+        'Temperature_C': np.random.uniform(10, 35, n_samples),
+        'pH': np.random.uniform(6.0, 8.5, n_samples),
+        'Dissolved_Oxygen': np.random.uniform(2, 12, n_samples),
+        'Turbidity': np.random.uniform(1, 100, n_samples),
         'Population_Density': np.random.uniform(10, 10000, n_samples),
         'Industrial_Score': np.random.uniform(0, 1, n_samples),
-        'Waste_Management_Score': np.random.uniform(0, 1, n_samples),
+        'Waste_Score': np.random.uniform(0, 1, n_samples),
     }
     
     df = pd.DataFrame(data)
     
-    # Generate risk score based on features
+    # Generate risk score
     df['Risk_Score'] = (
         df['MP_Concentration'] / 500 * 30 +
         df['Industrial_Score'] * 25 +
-        (1 - df['Waste_Management_Score']) * 20 +
+        (1 - df['Waste_Score']) * 20 +
         np.where(df['Particle_Size_mm'] < 0.5, 15, 0) +
         np.where(df['Population_Density'] > 5000, 10, 0)
     )
@@ -221,26 +184,29 @@ def generate_sample_data(n_samples=1000):
     df['Risk_Level'] = pd.cut(df['Risk_Score'], bins=[0, 33, 66, 100], 
                                labels=['Low', 'Medium', 'High'])
     
-    # Assign dominant risk type
-    df['Dominant_Risk_Type'] = np.random.choice(risk_types, n_samples, p=[0.2, 0.2, 0.15, 0.15, 0.1, 0.1, 0.1])
-    
+    return df
+
+def load_sample_data():
+    """Load sample data"""
+    df = generate_sample_data(1000)
+    df = fix_duplicate_columns(df)
+    st.session_state.risk_data = df.copy()
+    st.session_state.data_loaded = True
+    st.session_state.data_source = "sample"
+    st.session_state.data_filename = "sample_data.csv"
     return df
 
 def check_data_loaded():
-    """Check if data is loaded and show appropriate message"""
     if not st.session_state.data_loaded or st.session_state.risk_data is None:
-        st.warning("⚠️ No data loaded. Please upload a file or load sample data in the 'Data Upload & Preprocessing' page.")
+        st.warning("⚠️ No data loaded. Please upload a file or load sample data.")
         return False
     return True
 
 def preprocess_for_training(df, features, target):
-    """Properly preprocess data for training"""
+    """Preprocess data for training"""
     df_processed = df.copy()
-    
-    # Store encoders for later use
     encoders = {}
     
-    # Separate numeric and categorical features
     numeric_features = []
     categorical_features = []
     
@@ -251,47 +217,44 @@ def preprocess_for_training(df, features, target):
             else:
                 categorical_features.append(feature)
     
-    # Handle missing values for numeric features
+    # Handle missing values
     for feature in numeric_features:
         if df_processed[feature].isnull().any():
             df_processed[feature].fillna(df_processed[feature].median(), inplace=True)
     
-    # Handle missing values for categorical features
     for feature in categorical_features:
         if df_processed[feature].isnull().any():
-            df_processed[feature].fillna(df_processed[feature].mode()[0] if len(df_processed[feature].mode()) > 0 else 'Unknown', inplace=True)
+            mode_val = df_processed[feature].mode()
+            if len(mode_val) > 0:
+                df_processed[feature].fillna(mode_val[0], inplace=True)
+            else:
+                df_processed[feature].fillna('Unknown', inplace=True)
     
     # Encode categorical features
     for feature in categorical_features:
         le = LabelEncoder()
-        df_processed[feature + '_encoded'] = le.fit_transform(df_processed[feature].astype(str))
+        df_processed[feature + '_enc'] = le.fit_transform(df_processed[feature].astype(str))
         encoders[feature] = le
-        numeric_features.append(feature + '_encoded')
+        numeric_features.append(feature + '_enc')
     
-    # Handle target column
+    X = df_processed[numeric_features]
+    
+    # Handle target
     if target in df_processed.columns:
         if df_processed[target].dtype == 'object':
             target_encoder = LabelEncoder()
             y = target_encoder.fit_transform(df_processed[target].astype(str))
-            return df_processed[numeric_features], y, encoders, target_encoder
+            return X, y, encoders, target_encoder
         else:
             y = df_processed[target].values
-            return df_processed[numeric_features], y, encoders, None
+            return X, y, encoders, None
     
-    return df_processed[numeric_features], None, encoders, None
+    return X, None, encoders, None
 
-def reset_model_state():
-    """Reset all model-related session state variables"""
-    st.session_state.model_trained = False
-    st.session_state.models = None
-    st.session_state.results = None
-    st.session_state.scaler = None
-    st.session_state.selected_features = []
-    st.session_state.task_type = None
-    st.session_state.target_encoder = None
-    st.session_state.feature_encoders = {}
+# =============================================================================
+# HEADER
+# =============================================================================
 
-# Title and header
 st.markdown("""
 <div class="main-header">
     <h1>🌊 Microplastic Pollution Risk Prediction System</h1>
@@ -300,12 +263,14 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Display current data status in sidebar
+# =============================================================================
+# SIDEBAR
+# =============================================================================
+
 st.sidebar.title("📊 Navigation")
 
-# Show data status
 if st.session_state.data_loaded:
-    st.sidebar.success(f"✅ Data Loaded: {st.session_state.data_filename if st.session_state.data_filename else 'Custom Data'}")
+    st.sidebar.success(f"✅ Data Loaded: {st.session_state.data_filename}")
     if st.session_state.risk_data is not None:
         st.sidebar.info(f"📊 Shape: {st.session_state.risk_data.shape[0]} rows, {st.session_state.risk_data.shape[1]} cols")
 else:
@@ -315,35 +280,20 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.radio("Go to", [
     "🏠 Dashboard",
-    "📁 Data Upload & Preprocessing",
+    "📁 Data Upload",
     "🤖 Model Training",
     "📈 Risk Prediction",
-    "🗺️ Risk Mapping & Visualization",
-    "📊 Model Evaluation",
-    "📄 Generate Report"
+    "📊 Results"
 ])
 
-# Sidebar info
-st.sidebar.markdown("---")
-st.sidebar.info("""
-**System Features:**
-- Persistent Data Storage
-- Data Preprocessing
-- Multiple ML Models
-- Risk Prediction
-- Report Generation
-""")
-
-# Option to clear data
 if st.session_state.data_loaded:
     st.sidebar.markdown("---")
-    if st.sidebar.button("🗑️ Clear Loaded Data", type="secondary"):
-        reset_model_state()
+    if st.sidebar.button("🗑️ Clear Data"):
         st.session_state.risk_data = None
-        st.session_state.risk_data_original = None
         st.session_state.data_loaded = False
-        st.session_state.data_filename = None
-        st.session_state.data_source = None
+        st.session_state.model_trained = False
+        st.session_state.models = {}
+        st.session_state.results = {}
         st.rerun()
 
 # =============================================================================
@@ -356,10 +306,7 @@ if page == "🏠 Dashboard":
     if st.session_state.data_loaded and st.session_state.risk_data is not None:
         df = st.session_state.risk_data
         
-        # Key metrics
-        st.subheader("📊 Dataset Overview")
         col1, col2, col3, col4 = st.columns(4)
-        
         with col1:
             st.metric("Total Records", f"{len(df):,}")
         with col2:
@@ -368,104 +315,47 @@ if page == "🏠 Dashboard":
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             st.metric("Numeric Features", len(numeric_cols))
         with col4:
-            cat_cols = df.select_dtypes(include=['object']).columns
-            st.metric("Categorical Features", len(cat_cols))
+            if st.session_state.model_trained:
+                st.metric("Model Status", "Trained ✅")
+            else:
+                st.metric("Model Status", "Not Trained")
         
         # Quick visualizations
-        st.subheader("📈 Quick Overview")
-        
         col1, col2 = st.columns(2)
         
         with col1:
-            # Risk level distribution if available
             if 'Risk_Level' in df.columns:
                 risk_counts = df['Risk_Level'].value_counts()
                 fig = px.pie(values=risk_counts.values, names=risk_counts.index, 
                              title="Risk Level Distribution",
                              color_discrete_map={'Low': '#6bcb77', 'Medium': '#ffd93d', 'High': '#ff6b6b'})
                 st.plotly_chart(fig, use_container_width=True)
-            elif 'Dominant_Risk_Type' in df.columns:
-                risk_counts = df['Dominant_Risk_Type'].value_counts().head(5)
-                fig = px.bar(x=risk_counts.values, y=risk_counts.index, orientation='h',
-                            title="Top 5 Risk Types")
-                st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             if 'Risk_Score' in df.columns:
                 fig = px.histogram(df, x='Risk_Score', nbins=30, 
-                                  title="Risk Score Distribution",
-                                  color_discrete_sequence=['#2a5298'])
+                                  title="Risk Score Distribution")
                 st.plotly_chart(fig, use_container_width=True)
         
-        # Data preview
-        st.subheader("📋 Data Preview")
+        st.subheader("Data Preview")
         st.dataframe(df.head(10))
-        
-        # System status
-        st.subheader("⚙️ System Status")
-        
-        status_cols = st.columns(3)
-        with status_cols[0]:
-            if st.session_state.model_trained:
-                st.success("✅ Model Trained")
-            else:
-                st.info("⏳ Model Not Trained")
-        
-        with status_cols[1]:
-            if st.session_state.selected_features:
-                st.success(f"✅ {len(st.session_state.selected_features)} Features Selected")
-            else:
-                st.info("⏳ No Features Selected")
-        
-        with status_cols[2]:
-            if st.session_state.task_type:
-                st.success(f"✅ Task: {st.session_state.task_type}")
-            else:
-                st.info("⏳ Task Not Set")
-    
     else:
-        st.info("👋 Welcome to the Microplastic Pollution Risk Prediction System!")
-        st.markdown("""
-        ### Getting Started:
-        
-        1. Go to **📁 Data Upload & Preprocessing** to load your data
-        2. Or click the button below to load sample data
-        
-        ### Features:
-        - **Persistent Data**: Your uploaded data stays loaded across all pages
-        - **Multiple ML Models**: Random Forest, Logistic Regression, Decision Tree, and more
-        - **Risk Prediction**: Predict microplastic pollution risk levels
-        - **Visualizations**: Interactive charts and graphs
-        - **Report Generation**: Download comprehensive reports
-        """)
-        
-        if st.button("🚀 Load Sample Data to Get Started", type="primary"):
+        st.info("👋 Welcome! Go to **Data Upload** to load your data.")
+        if st.button("🚀 Load Sample Data"):
             load_sample_data()
             st.rerun()
 
 # =============================================================================
-# PAGE: DATA UPLOAD & PREPROCESSING (WITH PERSISTENCE)
+# PAGE: DATA UPLOAD
 # =============================================================================
 
-elif page == "📁 Data Upload & Preprocessing":
-    st.header("📁 Data Upload and Preprocessing")
+elif page == "📁 Data Upload":
+    st.header("📁 Data Upload")
     
-    # Show current data status
-    if st.session_state.data_loaded:
-        st.markdown(f"""
-        <div class="success-message">
-            ✅ <strong>Data Already Loaded</strong><br>
-            File: {st.session_state.data_filename if st.session_state.data_filename else 'Custom Data'}<br>
-            Shape: {st.session_state.risk_data.shape[0]} rows × {st.session_state.risk_data.shape[1]} columns<br>
-            Source: {st.session_state.data_source}
-        </div>
-        """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📤 Upload New Dataset")
-        uploaded_file = st.file_uploader("Choose a CSV or Excel file", type=['csv', 'xlsx', 'xls'])
+        uploaded_file = st.file_uploader("Upload CSV or Excel file", type=['csv', 'xlsx', 'xls'])
         
         if uploaded_file is not None:
             try:
@@ -474,148 +364,54 @@ elif page == "📁 Data Upload & Preprocessing":
                 else:
                     df = pd.read_excel(uploaded_file)
                 
+                # Fix duplicate column names
+                df = fix_duplicate_columns(df)
+                
                 st.write("**Data Preview:**")
                 st.dataframe(df.head(5))
                 
-                if st.button("✅ Load This Dataset", type="primary"):
-                    save_uploaded_data(df, uploaded_file.name)
-                    reset_model_state()  # Reset models when new data is loaded
-                    st.success(f"✅ Dataset '{uploaded_file.name}' loaded successfully!")
+                if st.button("✅ Load Dataset"):
+                    st.session_state.risk_data = df
+                    st.session_state.data_loaded = True
+                    st.session_state.data_filename = uploaded_file.name
+                    st.session_state.data_source = "upload"
+                    st.session_state.model_trained = False
+                    st.success(f"Loaded {len(df)} rows, {len(df.columns)} columns!")
                     st.rerun()
-                    
             except Exception as e:
-                st.error(f"Error loading file: {e}")
+                st.error(f"Error: {e}")
     
     with col2:
-        st.subheader("📊 Or Use Sample Data")
-        st.write("Use the built-in sample dataset to test the system:")
-        st.write("- 1,000 samples of microplastic pollution data")
-        st.write("- Multiple features including location, species, water quality")
-        st.write("- Includes risk scores and risk levels")
-        
-        if st.button("📊 Load Sample Dataset", type="secondary"):
+        st.write("Or use sample data:")
+        if st.button("📊 Load Sample Data"):
             load_sample_data()
-            reset_model_state()
-            st.success("✅ Sample dataset loaded successfully!")
+            st.session_state.model_trained = False
+            st.success("Sample data loaded!")
             st.rerun()
-    
-    # ========================================================================
-    # DATA PREPROCESSING SECTION (Only show if data is loaded)
-    # ========================================================================
     
     if st.session_state.data_loaded and st.session_state.risk_data is not None:
         st.markdown("---")
-        st.subheader("🔧 Data Preprocessing")
-        
+        st.subheader("Data Info")
         df = st.session_state.risk_data
         
-        # Data information tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Statistics", "🔍 Missing Values", "🏷️ Data Types"])
+        tab1, tab2 = st.tabs(["📊 Columns", "📈 Statistics"])
         
         with tab1:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Rows", f"{len(df):,}")
-            with col2:
-                st.metric("Total Columns", len(df.columns))
-            with col3:
-                st.metric("Memory Usage", f"{df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
-            
-            st.write("**Data Preview (First 10 rows):**")
-            st.dataframe(df.head(10))
-        
-        with tab2:
-            # Show statistics for numeric columns
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            if numeric_cols:
-                st.write("**Numeric Columns Statistics:**")
-                st.dataframe(df[numeric_cols].describe())
-            else:
-                st.info("No numeric columns found.")
-        
-        with tab3:
-            missing_df = pd.DataFrame({
-                'Column': df.columns,
-                'Data Type': df.dtypes.values,
-                'Missing Count': df.isnull().sum().values,
-                'Missing Percentage': (df.isnull().sum().values / len(df)) * 100
-            })
-            missing_df = missing_df[missing_df['Missing Count'] > 0]
-            if len(missing_df) > 0:
-                st.dataframe(missing_df)
-            else:
-                st.success("✅ No missing values found in the dataset!")
-        
-        with tab4:
-            dtype_df = pd.DataFrame({
+            col_info = pd.DataFrame({
                 'Column': df.columns,
                 'Type': df.dtypes.values,
-                'Unique Values': [df[col].nunique() for col in df.columns],
-                'Sample Values': [str(df[col].dropna().iloc[0])[:50] if len(df[col].dropna()) > 0 else 'N/A' for col in df.columns]
+                'Unique': [df[col].nunique() for col in df.columns]
             })
-            st.dataframe(dtype_df)
+            st.dataframe(col_info)
         
-        # Preprocessing options
-        st.subheader("🛠️ Preprocessing Options")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("🧹 Handle Missing Values"):
-                df_clean = df.copy()
-                for col in df_clean.columns:
-                    if df_clean[col].dtype in ['float64', 'int64']:
-                        df_clean[col].fillna(df_clean[col].median(), inplace=True)
-                    else:
-                        mode_val = df_clean[col].mode()
-                        if len(mode_val) > 0:
-                            df_clean[col].fillna(mode_val[0], inplace=True)
-                        else:
-                            df_clean[col].fillna('Unknown', inplace=True)
-                st.session_state.risk_data = df_clean
-                st.success("✅ Missing values handled successfully!")
-                st.rerun()
-        
-        with col2:
-            if st.button("🗑️ Remove Duplicates"):
-                original_len = len(df)
-                df_clean = df.drop_duplicates()
-                st.session_state.risk_data = df_clean
-                st.success(f"✅ Removed {original_len - len(df_clean)} duplicate rows!")
-                st.rerun()
-        
-        with col3:
-            if st.button("📊 Encode Categorical Variables"):
-                df_encoded = df.copy()
-                categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-                for col in categorical_cols:
-                    le = LabelEncoder()
-                    df_encoded[col + '_encoded'] = le.fit_transform(df_encoded[col].astype(str))
-                    st.session_state.feature_encoders[col] = le
-                st.session_state.risk_data = df_encoded
-                st.success(f"✅ Encoded {len(categorical_cols)} categorical variables!")
-                st.rerun()
-        
-        # Show categorical columns info
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-        if categorical_cols:
-            st.markdown(f"""
-            <div class="info-message">
-                📝 <strong>Categorical Columns Found:</strong> {', '.join(categorical_cols)}<br>
-                These columns will be automatically encoded when training models.
-            </div>
-            """, unsafe_allow_html=True)
-    
-    else:
-        st.info("💡 No data loaded yet. Please upload a CSV/Excel file or load the sample dataset above.")
+        with tab2:
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            if numeric_cols:
+                st.dataframe(df[numeric_cols].describe())
 
 # =============================================================================
-# PAGE: MODEL TRAINING (Rest of the pages remain similar but with persistence)
+# PAGE: MODEL TRAINING
 # =============================================================================
-
-# [The rest of the pages (Model Training, Risk Prediction, etc.) 
-#  remain the same as in the previous version, just make sure they use 
-#  st.session_state.risk_data which now persists]
 
 elif page == "🤖 Model Training":
     st.header("🤖 Model Training")
@@ -625,126 +421,205 @@ elif page == "🤖 Model Training":
     
     df = st.session_state.risk_data
     
-    st.subheader("Model Configuration")
-    
     col1, col2 = st.columns(2)
     
     with col1:
         target_options = df.columns.tolist()
-        st.session_state.target_column = st.selectbox("Select Target Column (Risk Level/Risk Score/Risk Type)", target_options)
+        target = st.selectbox("🎯 Target Column", target_options)
+        st.session_state.target_column = target
         
-        if df[st.session_state.target_column].dtype in ['int64', 'float64'] and df[st.session_state.target_column].nunique() > 10:
-            task_type = st.radio("Task Type", ["Classification", "Regression"], index=1)
+        # Check target type
+        unique_count = df[target].nunique()
+        is_numeric = df[target].dtype in ['int64', 'float64']
+        
+        if is_numeric and unique_count > 10:
+            task_type = "Regression"
+            st.info(f"📊 Target has {unique_count} values → Using **REGRESSION**")
         else:
-            task_type = st.radio("Task Type", ["Classification", "Regression"], index=0)
+            task_type = "Classification"
+            st.info(f"🏷️ Target has {unique_count} categories → Using **CLASSIFICATION**")
+        
+        st.session_state.task_type = task_type
     
     with col2:
-        test_size = st.slider("Test Set Size", 0.1, 0.4, 0.2)
-        cv_folds = st.slider("K-Fold Cross Validation Folds", 5, 10, 5)
+        test_size = st.slider("Test Size", 0.1, 0.4, 0.2)
+        cv_folds = st.slider("CV Folds", 5, 10, 10)
     
-    st.subheader("Select Features for Training")
+    st.subheader("Select Features")
+    feature_cols = [c for c in df.columns if c != target]
+    selected = st.multiselect("Features", feature_cols, default=feature_cols[:5] if len(feature_cols) > 5 else feature_cols)
+    st.session_state.selected_features = selected
     
-    feature_cols = [col for col in df.columns if col != st.session_state.target_column]
+    if len(selected) == 0:
+        st.error("Select at least one feature")
+        st.stop()
     
-    st.info(f"📊 {len(feature_cols)} features available. Categorical features will be automatically encoded.")
+    # Model selection
+    st.subheader("Models")
+    if task_type == "Classification":
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            use_rf = st.checkbox("Random Forest", value=True)
+        with col2:
+            use_lr = st.checkbox("Logistic Regression", value=True)
+        with col3:
+            use_dt = st.checkbox("Decision Tree", value=True)
+        use_rfr = False
+        use_dtr = False
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            use_rfr = st.checkbox("Random Forest", value=True)
+        with col2:
+            use_dtr = st.checkbox("Decision Tree", value=True)
+        use_rf = False
+        use_lr = False
+        use_dt = False
     
-    selected_features = st.multiselect("Select Features", feature_cols, default=feature_cols[:5] if len(feature_cols) > 5 else feature_cols)
-    
-    if st.button("🚀 Train Models", type="primary"):
-        if len(selected_features) == 0:
-            st.error("Please select at least one feature for training.")
-        else:
-            with st.spinner("Processing data and training models..."):
-                try:
-                    X_processed, y, encoders, target_encoder = preprocess_for_training(df, selected_features, st.session_state.target_column)
-                    
-                    X_processed = X_processed.fillna(X_processed.median())
-                    
-                    scaler = StandardScaler()
-                    X_scaled = scaler.fit_transform(X_processed)
-                    
-                    if y is None:
-                        st.error("Could not process target column. Please check your data.")
-                        st.stop()
-                    
-                    if task_type == "Classification":
-                        unique_classes = np.unique(y)
-                        if len(unique_classes) < 2:
-                            st.error(f"Target column '{st.session_state.target_column}' has only one unique value.")
-                            st.stop()
-                    
+    if st.button("🚀 TRAIN MODELS", type="primary", use_container_width=True):
+        with st.spinner("Training..."):
+            try:
+                X, y, encoders, target_enc = preprocess_for_training(df, selected, target)
+                st.session_state.feature_encoders = encoders
+                st.session_state.target_encoder = target_enc
+                
+                # Scale
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X)
+                st.session_state.scaler = scaler
+                
+                # Split
+                if task_type == "Classification" and len(np.unique(y)) > 1:
                     X_train, X_test, y_train, y_test = train_test_split(
-                        X_scaled, y, test_size=test_size, random_state=42, 
-                        stratify=y if task_type == "Classification" else None
+                        X_scaled, y, test_size=test_size, random_state=42, stratify=y
                     )
-                    
-                    if task_type == "Classification":
-                        models = {
-                            'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
-                            'Logistic Regression': LogisticRegression(random_state=42, max_iter=1000),
-                            'Decision Tree': DecisionTreeClassifier(random_state=42),
-                            'Gradient Boosting': GradientBoostingClassifier(random_state=42),
-                            'SVM': SVC(random_state=42, probability=True),
-                            'KNN': KNeighborsClassifier()
+                else:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X_scaled, y, test_size=test_size, random_state=42
+                    )
+                
+                kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+                results = {}
+                models = {}
+                
+                if task_type == "Classification":
+                    # Random Forest
+                    if use_rf:
+                        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+                        rf.fit(X_train, y_train)
+                        y_pred = rf.predict(X_test)
+                        models['Random Forest'] = rf
+                        cv_scores = cross_val_score(rf, X_scaled, y, cv=kfold, scoring='accuracy')
+                        results['Random Forest'] = {
+                            'Accuracy': accuracy_score(y_test, y_pred),
+                            'Precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'Recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'F1-Score': f1_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'CV Mean': cv_scores.mean(),
+                            'CV Std': cv_scores.std()
                         }
-                    else:
-                        models = {
-                            'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42),
-                            'Decision Tree': DecisionTreeRegressor(random_state=42),
+                        st.write(f"✅ Random Forest: {results['Random Forest']['Accuracy']:.4f}")
+                    
+                    # Logistic Regression
+                    if use_lr:
+                        lr = LogisticRegression(max_iter=1000, random_state=42)
+                        lr.fit(X_train, y_train)
+                        y_pred = lr.predict(X_test)
+                        models['Logistic Regression'] = lr
+                        cv_scores = cross_val_score(lr, X_scaled, y, cv=kfold, scoring='accuracy')
+                        results['Logistic Regression'] = {
+                            'Accuracy': accuracy_score(y_test, y_pred),
+                            'Precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'Recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'F1-Score': f1_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'CV Mean': cv_scores.mean(),
+                            'CV Std': cv_scores.std()
                         }
+                        st.write(f"✅ Logistic Regression: {results['Logistic Regression']['Accuracy']:.4f}")
                     
-                    results = {}
-                    trained_models = {}
+                    # Decision Tree
+                    if use_dt:
+                        dt = DecisionTreeClassifier(random_state=42)
+                        dt.fit(X_train, y_train)
+                        y_pred = dt.predict(X_test)
+                        models['Decision Tree'] = dt
+                        cv_scores = cross_val_score(dt, X_scaled, y, cv=kfold, scoring='accuracy')
+                        results['Decision Tree'] = {
+                            'Accuracy': accuracy_score(y_test, y_pred),
+                            'Precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'Recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'F1-Score': f1_score(y_test, y_pred, average='weighted', zero_division=0),
+                            'CV Mean': cv_scores.mean(),
+                            'CV Std': cv_scores.std()
+                        }
+                        st.write(f"✅ Decision Tree: {results['Decision Tree']['Accuracy']:.4f}")
+                
+                else:  # Regression
+                    if use_rfr:
+                        rfr = RandomForestRegressor(n_estimators=100, random_state=42)
+                        rfr.fit(X_train, y_train)
+                        y_pred = rfr.predict(X_test)
+                        models['Random Forest'] = rfr
+                        cv_scores = cross_val_score(rfr, X_scaled, y, cv=kfold, scoring='r2')
+                        results['Random Forest'] = {
+                            'R2 Score': r2_score(y_test, y_pred),
+                            'RMSE': np.sqrt(mean_squared_error(y_test, y_pred)),
+                            'CV Mean': cv_scores.mean(),
+                            'CV Std': cv_scores.std()
+                        }
+                        st.write(f"✅ Random Forest: R2={results['Random Forest']['R2 Score']:.4f}")
                     
-                    progress_bar = st.progress(0)
-                    for idx, (name, model) in enumerate(models.items()):
-                        st.write(f"Training {name}...")
-                        model.fit(X_train, y_train)
-                        y_pred = model.predict(X_test)
-                        trained_models[name] = model
-                        
-                        kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
-                        
-                        if task_type == "Classification":
-                            cv_scores = cross_val_score(model, X_scaled, y, cv=kfold, scoring='accuracy')
-                            results[name] = {
-                                'Accuracy': accuracy_score(y_test, y_pred),
-                                'Precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
-                                'Recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
-                                'F1-Score': f1_score(y_test, y_pred, average='weighted', zero_division=0),
-                                'CV Mean': cv_scores.mean(),
-                                'CV Std': cv_scores.std()
-                            }
+                    if use_dtr:
+                        dtr = DecisionTreeRegressor(random_state=42)
+                        dtr.fit(X_train, y_train)
+                        y_pred = dtr.predict(X_test)
+                        models['Decision Tree'] = dtr
+                        cv_scores = cross_val_score(dtr, X_scaled, y, cv=kfold, scoring='r2')
+                        results['Decision Tree'] = {
+                            'R2 Score': r2_score(y_test, y_pred),
+                            'RMSE': np.sqrt(mean_squared_error(y_test, y_pred)),
+                            'CV Mean': cv_scores.mean(),
+                            'CV Std': cv_scores.std()
+                        }
+                        st.write(f"✅ Decision Tree: R2={results['Decision Tree']['R2 Score']:.4f}")
+                
+                st.session_state.models = models
+                st.session_state.results = results
+                st.session_state.model_trained = True
+                
+                st.success("✅ Training complete!")
+                
+                # Display results
+                st.subheader("Results")
+                results_df = pd.DataFrame(results).T
+                st.dataframe(results_df.style.format('{:.4f}').highlight_max(axis=0))
+                
+                if task_type == "Classification":
+                    best = max(results, key=lambda x: results[x]['Accuracy'])
+                    st.success(f"🏆 Best: {best} (Accuracy: {results[best]['Accuracy']:.4f})")
+                    
+                    # Confusion Matrix
+                    if best in models:
+                        st.subheader(f"Confusion Matrix - {best}")
+                        best_model = models[best]
+                        y_pred_best = best_model.predict(X_test)
+                        cm = confusion_matrix(y_test, y_pred_best)
+                        fig, ax = plt.subplots(figsize=(8, 6))
+                        if target_enc:
+                            labels = target_enc.classes_
                         else:
-                            cv_scores = cross_val_score(model, X_scaled, y, cv=kfold, scoring='r2')
-                            results[name] = {
-                                'R2 Score': r2_score(y_test, y_pred),
-                                'RMSE': np.sqrt(mean_squared_error(y_test, y_pred)),
-                                'MSE': mean_squared_error(y_test, y_pred),
-                                'CV Mean': cv_scores.mean(),
-                                'CV Std': cv_scores.std()
-                            }
-                        
-                        progress_bar.progress((idx + 1) / len(models))
-                    
-                    st.session_state.models = trained_models
-                    st.session_state.results = results
-                    st.session_state.scaler = scaler
-                    st.session_state.selected_features = selected_features
-                    st.session_state.task_type = task_type
-                    st.session_state.model_trained = True
-                    st.session_state.target_encoder = target_encoder
-                    
-                    st.success("✅ Models trained successfully!")
-                    
-                    results_df = pd.DataFrame(results).T
-                    st.dataframe(results_df.style.highlight_max(axis=0))
-                    
-                    best_model = max(results, key=lambda x: results[x][list(results[x].keys())[0]])
-                    st.success(f"🏆 Best Model: **{best_model}**")
-                    
-                except Exception as e:
-                    st.error(f"Error during training: {str(e)}")
+                            labels = [str(i) for i in range(len(np.unique(y)))]
+                        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+                                   xticklabels=labels, yticklabels=labels)
+                        ax.set_xlabel('Predicted')
+                        ax.set_ylabel('Actual')
+                        st.pyplot(fig)
+                else:
+                    best = max(results, key=lambda x: results[x]['R2 Score'])
+                    st.success(f"🏆 Best: {best} (R2: {results[best]['R2 Score']:.4f})")
+                
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
 
 # =============================================================================
 # PAGE: RISK PREDICTION
@@ -753,251 +628,155 @@ elif page == "🤖 Model Training":
 elif page == "📈 Risk Prediction":
     st.header("📈 Risk Prediction")
     
-    if not check_data_loaded():
+    if not st.session_state.model_trained:
+        st.warning("⚠️ Please train models first")
         st.stop()
     
-    if st.session_state.model_trained and st.session_state.models:
-        st.subheader("Make New Predictions")
-        
-        st.info("Enter values for each feature to predict the risk level/score.")
-        
-        input_data = {}
-        cols = st.columns(2)
-        
-        for idx, feature in enumerate(st.session_state.selected_features):
-            with cols[idx % 2]:
-                if feature in st.session_state.risk_data.columns:
-                    if st.session_state.risk_data[feature].dtype == 'object':
-                        unique_vals = st.session_state.risk_data[feature].dropna().unique().tolist()
-                        input_data[feature] = st.selectbox(f"{feature}", unique_vals)
-                    else:
-                        min_val = float(st.session_state.risk_data[feature].min())
-                        max_val = float(st.session_state.risk_data[feature].max())
-                        input_data[feature] = st.number_input(f"{feature}", value=float(min_val), min_value=min_val, max_value=max_val)
+    st.subheader("Enter Values")
+    
+    input_data = {}
+    cols = st.columns(2)
+    df = st.session_state.risk_data
+    
+    for i, feat in enumerate(st.session_state.selected_features):
+        with cols[i % 2]:
+            if feat in df.columns:
+                if df[feat].dtype == 'object':
+                    vals = df[feat].dropna().unique().tolist()
+                    input_data[feat] = st.selectbox(f"{feat}", vals)
                 else:
-                    input_data[feature] = st.number_input(f"{feature}", value=0.0)
-        
-        if st.button("🔮 Predict Risk", type="primary"):
+                    min_val = float(df[feat].min())
+                    max_val = float(df[feat].max())
+                    mean_val = float(df[feat].mean())
+                    input_data[feat] = st.number_input(f"{feat}", value=mean_val, 
+                                                       min_value=min_val, max_value=max_val)
+            else:
+                input_data[feat] = st.number_input(f"{feat}", value=0.0)
+    
+    if st.button("🔮 PREDICT", type="primary", use_container_width=True):
+        try:
             input_df = pd.DataFrame([input_data])
             
-            try:
-                for feature, encoder in st.session_state.feature_encoders.items():
-                    if feature in input_df.columns:
-                        if input_df[feature].iloc[0] in encoder.classes_:
-                            input_df[feature + '_encoded'] = encoder.transform([input_df[feature].iloc[0]])[0]
-                
-                X_input = input_df[st.session_state.selected_features].copy()
-                for col in X_input.columns:
-                    if X_input[col].dtype == 'object':
-                        X_input[col] = pd.Categorical(X_input[col]).codes
-                
-                X_input = X_input.fillna(0)
-                input_scaled = st.session_state.scaler.transform(X_input)
-                
-                st.subheader("Prediction Results")
+            for feat, encoder in st.session_state.feature_encoders.items():
+                if feat in input_df.columns:
+                    val = input_df[feat].iloc[0]
+                    if val in encoder.classes_:
+                        input_df[feat + '_enc'] = encoder.transform([val])[0]
+            
+            X_input = []
+            for feat in st.session_state.selected_features:
+                if feat + '_enc' in input_df.columns:
+                    X_input.append(input_df[feat + '_enc'].iloc[0])
+                elif feat in input_df.columns:
+                    try:
+                        X_input.append(float(input_df[feat].iloc[0]))
+                    except:
+                        X_input.append(0)
+            
+            X_input = np.array(X_input).reshape(1, -1)
+            X_scaled = st.session_state.scaler.transform(X_input)
+            
+            st.subheader("Results")
+            pred_cols = st.columns(len(st.session_state.models))
+            
+            for idx, (name, model) in enumerate(st.session_state.models.items()):
+                pred = model.predict(X_scaled)[0]
                 
                 if st.session_state.task_type == "Classification":
-                    results_cols = st.columns(len(st.session_state.models))
-                    for idx, (name, model) in enumerate(st.session_state.models.items()):
-                        prediction = model.predict(input_scaled)[0]
-                        if st.session_state.target_encoder:
-                            pred_label = st.session_state.target_encoder.inverse_transform([prediction])[0]
-                        else:
-                            pred_label = str(prediction)
-                        
-                        color_class = "low"
-                        if "High" in str(pred_label):
-                            color_class = "high"
-                        elif "Medium" in str(pred_label):
-                            color_class = "medium"
-                        
-                        with results_cols[idx]:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <h3>{name}</h3>
-                                <div class="risk-{color_class}">
-                                    <h2>{pred_label}</h2>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                    if st.session_state.target_encoder:
+                        label = st.session_state.target_encoder.inverse_transform([int(pred)])[0]
+                    else:
+                        label = str(pred)
+                    
+                    label_lower = str(label).lower()
+                    if 'high' in label_lower:
+                        color = "#ff6b6b"
+                    elif 'medium' in label_lower:
+                        color = "#ffd93d"
+                    else:
+                        color = "#6bcb77"
+                    
+                    with pred_cols[idx]:
+                        st.markdown(f"""
+                        <div style="background: {color}; padding: 1rem; border-radius: 10px; text-align: center;">
+                            <h3>{name}</h3>
+                            <h2>{label}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
                 else:
-                    results_cols = st.columns(len(st.session_state.models))
-                    for idx, (name, model) in enumerate(st.session_state.models.items()):
-                        prediction = model.predict(input_scaled)[0]
-                        with results_cols[idx]:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <h3>{name}</h3>
-                                <h2>{prediction:.2f}</h2>
-                                <p>Risk Score</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Error making prediction: {str(e)}")
+                    with pred_cols[idx]:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #667eea, #764ba2); padding: 1rem; border-radius: 10px; text-align: center; color: white;">
+                            <h3>{name}</h3>
+                            <h2>{pred:.2f}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+
+# =============================================================================
+# PAGE: RESULTS
+# =============================================================================
+
+elif page == "📊 Results":
+    st.header("📊 Results")
+    
+    if not st.session_state.model_trained:
+        st.warning("⚠️ Please train models first")
+        st.stop()
+    
+    results_df = pd.DataFrame(st.session_state.results).T
+    st.dataframe(results_df.style.format('{:.4f}').highlight_max(axis=0))
+    
+    if st.session_state.task_type == "Classification":
+        best = max(st.session_state.results, key=lambda x: st.session_state.results[x]['Accuracy'])
+        st.success(f"🏆 Best Model: {best}")
+        
+        # Bar chart
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.bar(results_df.index, results_df['Accuracy'], color=['#667eea', '#764ba2', '#f093fb'])
+        ax.set_ylim(0, 1)
+        ax.set_ylabel('Accuracy')
+        ax.set_title('Model Accuracy Comparison')
+        plt.xticks(rotation=45, ha='right')
+        st.pyplot(fig)
     else:
-        st.warning("⚠️ Please train models first in the Model Training section.")
+        best = max(st.session_state.results, key=lambda x: st.session_state.results[x]['R2 Score'])
+        st.success(f"🏆 Best Model: {best}")
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.bar(results_df.index, results_df['R2 Score'], color=['#667eea', '#764ba2'])
+        ax.set_ylim(-1, 1)
+        ax.set_ylabel('R2 Score')
+        ax.set_title('Model R2 Comparison')
+        plt.xticks(rotation=45, ha='right')
+        st.pyplot(fig)
+    
+    # Download report
+    report = f"""
+    ========================================
+    MICROPLASTIC RISK PREDICTION REPORT
+    ========================================
+    Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    Task: {st.session_state.task_type}
+    Target: {st.session_state.target_column}
+    
+    RESULTS:
+    {results_df.to_string()}
+    
+    BEST MODEL: {best}
+    ========================================
+    """
+    
+    st.download_button("📥 Download Report", report, f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
 # =============================================================================
-# PAGE: RISK MAPPING & VISUALIZATION
+# FOOTER
 # =============================================================================
 
-elif page == "🗺️ Risk Mapping & Visualization":
-    st.header("🗺️ Risk Mapping & Visualization")
-    
-    if not check_data_loaded():
-        st.stop()
-    
-    df = st.session_state.risk_data
-    
-    st.subheader("Interactive Risk Visualizations")
-    
-    viz_tabs = st.tabs(["📊 Distribution", "📈 Relationships", "🔬 Correlations", "🎯 Risk Analysis"])
-    
-    with viz_tabs[0]:
-        col1, col2 = st.columns(2)
-        with col1:
-            risk_cols = [col for col in df.columns if 'risk' in col.lower() or 'Risk' in col]
-            if risk_cols:
-                for risk_col in risk_cols[:2]:
-                    if df[risk_col].dtype == 'object':
-                        fig = px.pie(df, names=risk_col, title=f"{risk_col} Distribution")
-                        st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            if numeric_cols:
-                selected_col = st.selectbox("Select column to visualize", numeric_cols)
-                fig = px.box(df, y=selected_col, title=f"{selected_col} Box Plot")
-                st.plotly_chart(fig, use_container_width=True)
-    
-    with viz_tabs[1]:
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        if len(numeric_cols) >= 2:
-            x_col = st.selectbox("X-axis", numeric_cols, key="scatter_x")
-            y_col = st.selectbox("Y-axis", numeric_cols, key="scatter_y")
-            fig = px.scatter(df, x=x_col, y=y_col, title=f"{y_col} vs {x_col}",
-                           opacity=0.6, trendline="ols")
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with viz_tabs[2]:
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        if len(numeric_cols) >= 2:
-            corr_matrix = df[numeric_cols].corr()
-            fig = px.imshow(corr_matrix, text_auto=True, aspect="auto",
-                           title="Feature Correlation Matrix",
-                           color_continuous_scale='RdBu')
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with viz_tabs[3]:
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-        if categorical_cols and 'Risk_Score' in df.columns:
-            cat_col = st.selectbox("Group by", categorical_cols)
-            risk_by_cat = df.groupby(cat_col)['Risk_Score'].agg(['mean', 'std', 'count']).reset_index()
-            risk_by_cat = risk_by_cat.sort_values('mean', ascending=False).head(10)
-            fig = px.bar(risk_by_cat, x=cat_col, y='mean', error_y='std',
-                        title=f"Average Risk Score by {cat_col}")
-            st.plotly_chart(fig, use_container_width=True)
-
-# =============================================================================
-# PAGE: MODEL EVALUATION
-# =============================================================================
-
-elif page == "📊 Model Evaluation":
-    st.header("📊 Model Evaluation")
-    
-    if not check_data_loaded():
-        st.stop()
-    
-    if st.session_state.model_trained and st.session_state.results:
-        st.subheader("Model Performance Metrics")
-        
-        results_df = pd.DataFrame(st.session_state.results).T
-        st.dataframe(results_df.style.highlight_max(axis=0))
-        
-        st.subheader("Performance Visualization")
-        
-        if st.session_state.task_type == "Classification":
-            metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-            fig = go.Figure()
-            for metric in metrics:
-                fig.add_trace(go.Bar(name=metric, x=results_df.index, y=results_df[metric]))
-            fig.update_layout(title="Model Performance Comparison", barmode='group')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.subheader("Cross-Validation Scores")
-            fig2 = go.Figure()
-            fig2.add_trace(go.Bar(name="CV Mean", x=results_df.index, y=results_df['CV Mean'],
-                                 error_y=dict(type='data', array=results_df['CV Std'])))
-            fig2.update_layout(title="5-Fold Cross Validation Results")
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        best_model = max(st.session_state.results, key=lambda x: st.session_state.results[x][list(st.session_state.results[x].keys())[0]])
-        st.metric("🏆 Best Model", best_model)
-    else:
-        st.warning("⚠️ Please train models first in the Model Training section.")
-
-# =============================================================================
-# PAGE: GENERATE REPORT
-# =============================================================================
-
-elif page == "📄 Generate Report":
-    st.header("📄 Generate Environmental Risk Report")
-    
-    if not check_data_loaded():
-        st.stop()
-    
-    df = st.session_state.risk_data
-    
-    st.subheader("Report Configuration")
-    
-    report_title = st.text_input("Report Title", "Microplastic Pollution Risk Assessment Report")
-    author_name = st.text_input("Author/Organization", "Viernes, M.J. & Magdaluyo, S.M.R.")
-    
-    if st.button("📄 Generate Report", type="primary"):
-        report = f"""
-{'='*80}
-{report_title.upper()}
-{author_name}
-ASSCAT
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-{'='*80}
-
-EXECUTIVE SUMMARY
-{'-'*40}
-- Total Records: {len(df):,}
-- Total Features: {len(df.columns)}
-- Data Shape: {df.shape}
-
-DATA OVERVIEW
-{'-'*40}
-{df.describe().to_string() if len(df.select_dtypes(include=[np.number]).columns) > 0 else 'No numeric columns'}
-
-MISSING VALUES
-{'-'*40}
-{df.isnull().sum().to_string()}
-
-"""
-        if st.session_state.model_trained and st.session_state.results:
-            report += f"""
-MODEL PERFORMANCE
-{'-'*40}
-{pd.DataFrame(st.session_state.results).T.to_string()}
-"""
-        
-        report += f"\n{'='*80}\nEnd of Report\n{'='*80}"
-        
-        st.text_area("Generated Report", report, height=400)
-        
-        st.download_button(
-            label="📥 Download Report",
-            data=report,
-            file_name=f"microplastic_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain"
-        )
-
-# Footer
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: #666; padding: 1rem;">
+<div style="text-align: center; color: #666;">
     <p>🌊 Microplastic Pollution Risk Prediction System | ASSCAT 2025 | Viernes, M.J. & Magdaluyo, S.M.R.</p>
 </div>
 """, unsafe_allow_html=True)
