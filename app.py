@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler, LabelEncoder, MinMaxScaler
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
@@ -15,7 +15,7 @@ from ml_pipeline import load_data
 
 
 # =========================
-# SAFE ARIMA IMPORT
+# SAFE IMPORTS
 # =========================
 try:
     from statsmodels.tsa.arima.model import ARIMA
@@ -23,11 +23,19 @@ try:
 except:
     ARIMA_AVAILABLE = False
 
+try:
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import LSTM, Dense
+    LSTM_AVAILABLE = True
+except:
+    LSTM_AVAILABLE = False
+
 
 # =========================
 # RISK MATRIX
 # =========================
 def create_risk_matrix(series, name_series):
+
     numeric = pd.to_numeric(series, errors="coerce")
 
     df = pd.DataFrame({
@@ -60,6 +68,7 @@ def create_risk_matrix(series, name_series):
 # HIGH RISK ENGINE
 # =========================
 def high_risk_engine(df, target):
+
     values = pd.to_numeric(df[target], errors="coerce")
     threshold = values.quantile(0.75)
 
@@ -130,13 +139,13 @@ def build_report_table(y_true, y_pred, model_name):
 
 
 # =========================
-# TIME SERIES FIXED
+# TIME SERIES
 # =========================
 def prepare_time_series(df, date_col, value_col):
 
     temp = df[[date_col, value_col]].copy()
 
-    # FIX: handle duplicate columns
+    # fix duplicate columns
     temp = temp.loc[:, ~temp.columns.duplicated()]
 
     temp[date_col] = pd.to_datetime(temp[date_col], errors="coerce")
@@ -144,7 +153,7 @@ def prepare_time_series(df, date_col, value_col):
 
     temp = temp.dropna().sort_values(date_col)
 
-    # FIX: remove duplicate dates
+    # fix duplicate dates
     temp = temp.drop_duplicates(subset=[date_col])
 
     if temp.empty:
@@ -162,6 +171,55 @@ def run_arima(series, steps=10):
         model = ARIMA(series, order=(2, 1, 2))
         model_fit = model.fit()
         return model_fit.forecast(steps=steps)
+    except:
+        return None
+
+
+def run_lstm(series, steps=10):
+
+    if not LSTM_AVAILABLE:
+        return None
+
+    try:
+        data = series.values.reshape(-1, 1)
+
+        scaler = MinMaxScaler()
+        scaled = scaler.fit_transform(data)
+
+        window = 10
+        if len(scaled) <= window:
+            return None
+
+        X, y = [], []
+
+        for i in range(window, len(scaled)):
+            X.append(scaled[i-window:i])
+            y.append(scaled[i])
+
+        X, y = np.array(X), np.array(y)
+
+        model = Sequential([
+            LSTM(50, activation='relu', input_shape=(X.shape[1], 1)),
+            Dense(1)
+        ])
+
+        model.compile(optimizer='adam', loss='mse')
+        model.fit(X, y, epochs=10, batch_size=8, verbose=0)
+
+        last_seq = scaled[-window:]
+        preds = []
+
+        for _ in range(steps):
+            x_input = last_seq.reshape(1, window, 1)
+            pred = model.predict(x_input, verbose=0)[0][0]
+
+            preds.append(pred)
+            last_seq = np.append(last_seq[1:], [[pred]], axis=0)
+
+        preds = scaler.inverse_transform(np.array(preds).reshape(-1, 1))
+
+        return preds.flatten()
+
     except:
         return None
 
@@ -219,26 +277,6 @@ if file:
         st.info(f"High Risk Threshold: {threshold:.2f}")
         st.bar_chart(df_risk["Risk Category"].value_counts())
 
-    # ================= RISK =================
-    with tab2:
-
-        feature = st.selectbox("Feature", df.columns)
-
-        df_clean = df.dropna(subset=[feature, target]).copy()
-        df_clean[target] = pd.to_numeric(df_clean[target], errors="coerce")
-
-        if pd.api.types.is_numeric_dtype(df_clean[feature]):
-
-            fig, ax = plt.subplots()
-            ax.scatter(df_clean[feature], df_clean[target])
-            st.pyplot(fig)
-
-        else:
-
-            grouped = df_clean.groupby(feature)[target].mean().reset_index()
-            grouped.columns = [feature, "Risk"]
-            st.bar_chart(grouped.set_index(feature))
-
     # ================= ML =================
     with tab3:
 
@@ -263,17 +301,14 @@ if file:
             rf_pred = rf.predict(X_test)
             svm_pred = svm.predict(X_test)
 
-            # CROSS VALIDATION 🔥
             rf_cv = cross_val_score(rf, X, y, cv=5).mean()
             svm_cv = cross_val_score(svm, X, y, cv=5).mean()
 
-            st.subheader("📊 Classification Table")
             st.dataframe(pd.concat([
                 build_report_table(y_test, rf_pred, "Random Forest"),
                 build_report_table(y_test, svm_pred, "SVM")
             ]))
 
-            st.subheader("📈 Accuracy + CV")
             st.dataframe(pd.DataFrame({
                 "Model": ["Random Forest", "SVM"],
                 "Test Accuracy": [
@@ -283,23 +318,10 @@ if file:
                 "CV Score": [rf_cv, svm_cv]
             }))
 
-    # ================= CLUSTER =================
-    with tab4:
-
-        k = st.slider("Clusters", 2, 10, 3)
-
-        if st.button("Run Clustering"):
-
-            result = run_kmeans(df, k)
-
-            st.bar_chart(result["Cluster"].value_counts())
-
-            fig, ax = plt.subplots()
-            ax.scatter(result["PCA1"], result["PCA2"], c=result["Cluster"])
-            st.pyplot(fig)
-
     # ================= FORECAST =================
     with tab5:
+
+        st.subheader("📈 Forecasting (ARIMA vs LSTM)")
 
         date_col = st.selectbox("Date Column", df.columns)
         value_col = st.selectbox("Value Column", df.columns)
@@ -310,23 +332,30 @@ if file:
 
             ts = prepare_time_series(df, date_col, value_col)
 
-            if ts is None or len(ts) < 10:
+            if ts is None or len(ts) < 15:
                 st.warning("Not enough time-series data")
             else:
 
                 st.line_chart(ts[value_col])
 
-                forecast = run_arima(ts[value_col], steps)
+                future_index = pd.date_range(ts.index[-1], periods=steps+1)[1:]
 
-                if forecast is None:
-                    st.warning("ARIMA not installed")
-                else:
-
-                    future_index = pd.date_range(ts.index[-1], periods=steps+1)[1:]
-
+                # ARIMA
+                arima_pred = run_arima(ts[value_col], steps)
+                if arima_pred is not None:
+                    st.subheader("ARIMA")
                     st.line_chart(pd.concat([
                         ts[value_col],
-                        pd.Series(forecast, index=future_index)
+                        pd.Series(arima_pred, index=future_index)
+                    ]))
+
+                # LSTM
+                lstm_pred = run_lstm(ts[value_col], steps)
+                if lstm_pred is not None:
+                    st.subheader("LSTM 🔥")
+                    st.line_chart(pd.concat([
+                        ts[value_col],
+                        pd.Series(lstm_pred, index=future_index)
                     ]))
 
 else:
