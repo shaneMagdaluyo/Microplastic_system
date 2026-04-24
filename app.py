@@ -1,5 +1,5 @@
 # enhanced_app.py - Complete Microplastic Risk Prediction System
-# With Advanced Features: EDA, Multiple Models, Hyperparameter Tuning, Visualization, Export
+# MICROPLASTIC RISK ASSESSMENT SYSTEM (MP-RAS)
 # Researchers: Matthew Joseph Viernes & Shane Mark R. Magdaluyo
 # ASSCAT 2025
 
@@ -54,32 +54,101 @@ from pathlib import Path
 
 # Page configuration
 st.set_page_config(
-    page_title="Microplastic Risk Prediction System",
+    page_title="MP-RAS | Microplastic Risk Assessment System",
     page_icon="🌊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better UI
+# ============================================================================
+# CUSTOM CSS WITH SYSTEM BRANDING
+# ============================================================================
+
 st.markdown("""
 <style>
-    /* Main header */
+    /* Main header with system name */
     .main-header {
-        background: linear-gradient(135deg, #1a2980 0%, #26d0ce 100%);
+        background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         padding: 2rem;
         border-radius: 15px;
         color: white;
         text-align: center;
         margin-bottom: 2rem;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        position: relative;
+        overflow: hidden;
+    }
+    .main-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        animation: shimmer 3s infinite;
+    }
+    @keyframes shimmer {
+        100% { left: 100%; }
     }
     .main-header h1 {
-        font-size: 2.5rem;
+        font-size: 2.8rem;
+        margin-bottom: 0.5rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+    .main-header .subtitle {
+        font-size: 1.2rem;
+        opacity: 0.9;
         margin-bottom: 0.5rem;
     }
-    .main-header p {
-        font-size: 1.1rem;
-        opacity: 0.9;
+    .main-header .version {
+        font-size: 0.9rem;
+        opacity: 0.7;
+        font-family: monospace;
+    }
+    .main-header .researchers {
+        font-size: 0.9rem;
+        opacity: 0.8;
+        margin-top: 0.5rem;
+        border-top: 1px solid rgba(255,255,255,0.3);
+        display: inline-block;
+        padding-top: 0.5rem;
+    }
+    
+    /* System badge */
+    .system-badge {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        z-index: 1000;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        cursor: pointer;
+        transition: transform 0.3s;
+    }
+    .system-badge:hover {
+        transform: scale(1.05);
+    }
+    
+    /* Sidebar header */
+    .sidebar-header {
+        text-align: center;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-bottom: 2px solid #667eea;
+    }
+    .sidebar-header h3 {
+        color: #667eea;
+        margin: 0;
+    }
+    .sidebar-header small {
+        color: #666;
     }
     
     /* Risk level cards */
@@ -112,6 +181,13 @@ st.markdown("""
         color: white;
         text-align: center;
     }
+    .risk-verylow {
+        background: linear-gradient(135deg, #4caf50, #45a049);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+    }
     
     /* Metric cards */
     .metric-card {
@@ -135,6 +211,15 @@ st.markdown("""
         opacity: 0.9;
     }
     
+    /* Welcome card */
+    .welcome-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    
     /* Buttons */
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -149,11 +234,6 @@ st.markdown("""
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    
-    /* Sidebar */
-    .css-1d391kg {
-        background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
     }
     
     /* Info boxes */
@@ -186,11 +266,6 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* Progress bar */
-    .stProgress > div > div {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
     /* Footer */
     .footer {
         text-align: center;
@@ -199,10 +274,55 @@ st.markdown("""
         border-top: 1px solid #ddd;
         margin-top: 2rem;
     }
+    
+    /* System name in sidebar */
+    .system-name-sidebar {
+        text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #667eea20, #764ba220);
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
+    .system-name-sidebar h2 {
+        color: #667eea;
+        margin: 0;
+        font-size: 1.2rem;
+    }
+    .system-name-sidebar p {
+        margin: 0;
+        font-size: 0.8rem;
+        color: #666;
+    }
+    
+    /* Animation for loading */
+    @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
+    }
+    .loading {
+        animation: pulse 1.5s infinite;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state with comprehensive variables
+# ============================================================================
+# SYSTEM HEADER WITH BRANDING
+# ============================================================================
+
+st.markdown("""
+<div class="main-header">
+    <h1>🌊 MP-RAS</h1>
+    <div class="subtitle">Microplastic Risk Assessment System</div>
+    <div class="version">Version 2.0 | Data Mining-Based Predictive Risk Modeling</div>
+    <div class="researchers">Viernes, M.J. & Magdaluyo, S.M.R. | ASSCAT 2025</div>
+</div>
+""", unsafe_allow_html=True)
+
+# ============================================================================
+# INITIALIZE SESSION STATE
+# ============================================================================
+
 def init_session_state():
     """Initialize all session state variables"""
     defaults = {
@@ -242,6 +362,70 @@ def init_session_state():
             st.session_state[key] = default
 
 init_session_state()
+
+# ============================================================================
+# SIDEBAR WITH SYSTEM BRANDING
+# ============================================================================
+
+with st.sidebar:
+    st.markdown("""
+    <div class="sidebar-header">
+        <div class="system-name-sidebar">
+            <h2>🌊 MP-RAS</h2>
+            <p>Microplastic Risk<br>Assessment System</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Navigation
+    st.markdown("### 📍 Navigation")
+    page = st.radio("", [
+        "🏠 Dashboard",
+        "📁 Data Upload", 
+        "📊 EDA",
+        "🤖 Model Training",
+        "📈 Prediction",
+        "📊 Results"
+    ])
+    
+    st.markdown("---")
+    
+    # System info in sidebar
+    st.markdown("""
+    <div class="info-box">
+        <small>🔬 System Features:</small><br>
+        <small>• Multiple ML Models</small><br>
+        <small>• Cross-Validation</small><br>
+        <small>• Hyperparameter Tuning</small><br>
+        <small>• Real-time Prediction</small><br>
+        <small>• Report Generation</small>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Data status
+    if st.session_state.data_loaded and st.session_state.risk_data is not None:
+        st.markdown(f"""
+        <div class="success-box">
+            ✅ <strong>Data Ready</strong><br>
+            <small>{st.session_state.risk_data.shape[0]} rows<br>
+            {st.session_state.risk_data.shape[1]} columns</small>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="warning-box">
+            ⚠️ <strong>No Data Loaded</strong><br>
+            <small>Please upload data</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    if st.session_state.model_trained:
+        st.markdown(f"""
+        <div class="success-box">
+            🎯 <strong>Model Ready</strong><br>
+            <small>Best: {st.session_state.best_model_name}</small>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -300,7 +484,7 @@ def generate_enhanced_sample_data(n_samples=2000):
     # Calculate comprehensive risk score
     df['Risk_Score'] = (
         (df['MP_Concentration'] / df['MP_Concentration'].max()) * 35 +
-        (df['Industrial_Score']) * 25 +
+        df['Industrial_Score'] * 25 +
         (1 - df['Waste_Management_Score']) * 20 +
         np.where(df['Particle_Size_mm'] < 0.5, 10, 0) +
         np.where(df['Particle_Shape'] == 'Fiber', 5, 0) +
@@ -402,31 +586,6 @@ def advanced_preprocessing(df, features, target):
         y = df_proc[target].values
         return X, y, encoders, None
 
-def calculate_data_statistics(df):
-    """Calculate comprehensive data statistics"""
-    stats_dict = {
-        'shape': df.shape,
-        'columns': len(df.columns),
-        'rows': len(df),
-        'missing_values': df.isnull().sum().sum(),
-        'duplicates': df.duplicated().sum(),
-        'numeric_cols': len(df.select_dtypes(include=[np.number]).columns),
-        'categorical_cols': len(df.select_dtypes(include=['object']).columns),
-        'memory_usage': df.memory_usage(deep=True).sum() / 1024**2,
-    }
-    
-    # Numeric summaries
-    numeric_df = df.select_dtypes(include=[np.number])
-    if len(numeric_df.columns) > 0:
-        stats_dict['numeric_summary'] = {
-            'mean': numeric_df.mean().to_dict(),
-            'std': numeric_df.std().to_dict(),
-            'skewness': numeric_df.skew().to_dict(),
-            'kurtosis': numeric_df.kurtosis().to_dict(),
-        }
-    
-    return stats_dict
-
 def get_model_with_params(model_name, task_type, random_state=42):
     """Get model with optimized parameters"""
     models = {
@@ -489,7 +648,7 @@ def get_model_with_params(model_name, task_type, random_state=42):
     return model_info.get(task_type, None)
 
 # ============================================================================
-# PAGE: HOME / DASHBOARD
+# PAGE FUNCTIONS
 # ============================================================================
 
 def page_home():
@@ -497,6 +656,14 @@ def page_home():
     
     if st.session_state.data_loaded and st.session_state.risk_data is not None:
         df = st.session_state.risk_data
+        
+        # Welcome message with system name
+        st.markdown(f"""
+        <div class="success-box">
+            <strong>🎉 Welcome to MP-RAS (Microplastic Risk Assessment System)</strong><br>
+            System Ready | Data Loaded: {len(df):,} records | {len(df.columns)} features
+        </div>
+        """, unsafe_allow_html=True)
         
         # Key metrics in styled cards
         st.subheader("📊 Dataset Overview")
@@ -523,19 +690,26 @@ def page_home():
             missing_pct = (df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100
             st.markdown(f"""
             <div class="metric-card">
-                <p>🔍 Missing Data</p>
-                <h3>{missing_pct:.1f}%</h3>
+                <p>🔍 Data Quality</p>
+                <h3>{100 - missing_pct:.1f}%</h3>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
-            memory = df.memory_usage(deep=True).sum() / 1024**2
-            st.markdown(f"""
-            <div class="metric-card">
-                <p>💾 Memory</p>
-                <h3>{memory:.1f} MB</h3>
-            </div>
-            """, unsafe_allow_html=True)
+            if st.session_state.model_trained:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <p>🎯 Model Status</p>
+                    <h3>{st.session_state.best_model_name[:15]}...</h3>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class="metric-card">
+                    <p>🎯 Model Status</p>
+                    <h3>Not Trained</h3>
+                </div>
+                """, unsafe_allow_html=True)
         
         # Risk distribution
         st.subheader("🎯 Risk Distribution")
@@ -568,32 +742,19 @@ def page_home():
                              line_color="red", annotation_text=f"Mean: {df['Risk_Score'].mean():.1f}")
                 st.plotly_chart(fig, use_container_width=True)
         
-        # Feature preview
+        # Data preview
         st.subheader("📋 Data Preview")
         st.dataframe(df.head(10))
         
-        # Model status
-        if st.session_state.model_trained:
-            st.subheader("🤖 Model Status")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.success(f"✅ Best Model: {st.session_state.best_model_name}")
-            with col2:
-                best_score = st.session_state.model_results.get(st.session_state.best_model_name, {})
-                if st.session_state.task_type == "Classification":
-                    score = best_score.get('Accuracy', 0)
-                else:
-                    score = best_score.get('R2 Score', 0)
-                st.metric("Best Score", f"{score:.4f}")
-            with col3:
-                st.metric("Trained Models", len(st.session_state.trained_models))
-    
     else:
-        # Welcome screen
+        # Welcome screen with system branding
         st.markdown("""
-        <div class="info-box">
-            <h3>🌊 Welcome to the Microplastic Pollution Risk Prediction System</h3>
-            <p>This system uses advanced data mining techniques to predict microplastic pollution risks.</p>
+        <div class="welcome-card">
+            <h2>🌊 Welcome to MP-RAS</h2>
+            <h3>Microplastic Risk Assessment System</h3>
+            <p>An intelligent system for predicting microplastic pollution risks using advanced data mining techniques</p>
+            <hr>
+            <p style="color: #667eea;">Built by: Viernes, M.J. & Magdaluyo, S.M.R. | ASSCAT 2025</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -601,7 +762,7 @@ def page_home():
         
         with col1:
             st.markdown("""
-            ### ✨ Features
+            ### ✨ System Features
             
             - **Data Upload & Preprocessing**
               - Support for CSV/Excel files
@@ -618,12 +779,6 @@ def page_home():
               - Gradient Boosting
               - Logistic Regression
               - SVM, KNN, and more
-            
-            - **Advanced Features**
-              - Hyperparameter tuning
-              - Cross-validation
-              - Feature importance
-              - Report generation
             """)
         
         with col2:
@@ -646,17 +801,17 @@ def page_home():
                 st.session_state.data_loaded = True
                 st.session_state.data_source = "sample"
                 st.session_state.data_filename = "microplastic_sample_data.csv"
-                st.session_state.data_stats = calculate_data_statistics(df)
+                st.success("✅ Sample data loaded successfully!")
                 st.rerun()
         
         # System capabilities
         st.markdown("---")
-        st.subheader("📈 System Capabilities")
+        st.subheader("📈 MP-RAS Capabilities")
         
         cap_cols = st.columns(4)
         capabilities = [
             ("🎯", "Multiple ML Models", "6+ classification & regression models"),
-            ("📊", "Interactive Visualizations", "Real-time charts and graphs"),
+            ("📊", "Interactive Viz", "Real-time charts and graphs"),
             ("🔄", "Cross-Validation", "K-Fold CV for robust evaluation"),
             ("📄", "Report Generation", "Export analysis reports")
         ]
@@ -672,7 +827,7 @@ def page_home():
                 """, unsafe_allow_html=True)
 
 # ============================================================================
-# PAGE: DATA UPLOAD
+# DATA UPLOAD PAGE
 # ============================================================================
 
 def page_data_upload():
@@ -682,7 +837,7 @@ def page_data_upload():
     if st.session_state.data_loaded:
         st.markdown(f"""
         <div class="success-box">
-            ✅ <strong>Data Loaded</strong><br>
+            ✅ <strong>Data Loaded Successfully</strong><br>
             File: {st.session_state.data_filename}<br>
             Shape: {st.session_state.risk_data.shape[0]} rows × {st.session_state.risk_data.shape[1]} columns
         </div>
@@ -691,7 +846,7 @@ def page_data_upload():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📤 Upload Data")
+        st.subheader("📤 Upload Your Data")
         uploaded_file = st.file_uploader("Choose a CSV or Excel file", type=['csv', 'xlsx', 'xls'])
         
         if uploaded_file is not None:
@@ -704,18 +859,13 @@ def page_data_upload():
                 st.write("**Data Preview:**")
                 st.dataframe(df.head(5))
                 st.write(f"**Shape:** {df.shape}")
-                st.write(f"**Memory:** {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
                 
                 if st.button("✅ Load Dataset", type="primary"):
                     st.session_state.risk_data = df
                     st.session_state.data_loaded = True
                     st.session_state.data_filename = uploaded_file.name
                     st.session_state.data_source = "upload"
-                    st.session_state.data_stats = calculate_data_statistics(df)
-                    # Reset model state
                     st.session_state.model_trained = False
-                    st.session_state.trained_models = {}
-                    st.session_state.model_results = {}
                     st.success(f"✅ Successfully loaded {len(df)} rows, {len(df.columns)} columns!")
                     st.rerun()
             except Exception as e:
@@ -723,18 +873,17 @@ def page_data_upload():
     
     with col2:
         st.subheader("📊 Sample Data")
-        st.write("Use the built-in sample dataset with realistic microplastic data:")
-        st.write("- 2,000 samples")
-        st.write("- 25+ features including environmental, biological, and chemical parameters")
+        st.write("Use MP-RAS built-in sample dataset:")
+        st.write("- 2,000 samples of microplastic data")
+        st.write("- 25+ environmental and biological features")
         st.write("- Pre-calculated risk scores and levels")
         
-        if st.button("📊 Load Enhanced Sample Data", use_container_width=True):
+        if st.button("📊 Load MP-RAS Sample Data", use_container_width=True):
             df = generate_enhanced_sample_data(2000)
             st.session_state.risk_data = df
             st.session_state.data_loaded = True
             st.session_state.data_source = "sample"
-            st.session_state.data_filename = "microplastic_sample_data.csv"
-            st.session_state.data_stats = calculate_data_statistics(df)
+            st.session_state.data_filename = "MP-RAS_sample_data.csv"
             st.session_state.model_trained = False
             st.success("✅ Sample data loaded successfully!")
             st.rerun()
@@ -760,23 +909,19 @@ def page_data_upload():
             st.metric("Duplicate Rows", duplicates)
         
         # Data info tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Data Overview", "📈 Statistics", "🔍 Missing Values", "🏷️ Data Types"])
+        tab1, tab2, tab3 = st.tabs(["📊 Data Overview", "📈 Statistics", "🔍 Missing Values"])
         
         with tab1:
             st.dataframe(df.head(10))
-            st.caption(f"Last 10 rows of {len(df)} total rows")
         
         with tab2:
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
             if numeric_cols:
                 st.dataframe(df[numeric_cols].describe())
-            else:
-                st.info("No numeric columns found")
         
         with tab3:
             missing_df = pd.DataFrame({
                 'Column': df.columns,
-                'Data Type': df.dtypes.values,
                 'Missing Count': df.isnull().sum().values,
                 'Missing %': (df.isnull().sum().values / len(df) * 100).round(2)
             })
@@ -794,32 +939,9 @@ def page_data_upload():
                     st.rerun()
             else:
                 st.success("✅ No missing values found!")
-        
-        with tab4:
-            dtype_df = pd.DataFrame({
-                'Column': df.columns,
-                'Type': df.dtypes.values,
-                'Unique Values': [df[col].nunique() for col in df.columns]
-            })
-            st.dataframe(dtype_df)
-            
-            categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-            if categorical_cols:
-                st.write(f"**Categorical columns ({len(categorical_cols)}):** {', '.join(categorical_cols[:10])}")
-                if len(categorical_cols) > 10:
-                    st.write(f"... and {len(categorical_cols) - 10} more")
-                
-                if st.button("🔧 Encode Categorical Variables"):
-                    for col in categorical_cols:
-                        le = LabelEncoder()
-                        df[col + '_encoded'] = le.fit_transform(df[col].astype(str))
-                        st.session_state.feature_encoders[col] = le
-                    st.session_state.risk_data = df
-                    st.success(f"✅ Encoded {len(categorical_cols)} categorical variables!")
-                    st.rerun()
 
 # ============================================================================
-# PAGE: EXPLORATORY DATA ANALYSIS
+# EDA PAGE
 # ============================================================================
 
 def page_eda():
@@ -831,54 +953,35 @@ def page_eda():
     
     df = st.session_state.risk_data
     
-    # Create tabs for different analyses
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📈 Distribution Analysis", 
-        "🔗 Correlation Analysis", 
-        "🎯 Risk Analysis",
-        "🧬 Feature Analysis",
-        "📊 Statistical Tests"
-    ])
+    tab1, tab2, tab3 = st.tabs(["📈 Distribution Analysis", "🔗 Correlation Analysis", "🎯 Risk Analysis"])
     
     with tab1:
         st.subheader("Distribution Analysis")
         
-        col1, col2 = st.columns(2)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        selected_col = st.selectbox("Select column to analyze", numeric_cols)
         
-        with col1:
-            # Select column for distribution
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            selected_col = st.selectbox("Select column to analyze", numeric_cols)
-            
-            # Distribution plot
+        if selected_col:
             fig = make_subplots(rows=2, cols=2, 
-                                subplot_titles=('Histogram', 'Box Plot', 'Q-Q Plot', 'Density Plot'))
+                                subplot_titles=('Histogram', 'Box Plot', 'Density Plot', 'Q-Q Plot'))
             
-            # Histogram
             fig.add_trace(go.Histogram(x=df[selected_col].dropna(), nbinsx=30, 
-                                       name='Histogram', marker_color='#667eea'), row=1, col=1)
+                                       marker_color='#667eea'), row=1, col=1)
+            fig.add_trace(go.Box(y=df[selected_col].dropna(), marker_color='#764ba2'), row=1, col=2)
+            fig.add_trace(go.Histogram(x=df[selected_col].dropna(), histnorm='probability density',
+                                       marker_color='#6bcb77'), row=2, col=1)
             
-            # Box plot
-            fig.add_trace(go.Box(y=df[selected_col].dropna(), name='Box Plot', 
-                                 marker_color='#764ba2'), row=1, col=2)
-            
-            # Q-Q Plot
             from scipy import stats
             qq_data = stats.probplot(df[selected_col].dropna(), dist="norm")
             fig.add_trace(go.Scatter(x=qq_data[0][0], y=qq_data[0][1], mode='markers',
-                                     name='Q-Q Plot', marker_color='#ff6b6b'), row=2, col=1)
-            
-            # Density plot
-            fig.add_trace(go.Histogram(x=df[selected_col].dropna(), nbinsx=30, 
-                                       histnorm='probability density', name='Density',
-                                       marker_color='#6bcb77'), row=2, col=2)
+                                     marker_color='#ff6b6b'), row=2, col=2)
             
             fig.update_layout(height=600, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
             
             # Statistics
-            col1, col2, col3, col4 = st.columns(4)
             data = df[selected_col].dropna()
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Mean", f"{data.mean():.3f}")
             with col2:
@@ -887,18 +990,6 @@ def page_eda():
                 st.metric("Std Dev", f"{data.std():.3f}")
             with col4:
                 st.metric("Skewness", f"{data.skew():.3f}")
-        
-        with col2:
-            # Multiple distributions
-            st.write("**Multiple Feature Distributions**")
-            selected_cols = st.multiselect("Select columns to compare", numeric_cols, default=numeric_cols[:3] if len(numeric_cols) >= 3 else numeric_cols)
-            
-            if selected_cols:
-                fig = go.Figure()
-                for col in selected_cols:
-                    fig.add_trace(go.Box(y=df[col], name=col))
-                fig.update_layout(title="Box Plot Comparison", height=400)
-                st.plotly_chart(fig, use_container_width=True)
     
     with tab2:
         st.subheader("Correlation Analysis")
@@ -906,7 +997,6 @@ def page_eda():
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
         if len(numeric_cols) >= 2:
-            # Correlation matrix
             corr_matrix = df[numeric_cols].corr()
             
             fig = px.imshow(
@@ -919,23 +1009,6 @@ def page_eda():
             )
             fig.update_layout(height=600)
             st.plotly_chart(fig, use_container_width=True)
-            
-            # Top correlations with risk score
-            if 'Risk_Score' in numeric_cols:
-                st.subheader("Top Correlations with Risk Score")
-                risk_corr = corr_matrix['Risk_Score'].sort_values(ascending=False)
-                risk_corr_df = pd.DataFrame({
-                    'Feature': risk_corr.index,
-                    'Correlation': risk_corr.values
-                })
-                risk_corr_df = risk_corr_df[risk_corr_df['Feature'] != 'Risk_Score']
-                
-                fig = px.bar(risk_corr_df, x='Correlation', y='Feature', orientation='h',
-                            title="Correlation with Risk Score",
-                            color='Correlation', color_continuous_scale='RdBu')
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Need at least 2 numeric columns for correlation analysis")
     
     with tab3:
         st.subheader("Risk Analysis")
@@ -944,12 +1017,9 @@ def page_eda():
         
         with col1:
             if 'Risk_Level' in df.columns:
-                # Risk level distribution
                 risk_counts = df['Risk_Level'].value_counts()
-                colors = {
-                    'Critical': '#ff4444', 'High': '#ff6b6b', 
-                    'Medium': '#ffd93d', 'Low': '#6bcb77', 'Very Low': '#4caf50'
-                }
+                colors = {'Critical': '#ff4444', 'High': '#ff6b6b', 'Medium': '#ffd93d', 
+                         'Low': '#6bcb77', 'Very Low': '#4caf50'}
                 fig = px.pie(values=risk_counts.values, names=risk_counts.index,
                             title="Risk Level Distribution",
                             color=risk_counts.index,
@@ -957,100 +1027,14 @@ def page_eda():
                 st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            if 'Risk_Type' in df.columns:
-                # Risk type distribution
-                risk_type_counts = df['Risk_Type'].value_counts().head(8)
-                fig = px.bar(x=risk_type_counts.values, y=risk_type_counts.index, 
-                            orientation='h', title="Risk Type Distribution")
+            if 'Risk_Score' in df.columns:
+                fig = px.histogram(df, x='Risk_Score', nbins=40,
+                                  title="Risk Score Distribution",
+                                  color_discrete_sequence=['#667eea'])
                 st.plotly_chart(fig, use_container_width=True)
-        
-        # Risk score by category
-        st.subheader("Risk Score by Categories")
-        
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-        if categorical_cols and 'Risk_Score' in df.columns:
-            selected_cat = st.selectbox("Select category to analyze", categorical_cols)
-            risk_by_cat = df.groupby(selected_cat)['Risk_Score'].agg(['mean', 'std', 'count']).reset_index()
-            risk_by_cat = risk_by_cat.sort_values('mean', ascending=False).head(10)
-            
-            fig = px.bar(risk_by_cat, x=selected_cat, y='mean', error_y='std',
-                        title=f"Average Risk Score by {selected_cat}",
-                        color='mean', color_continuous_scale='Reds')
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab4:
-        st.subheader("Feature Analysis")
-        
-        # Feature importance based on statistical tests
-        if 'Risk_Score' in df.columns:
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            numeric_cols = [c for c in numeric_cols if c != 'Risk_Score']
-            
-            # Calculate correlation and p-values
-            feature_stats = []
-            for col in numeric_cols[:20]:  # Limit to 20
-                corr, p_val = pearsonr(df[col].dropna(), df['Risk_Score'].dropna())
-                feature_stats.append({
-                    'Feature': col,
-                    'Correlation': corr,
-                    'P-Value': p_val,
-                    'Significant': p_val < 0.05
-                })
-            
-            feature_df = pd.DataFrame(feature_stats).sort_values('Correlation', ascending=False)
-            
-            fig = px.bar(feature_df, x='Correlation', y='Feature', orientation='h',
-                        title="Feature Correlation with Risk Score",
-                        color='Significant', color_discrete_map={True: '#6bcb77', False: '#ff6b6b'})
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.dataframe(feature_df)
-    
-    with tab5:
-        st.subheader("Statistical Tests")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Normality Test (Shapiro-Wilk)**")
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            selected_test = st.selectbox("Select column for normality test", numeric_cols)
-            
-            if selected_test:
-                data = df[selected_test].dropna()
-                if len(data) < 5000:  # Shapiro works best with <5000
-                    stat, p = shapiro(data[:5000])
-                    st.write(f"Test statistic: {stat:.4f}")
-                    st.write(f"P-value: {p:.6f}")
-                    if p > 0.05:
-                        st.success("✅ Data appears to be normally distributed (p > 0.05)")
-                    else:
-                        st.warning("⚠️ Data is not normally distributed (p < 0.05)")
-                else:
-                    st.info("Too many samples for Shapiro test. Using distribution plot instead.")
-        
-        with col2:
-            st.write("**ANOVA Test (Difference between groups)**")
-            categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
-            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            
-            if categorical_cols and numeric_cols:
-                cat_col = st.selectbox("Select categorical column", categorical_cols, key="anova_cat")
-                num_col = st.selectbox("Select numeric column", numeric_cols, key="anova_num")
-                
-                if cat_col and num_col:
-                    groups = [group[num_col].dropna().values for name, group in df.groupby(cat_col) if len(group) > 0]
-                    if len(groups) >= 2:
-                        f_stat, p_val = stats.f_oneway(*groups)
-                        st.write(f"F-statistic: {f_stat:.4f}")
-                        st.write(f"P-value: {p_val:.6f}")
-                        if p_val < 0.05:
-                            st.success("✅ Significant difference between groups (p < 0.05)")
-                        else:
-                            st.warning("❌ No significant difference between groups (p > 0.05)")
 
 # ============================================================================
-# PAGE: MODEL TRAINING
+# MODEL TRAINING PAGE
 # ============================================================================
 
 def page_model_training():
@@ -1067,14 +1051,12 @@ def page_model_training():
     col1, col2 = st.columns(2)
     
     with col1:
-        # Target selection
         risk_related = [col for col in df.columns if 'risk' in col.lower() or 'Risk' in col]
         target_options = risk_related if risk_related else df.columns.tolist()
         
-        target_col = st.selectbox("🎯 Target Column (What to predict)", target_options)
+        target_col = st.selectbox("🎯 Target Column", target_options)
         st.session_state.target_column = target_col
         
-        # Determine task type
         unique_vals = df[target_col].nunique()
         if df[target_col].dtype in ['int64', 'float64'] and unique_vals > 15:
             task_type = st.radio("📊 Task Type", ["Regression", "Classification"], index=0)
@@ -1082,39 +1064,17 @@ def page_model_training():
             task_type = st.radio("📊 Task Type", ["Classification", "Regression"], index=0)
         
         st.session_state.task_type = task_type
-        
-        st.info(f"Target '{target_col}' has {unique_vals} unique values")
     
     with col2:
         test_size = st.slider("Test Set Size", 0.1, 0.4, 0.2, 0.05)
         cv_folds = st.slider("Cross-Validation Folds", 3, 10, 5)
         random_state = st.number_input("Random Seed", value=42, step=1)
-        
-        # Handle imbalanced data
-        if task_type == "Classification":
-            use_smote = st.checkbox("Use SMOTE for Imbalanced Data", value=False,
-                                   disabled=not IMBALANCE_AVAILABLE)
-            if use_smote and not IMBALANCE_AVAILABLE:
-                st.warning("Install imbalanced-learn: pip install imbalanced-learn")
-        else:
-            use_smote = False
     
     st.subheader("2. Feature Selection")
     
     feature_cols = [col for col in df.columns if col != target_col]
-    
-    # Feature grouping
-    numeric_feats = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
-    cat_feats = df[feature_cols].select_dtypes(include=['object']).columns.tolist()
-    
-    st.write(f"**Numeric features:** {len(numeric_feats)}")
-    st.write(f"**Categorical features:** {len(cat_feats)} (will be automatically encoded)")
-    
-    selected_features = st.multiselect(
-        "Select features for training",
-        feature_cols,
-        default=feature_cols[:8] if len(feature_cols) > 8 else feature_cols
-    )
+    selected_features = st.multiselect("Select features for training", feature_cols,
+                                       default=feature_cols[:8] if len(feature_cols) > 8 else feature_cols)
     st.session_state.selected_features = selected_features
     
     if len(selected_features) == 0:
@@ -1123,80 +1083,55 @@ def page_model_training():
     
     st.subheader("3. Model Selection")
     
-    # Model options based on task type
     if task_type == "Classification":
-        model_options = st.multiselect(
-            "Choose models to train",
+        model_options = st.multiselect("Choose models to train",
             ['Random Forest', 'Gradient Boosting', 'Logistic Regression', 
-             'Decision Tree', 'SVM', 'KNN', 'AdaBoost', 'Naive Bayes'],
-            default=['Random Forest', 'Gradient Boosting', 'Logistic Regression']
-        )
+             'Decision Tree', 'SVM', 'KNN'],
+            default=['Random Forest', 'Gradient Boosting'])
     else:
-        model_options = st.multiselect(
-            "Choose models to train",
-            ['Random Forest', 'Gradient Boosting', 'Decision Tree', 'SVR', 'KNN'],
-            default=['Random Forest', 'Gradient Boosting']
-        )
+        model_options = st.multiselect("Choose models to train",
+            ['Random Forest', 'Gradient Boosting', 'Decision Tree'],
+            default=['Random Forest', 'Gradient Boosting'])
     
-    # Hyperparameter tuning option
-    do_tuning = st.checkbox("🔧 Perform Hyperparameter Tuning (may take longer)", value=False)
-    
-    # Training button
     if st.button("🚀 START TRAINING", type="primary", use_container_width=True):
         if len(model_options) == 0:
             st.error("Please select at least one model.")
         else:
-            with st.spinner("Training models... This may take a few moments."):
+            with st.spinner("Training models..."):
                 try:
-                    # Preprocess data
                     X, y, encoders, target_enc = advanced_preprocessing(df, selected_features, target_col)
                     st.session_state.feature_encoders = encoders
                     st.session_state.target_encoder = target_enc
                     
-                    # Scale features
-                    scaler = RobustScaler()  # More robust to outliers
+                    scaler = RobustScaler()
                     X_scaled = scaler.fit_transform(X)
                     st.session_state.scaler = scaler
                     
-                    # Handle imbalanced data
-                    if task_type == "Classification" and use_smote and IMBALANCE_AVAILABLE:
-                        smote = SMOTE(random_state=random_state)
-                        X_scaled, y = smote.fit_resample(X_scaled, y)
-                        st.write(f"After SMOTE: {X_scaled.shape[0]} samples")
-                    
-                    # Split data
-                    stratify = y if task_type == "Classification" else None
                     X_train, X_test, y_train, y_test = train_test_split(
-                        X_scaled, y, test_size=test_size, random_state=random_state, stratify=stratify
+                        X_scaled, y, test_size=test_size, random_state=random_state,
+                        stratify=y if task_type == "Classification" else None
                     )
                     
-                    st.write(f"📊 Training set: {len(X_train)} samples")
-                    st.write(f"📊 Testing set: {len(X_test)} samples")
-                    
-                    # Train models
                     results = {}
                     trained_models = {}
                     
                     progress_bar = st.progress(0)
-                    status_text = st.empty()
                     
                     for i, model_name in enumerate(model_options):
+                        status_text = st.empty()
                         status_text.text(f"Training {model_name}... ({i+1}/{len(model_options)})")
                         
                         model = get_model_with_params(model_name, task_type, random_state)
                         if model is None:
                             continue
                         
-                        # Train
                         model.fit(X_train, y_train)
                         y_pred = model.predict(X_test)
                         trained_models[model_name] = model
                         
-                        # Cross-validation
-                        cv_scores = cross_val_score(model, X_scaled, y, cv=cv_folds, 
+                        cv_scores = cross_val_score(model, X_scaled, y, cv=cv_folds,
                                                     scoring='accuracy' if task_type == "Classification" else 'r2')
                         
-                        # Metrics
                         if task_type == "Classification":
                             results[model_name] = {
                                 'Accuracy': accuracy_score(y_test, y_pred),
@@ -1216,107 +1151,34 @@ def page_model_training():
                             }
                         
                         progress_bar.progress((i + 1) / len(model_options))
+                        status_text.empty()
                     
-                    status_text.text("Training complete!")
-                    
-                    # Store results
                     st.session_state.trained_models = trained_models
                     st.session_state.model_results = results
                     st.session_state.model_trained = True
                     
-                    # Find best model
                     if task_type == "Classification":
                         st.session_state.best_model_name = max(results, key=lambda x: results[x]['Accuracy'])
-                        st.session_state.best_model = trained_models[st.session_state.best_model_name]
                     else:
                         st.session_state.best_model_name = max(results, key=lambda x: results[x]['R2 Score'])
-                        st.session_state.best_model = trained_models[st.session_state.best_model_name]
                     
-                    # Display results
+                    st.session_state.best_model = trained_models[st.session_state.best_model_name]
+                    
                     st.success("✅ Training complete!")
                     
-                    st.subheader("📊 Model Performance Results")
-                    
                     results_df = pd.DataFrame(results).T
-                    
                     if task_type == "Classification":
                         display_cols = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'CV_Mean']
                     else:
                         display_cols = ['R2 Score', 'RMSE', 'MAE', 'CV_Mean']
                     
-                    styled_df = results_df[display_cols].style.format('{:.4f}')
-                    styled_df = styled_df.highlight_max(axis=0, subset=[display_cols[0]])
-                    st.dataframe(styled_df)
-                    
-                    # Best model info
-                    st.subheader(f"🏆 Best Model: {st.session_state.best_model_name}")
-                    
-                    # Visual comparison
-                    fig = go.Figure()
-                    if task_type == "Classification":
-                        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-                        for metric in metrics:
-                            fig.add_trace(go.Bar(name=metric, x=list(results.keys()), 
-                                               y=[results[m][metric] for m in results.keys()]))
-                    else:
-                        metrics = ['R2 Score']
-                        for metric in metrics:
-                            fig.add_trace(go.Bar(name=metric, x=list(results.keys()), 
-                                               y=[results[m][metric] for m in results.keys()]))
-                    
-                    fig.update_layout(title="Model Performance Comparison", 
-                                     barmode='group', height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Confusion Matrix for best classification model
-                    if task_type == "Classification":
-                        st.subheader(f"Confusion Matrix - {st.session_state.best_model_name}")
-                        best_model = trained_models[st.session_state.best_model_name]
-                        
-                        # Get predictions on test set
-                        y_pred_best = best_model.predict(X_test)
-                        cm = confusion_matrix(y_test, y_pred_best)
-                        
-                        fig, ax = plt.subplots(figsize=(10, 8))
-                        labels = target_enc.classes_ if target_enc else [str(i) for i in range(len(np.unique(y)))]
-                        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
-                                   xticklabels=labels, yticklabels=labels)
-                        ax.set_xlabel('Predicted')
-                        ax.set_ylabel('Actual')
-                        ax.set_title(f'Confusion Matrix - {st.session_state.best_model_name}')
-                        st.pyplot(fig)
-                        
-                        # Classification Report
-                        st.subheader("Classification Report")
-                        report = classification_report(y_test, y_pred_best, target_names=labels, output_dict=True)
-                        report_df = pd.DataFrame(report).T
-                        st.dataframe(report_df.round(4))
-                    
-                    # Feature Importance
-                    if 'Random Forest' in trained_models and hasattr(trained_models['Random Forest'], 'feature_importances_'):
-                        st.subheader("📈 Feature Importance Analysis")
-                        rf_model = trained_models['Random Forest']
-                        importance_df = pd.DataFrame({
-                            'Feature': X.columns,
-                            'Importance': rf_model.feature_importances_
-                        }).sort_values('Importance', ascending=False)
-                        
-                        fig = px.bar(importance_df.head(20), x='Importance', y='Feature', orientation='h',
-                                    title="Top 20 Feature Importances (Random Forest)",
-                                    color='Importance', color_continuous_scale='Blues')
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Save models
-                    joblib.dump(st.session_state.best_model, 'best_microplastic_model.pkl')
-                    joblib.dump(st.session_state.scaler, 'scaler.pkl')
-                    st.success("💾 Best model saved as 'best_microplastic_model.pkl'")
+                    st.dataframe(results_df[display_cols].style.format('{:.4f}').highlight_max(axis=0))
                     
                 except Exception as e:
                     st.error(f"Training error: {str(e)}")
-                    st.info("Please check your data and try again.")
 
 # ============================================================================
-# PAGE: PREDICTION
+# PREDICTION PAGE
 # ============================================================================
 
 def page_prediction():
@@ -1326,16 +1188,9 @@ def page_prediction():
         st.warning("⚠️ Please train models first in the Model Training page.")
         return
     
-    if not st.session_state.data_loaded:
-        st.warning("⚠️ No data loaded.")
-        return
-    
     st.subheader("Enter Input Values")
     
-    # Create input fields
     input_data = {}
-    
-    # Use columns for better layout
     cols = st.columns(2)
     
     df = st.session_state.risk_data
@@ -1344,203 +1199,78 @@ def page_prediction():
         with cols[i % 2]:
             if feature in df.columns:
                 if df[feature].dtype == 'object':
-                    # Categorical - dropdown
                     values = df[feature].dropna().unique().tolist()
                     input_data[feature] = st.selectbox(f"📊 {feature}", values)
                 else:
-                    # Numeric - number input with suggestions
                     min_val = float(df[feature].min())
                     max_val = float(df[feature].max())
                     mean_val = float(df[feature].mean())
-                    input_data[feature] = st.number_input(
-                        f"📈 {feature}", 
-                        value=mean_val,
-                        min_value=min_val, 
-                        max_value=max_val,
-                        help=f"Range: {min_val:.2f} - {max_val:.2f}"
-                    )
+                    input_data[feature] = st.number_input(f"📈 {feature}", value=mean_val,
+                                                          min_value=min_val, max_value=max_val)
             else:
                 input_data[feature] = st.number_input(f"{feature}", value=0.0)
     
-    # Batch prediction option
-    st.subheader("Or Upload Batch File")
-    batch_file = st.file_uploader("Upload CSV for batch predictions", type=['csv'])
-    
     if st.button("🔮 PREDICT", type="primary", use_container_width=True):
-        if batch_file is not None:
-            # Batch prediction
-            batch_df = pd.read_csv(batch_file)
-            st.write(f"Processing {len(batch_df)} records...")
+        try:
+            input_df = pd.DataFrame([input_data])
             
-            # Process batch
-            predictions = []
-            for idx, row in batch_df.iterrows():
-                try:
-                    # Process single row
-                    input_dict = {feat: row[feat] for feat in st.session_state.selected_features if feat in row}
-                    input_df = pd.DataFrame([input_dict])
-                    
-                    # Encode
-                    for feat, encoder in st.session_state.feature_encoders.items():
-                        if feat in input_df.columns:
-                            val = input_df[feat].iloc[0]
-                            if val in encoder.classes_:
-                                input_df[feat + '_enc'] = encoder.transform([val])[0]
-                    
-                    # Prepare features
-                    X_input = []
-                    for feat in st.session_state.selected_features:
-                        if feat + '_enc' in input_df.columns:
-                            X_input.append(input_df[feat + '_enc'].iloc[0])
-                        elif feat in input_df.columns and input_df[feat].dtype in ['int64', 'float64']:
-                            X_input.append(input_df[feat].iloc[0])
-                    
-                    X_input = np.array(X_input).reshape(1, -1)
-                    X_input_scaled = st.session_state.scaler.transform(X_input)
-                    
-                    # Predict
-                    pred = st.session_state.best_model.predict(X_input_scaled)[0]
-                    
-                    if st.session_state.task_type == "Classification" and st.session_state.target_encoder:
-                        pred_label = st.session_state.target_encoder.inverse_transform([int(pred)])[0]
-                    else:
-                        pred_label = pred
-                    
-                    predictions.append(pred_label)
-                except Exception as e:
-                    predictions.append(f"Error: {str(e)}")
+            for feat, encoder in st.session_state.feature_encoders.items():
+                if feat in input_df.columns:
+                    val = input_df[feat].iloc[0]
+                    if val in encoder.classes_:
+                        input_df[feat + '_enc'] = encoder.transform([val])[0]
             
-            batch_df['Prediction'] = predictions
-            st.dataframe(batch_df)
+            X_input = []
+            for feat in st.session_state.selected_features:
+                if feat + '_enc' in input_df.columns:
+                    X_input.append(input_df[feat + '_enc'].iloc[0])
+                elif feat in input_df.columns and input_df[feat].dtype in ['int64', 'float64']:
+                    X_input.append(input_df[feat].iloc[0])
             
-            # Download results
-            csv = batch_df.to_csv(index=False)
-            st.download_button("📥 Download Predictions", csv, "predictions.csv", "text/csv")
+            X_input = np.array(X_input).reshape(1, -1)
+            X_input_scaled = st.session_state.scaler.transform(X_input)
             
-        else:
-            # Single prediction
-            try:
-                # Process input
-                input_df = pd.DataFrame([input_data])
-                
-                # Encode categorical features
-                for feat, encoder in st.session_state.feature_encoders.items():
-                    if feat in input_df.columns:
-                        val = input_df[feat].iloc[0]
-                        if val in encoder.classes_:
-                            input_df[feat + '_enc'] = encoder.transform([val])[0]
-                        else:
-                            input_df[feat + '_enc'] = -1
-                
-                # Prepare feature vector
-                X_input = []
-                feature_names = []
-                for feat in st.session_state.selected_features:
-                    if feat + '_enc' in input_df.columns:
-                        X_input.append(input_df[feat + '_enc'].iloc[0])
-                        feature_names.append(feat + '_enc')
-                    elif feat in input_df.columns and input_df[feat].dtype in ['int64', 'float64']:
-                        X_input.append(input_df[feat].iloc[0])
-                        feature_names.append(feat)
-                
-                X_input = np.array(X_input).reshape(1, -1)
-                X_input_scaled = st.session_state.scaler.transform(X_input)
-                
-                # Make predictions with all models
-                st.subheader("🎯 Prediction Results")
-                
-                # Best model prediction
-                best_pred = st.session_state.best_model.predict(X_input_scaled)[0]
-                
-                if st.session_state.task_type == "Classification":
-                    if st.session_state.target_encoder:
-                        best_label = st.session_state.target_encoder.inverse_transform([int(best_pred)])[0]
-                    else:
-                        best_label = str(best_pred)
-                    
-                    # Risk level styling
-                    risk_level = str(best_label).lower()
-                    if 'critical' in risk_level:
-                        card_class = "risk-critical"
-                    elif 'high' in risk_level:
-                        card_class = "risk-high"
-                    elif 'medium' in risk_level:
-                        card_class = "risk-medium"
-                    else:
-                        card_class = "risk-low"
-                    
-                    st.markdown(f"""
-                    <div class="{card_class}" style="padding: 2rem; margin: 1rem 0;">
-                        <h2 style="margin: 0;">{best_label}</h2>
-                        <p style="margin: 0;">Predicted Risk Level</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Show all model predictions
-                    st.subheader("All Model Predictions")
-                    pred_cols = st.columns(len(st.session_state.trained_models))
-                    
-                    for idx, (name, model) in enumerate(st.session_state.trained_models.items()):
-                        pred = model.predict(X_input_scaled)[0]
-                        if st.session_state.target_encoder:
-                            pred_label = st.session_state.target_encoder.inverse_transform([int(pred)])[0]
-                        else:
-                            pred_label = str(pred)
-                        
-                        with pred_cols[idx]:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <h4>{name}</h4>
-                                <h3>{pred_label}</h3>
-                            </div>
-                            """, unsafe_allow_html=True)
-                
+            best_pred = st.session_state.best_model.predict(X_input_scaled)[0]
+            
+            st.subheader("🎯 Prediction Result")
+            
+            if st.session_state.task_type == "Classification":
+                if st.session_state.target_encoder:
+                    best_label = st.session_state.target_encoder.inverse_transform([int(best_pred)])[0]
                 else:
-                    # Regression
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <h2>Risk Score: {best_pred:.2f}</h2>
-                        <p>Predicted using {st.session_state.best_model_name}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Gauge chart for risk score
-                    fig = go.Figure(go.Indicator(
-                        mode="gauge+number",
-                        value=best_pred,
-                        title={'text': "Risk Score"},
-                        domain={'x': [0, 1], 'y': [0, 1]},
-                        gauge={
-                            'axis': {'range': [0, 100]},
-                            'bar': {'color': "#667eea"},
-                            'steps': [
-                                {'range': [0, 33], 'color': "#6bcb77"},
-                                {'range': [33, 66], 'color': "#ffd93d"},
-                                {'range': [66, 100], 'color': "#ff6b6b"}
-                            ],
-                            'threshold': {
-                                'line': {'color': "red", 'width': 4},
-                                'thickness': 0.75,
-                                'value': best_pred
-                            }
-                        }
-                    ))
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
+                    best_label = str(best_pred)
                 
-                # Store prediction history
-                st.session_state.predictions_history.append({
-                    'timestamp': datetime.now(),
-                    'input': input_data,
-                    'prediction': best_pred if st.session_state.task_type != "Classification" else best_label,
-                    'model': st.session_state.best_model_name
-                })
+                risk_level = str(best_label).lower()
+                if 'critical' in risk_level:
+                    card_class = "risk-critical"
+                elif 'high' in risk_level:
+                    card_class = "risk-high"
+                elif 'medium' in risk_level:
+                    card_class = "risk-medium"
+                elif 'low' in risk_level:
+                    card_class = "risk-low"
+                else:
+                    card_class = "risk-verylow"
                 
-            except Exception as e:
-                st.error(f"Prediction error: {str(e)}")
+                st.markdown(f"""
+                <div class="{card_class}" style="padding: 2rem; margin: 1rem 0;">
+                    <h2 style="margin: 0;">{best_label}</h2>
+                    <p style="margin: 0;">Predicted by MP-RAS using {st.session_state.best_model_name}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h2>Risk Score: {best_pred:.2f}</h2>
+                    <p>Predicted by MP-RAS using {st.session_state.best_model_name}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        except Exception as e:
+            st.error(f"Prediction error: {str(e)}")
 
 # ============================================================================
-# PAGE: RESULTS & REPORTS
+# RESULTS PAGE
 # ============================================================================
 
 def page_results():
@@ -1561,142 +1291,94 @@ def page_results():
     
     st.dataframe(results_df[display_cols].style.format('{:.4f}').highlight_max(axis=0))
     
-    # Visual comparison
-    st.subheader("Model Comparison")
-    
-    fig = go.Figure()
-    if st.session_state.task_type == "Classification":
-        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
-        for metric in metrics:
-            fig.add_trace(go.Bar(name=metric, x=list(st.session_state.model_results.keys()), 
-                               y=[st.session_state.model_results[m][metric] for m in st.session_state.model_results.keys()]))
-    else:
-        metrics = ['R2 Score']
-        for metric in metrics:
-            fig.add_trace(go.Bar(name=metric, x=list(st.session_state.model_results.keys()), 
-                               y=[st.session_state.model_results[m][metric] for m in st.session_state.model_results.keys()]))
-    
-    fig.update_layout(title="Model Performance Comparison", barmode='group', height=500)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Best model details
     st.subheader(f"🏆 Best Model: {st.session_state.best_model_name}")
     
-    col1, col2, col3 = st.columns(3)
     best_scores = st.session_state.model_results[st.session_state.best_model_name]
     
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.session_state.task_type == "Classification":
             st.metric("Accuracy", f"{best_scores['Accuracy']:.4f}")
-            st.metric("Precision", f"{best_scores['Precision']:.4f}")
         else:
             st.metric("R² Score", f"{best_scores['R2 Score']:.4f}")
-    
     with col2:
         if st.session_state.task_type == "Classification":
-            st.metric("Recall", f"{best_scores['Recall']:.4f}")
             st.metric("F1-Score", f"{best_scores['F1-Score']:.4f}")
         else:
             st.metric("RMSE", f"{best_scores['RMSE']:.4f}")
-    
     with col3:
         st.metric("CV Mean", f"{best_scores['CV Mean']:.4f}")
-        st.metric("CV Std", f"{best_scores['CV Std']:.4f}")
     
-    # Generate comprehensive report
-    st.subheader("📄 Generate Report")
+    # Generate report
+    st.subheader("📄 Generate MP-RAS Report")
     
     if st.button("Generate Full Report", type="primary"):
         report = f"""
 ================================================================================
-                    MICROPLASTIC RISK PREDICTION SYSTEM REPORT
+                    MP-RAS (Microplastic Risk Assessment System)
+                                SYSTEM REPORT
 ================================================================================
 
 Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+System Version: 2.0
 Researchers: Matthew Joseph Viernes & Shane Mark R. Magdaluyo
 Institution: Agusan del Sur State College of Agriculture and Technology (ASSCAT)
 
 ================================================================================
-1. DATA OVERVIEW
+1. SYSTEM OVERVIEW
 ================================================================================
+
+MP-RAS is a data mining-based predictive risk modeling system for 
+microplastic pollution assessment in aquatic environments.
 
 Dataset Shape: {st.session_state.risk_data.shape[0]} rows × {st.session_state.risk_data.shape[1]} columns
 Data Source: {st.session_state.data_source}
-File Name: {st.session_state.data_filename}
-
-Features:
-- Total Features: {len(st.session_state.risk_data.columns)}
-- Numeric Features: {len(st.session_state.risk_data.select_dtypes(include=[np.number]).columns)}
-- Categorical Features: {len(st.session_state.risk_data.select_dtypes(include=['object']).columns)}
-
-Missing Values: {st.session_state.risk_data.isnull().sum().sum()}
-Duplicate Rows: {st.session_state.risk_data.duplicated().sum()}
-
-================================================================================
-2. MODEL CONFIGURATION
-================================================================================
-
 Target Column: {st.session_state.target_column}
 Task Type: {st.session_state.task_type}
-Selected Features: {', '.join(st.session_state.selected_features[:10])}{'...' if len(st.session_state.selected_features) > 10 else ''}
-Number of Features: {len(st.session_state.selected_features)}
+Selected Features: {len(st.session_state.selected_features)}
 
 ================================================================================
-3. MODEL PERFORMANCE
+2. MODEL PERFORMANCE
 ================================================================================
 
 {results_df[display_cols].to_string()}
 
 ================================================================================
-4. BEST MODEL RESULTS
+3. BEST MODEL RESULTS
 ================================================================================
 
 Best Model: {st.session_state.best_model_name}
 
-Performance Metrics:
 """
         for key, value in best_scores.items():
             report += f"- {key}: {value:.4f}\n"
 
         report += f"""
 ================================================================================
-5. CONCLUSIONS & RECOMMENDATIONS
+4. SYSTEM CONCLUSIONS
 ================================================================================
 
-1. The {st.session_state.best_model_name} model achieved the best performance with 
-   {best_scores[display_cols[0]]:.4f} {display_cols[0]}.
-
-2. The model can be used for predicting microplastic pollution risk levels
-   based on the selected environmental and biological features.
-
-3. Recommendations:
-   - Regular model retraining with new data
-   - Feature engineering for improved predictions
-   - Integration with environmental monitoring systems
+The MP-RAS system successfully developed a predictive model for 
+microplastic risk assessment with {best_scores[display_cols[0]]:.4f} {display_cols[0]}.
 
 ================================================================================
-                            END OF REPORT
+                            END OF MP-RAS REPORT
 ================================================================================
 """
         
         st.download_button(
-            label="📥 Download Report",
+            label="📥 Download MP-RAS Report",
             data=report,
-            file_name=f"microplastic_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            file_name=f"MP-RAS_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
             mime="text/plain"
         )
-        
-        st.success("Report generated successfully!")
 
 # ============================================================================
-# MAIN APP ROUTING
+# MAIN PAGE ROUTING
 # ============================================================================
 
-# Sidebar navigation
-st.sidebar.markdown("---")
-
-# Navigation menu
-page_options = {
+# Page routing dictionary
+pages = {
     "🏠 Dashboard": page_home,
     "📁 Data Upload": page_data_upload,
     "📊 EDA": page_eda,
@@ -1705,17 +1387,27 @@ page_options = {
     "📊 Results": page_results,
 }
 
-# Create navigation buttons in sidebar
-st.sidebar.markdown("### 📍 Navigation")
-selected_page = st.sidebar.radio("", list(page_options.keys()))
-
 # Display selected page
-page_options[selected_page]()
+if page in pages:
+    pages[page]()
 
-# Footer
+# ============================================================================
+# FLOATING SYSTEM BADGE
+# ============================================================================
+
+st.markdown("""
+<div class="system-badge">
+    🌊 MP-RAS v2.0
+</div>
+""", unsafe_allow_html=True)
+
+# ============================================================================
+# FOOTER
+# ============================================================================
+
 st.markdown("""
 <div class="footer">
-    <p>🌊 Microplastic Pollution Risk Prediction System | ASSCAT 2025 | Viernes, M.J. & Magdaluyo, S.M.R.</p>
-    <p>Advanced Data Mining Techniques for Environmental Risk Assessment</p>
+    <p>🌊 MP-RAS | Microplastic Risk Assessment System | ASSCAT 2025</p>
+    <p>Viernes, M.J. & Magdaluyo, S.M.R. | Data Mining-Based Predictive Risk Modeling</p>
 </div>
 """, unsafe_allow_html=True)
