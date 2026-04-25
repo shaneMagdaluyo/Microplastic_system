@@ -11,7 +11,6 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import plotly.figure_factory as ff
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -315,13 +314,18 @@ def plot_correlation_heatmap(df, columns):
         
         corr_matrix = numeric_df.corr()
         
-        fig = ff.create_annotated_heatmap(
+        fig = go.Figure(data=go.Heatmap(
             z=corr_matrix.values,
             x=corr_matrix.columns.tolist(),
             y=corr_matrix.index.tolist(),
             colorscale='RdBu',
+            zmin=-1,
+            zmax=1,
+            text=np.round(corr_matrix.values, 2),
+            texttemplate='%{text}',
+            textfont={"size": 10},
             showscale=True
-        )
+        ))
         
         fig.update_layout(title='Feature Correlation Heatmap', height=600)
         return fig, corr_matrix
@@ -1123,6 +1127,7 @@ def main():
             
             st.markdown("#### 📈 Performance Metrics Comparison")
             
+            # Bar chart comparison
             fig_metrics = px.bar(
                 metrics_df.reset_index(),
                 x='index',
@@ -1135,6 +1140,7 @@ def main():
             fig_metrics.update_layout(height=400)
             st.plotly_chart(fig_metrics, use_container_width=True)
             
+            # Metrics table
             st.markdown("#### 📊 Detailed Metrics Table")
             
             col1, col2 = st.columns([3, 1])
@@ -1153,39 +1159,74 @@ def main():
                 st.metric("Accuracy", f"{metrics_df['Accuracy'].max():.3f}")
                 st.metric("F1 Score", f"{metrics_df['F1 Score'].max():.3f}")
             
+            # Confusion Matrices - FIXED VERSION (NO CRASH)
             st.markdown("---")
             st.markdown("#### 📊 Confusion Matrices")
             
-            model_tabs = st.tabs(list(evaluation_results.keys()))
-            
-            for tab, (name, results) in zip(model_tabs, evaluation_results.items()):
-                with tab:
-                    cm = results['confusion_matrix']
-                    if cm.size > 0:
-                        cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+            try:
+                # Display confusion matrices one by one
+                for name, results in evaluation_results.items():
+                    st.markdown(f"**{name}**")
+                    
+                    try:
+                        cm = results['confusion_matrix']
                         
-                        annotations = []
-                        for i in range(cm.shape[0]):
-                            row_annotations = []
-                            for j in range(cm.shape[1]):
-                                row_annotations.append(f'{cm[i,j]}<br>({cm_percent[i,j]:.1f}%)')
-                            annotations.append(row_annotations)
+                        if cm is not None and cm.size > 0 and cm.shape[0] > 0 and cm.shape[1] > 0:
+                            # Create simple heatmap using go.Heatmap
+                            fig_cm = go.Figure(data=go.Heatmap(
+                                z=cm,
+                                x=[f'Predicted {i}' for i in range(cm.shape[0])],
+                                y=[f'Actual {i}' for i in range(cm.shape[0])],
+                                colorscale='Blues',
+                                text=[[str(int(val)) for val in row] for row in cm],
+                                texttemplate="%{text}",
+                                textfont={"size": 16, "color": "black"},
+                                showscale=True,
+                                xgap=1,
+                                ygap=1
+                            ))
+                            
+                            fig_cm.update_layout(
+                                title=f'{name} - Confusion Matrix',
+                                height=400,
+                                xaxis_title='Predicted Label',
+                                yaxis_title='True Label'
+                            )
+                            st.plotly_chart(fig_cm, use_container_width=True)
+                            
+                            # Also show as simple table
+                            with st.expander("View as Table"):
+                                cm_df = pd.DataFrame(
+                                    cm,
+                                    columns=[f'Predicted {i}' for i in range(cm.shape[0])],
+                                    index=[f'Actual {i}' for i in range(cm.shape[0])]
+                                )
+                                st.dataframe(cm_df)
+                        else:
+                            st.warning(f"No valid confusion matrix data for {name}")
+                    
+                    except Exception as cm_error:
+                        st.warning(f"Could not display confusion matrix for {name}: {str(cm_error)}")
                         
-                        fig_cm = ff.create_annotated_heatmap(
-                            z=cm,
-                            x=[f'Predicted {i}' for i in range(cm.shape[0])],
-                            y=[f'Actual {i}' for i in range(cm.shape[0])],
-                            colorscale='Blues',
-                            showscale=True,
-                            annotation_text=annotations
-                        )
-                        fig_cm.update_layout(
-                            title=f'{name} - Confusion Matrix',
-                            height=500
-                        )
-                        st.plotly_chart(fig_cm, use_container_width=True)
+                        # Fallback: display as simple table
+                        try:
+                            st.write("Confusion Matrix (table format):")
+                            cm_df = pd.DataFrame(
+                                cm,
+                                columns=[f'Predicted {i}' for i in range(cm.shape[0])],
+                                index=[f'Actual {i}' for i in range(cm.shape[0])]
+                            )
+                            st.dataframe(cm_df)
+                        except:
+                            st.error("Could not display confusion matrix at all")
+                    
+                    st.markdown("---")
             
-            st.markdown("---")
+            except Exception as e:
+                st.error(f"Error displaying confusion matrices: {str(e)}")
+                st.info("Displaying metrics without confusion matrices...")
+            
+            # Classification Reports
             st.markdown("#### 📋 Detailed Classification Reports")
             
             model_for_report = st.selectbox(
@@ -1205,6 +1246,7 @@ def main():
                     st.metric("Accuracy", f"{evaluation_results[model_for_report]['accuracy']:.3f}")
                     st.metric("F1 Score (Weighted)", f"{evaluation_results[model_for_report]['f1_score']:.3f}")
             
+            # Best Model Selection
             st.markdown("---")
             best_model_name = metrics_df['F1 Score'].idxmax()
             best_model = models[best_model_name]
@@ -1225,6 +1267,7 @@ def main():
             with col3:
                 st.metric("Rank", "#1")
             
+            # Model Ranking
             st.markdown("---")
             st.markdown("### 📊 Model Ranking")
             
