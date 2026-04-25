@@ -554,65 +554,42 @@ def main():
         else:
             st.warning("⚠️ 'Risk_Score' column not found in dataset")
         
-      # MP Count vs Risk Score
-st.markdown("---")
-st.markdown("### 🔬 MP Count vs Risk Score")
-
-if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
-
-    # Convert to numeric (fix ValueError)
-    df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
-    df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
-
-    # Remove invalid rows
-    clean_df = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
-
-    if clean_df.empty:
-        st.warning("⚠️ No valid numeric data for plotting.")
-    else:
-        try:
-            fig_scatter = px.scatter(
-                clean_df,
-                x='MP_Count_per_L',
-                y='Risk_Score',
-                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-                trendline='ols'
-            )
-        except:
-            fig_scatter = px.scatter(
-                clean_df,
-                x='MP_Count_per_L',
-                y='Risk_Score',
-                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None
-            )
-            st.warning("⚠️ Trendline failed. Showing scatter only.")
-
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-else:
-    st.warning("⚠️ Required columns not found")
-    else:
-        fig_scatter = px.scatter(
-            clean_df,
-            x='MP_Count_per_L',
-            y='Risk_Score',
-            color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-            title='Microplastic Count vs Risk Score'
-        )
+        # MP Count vs Risk Score
+        st.markdown("---")
+        st.markdown("### 🔬 MP Count vs Risk Score")
         
-        # OPTIONAL: add trendline safely
-        try:
-            fig_scatter = px.scatter(
-                clean_df,
-                x='MP_Count_per_L',
-                y='Risk_Score',
-                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-                trendline='ols'
-            )
-        except:
-            st.warning("⚠️ Trendline could not be generated (data issue). Showing scatter only.")
-        
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
+            # Convert to numeric (fix ValueError)
+            df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
+            df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
+            
+            # Remove invalid rows
+            clean_df = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
+            
+            if clean_df.empty:
+                st.warning("⚠️ No valid numeric data for plotting.")
+            else:
+                # Create scatter plot with trendline
+                try:
+                    fig_scatter = px.scatter(
+                        clean_df,
+                        x='MP_Count_per_L',
+                        y='Risk_Score',
+                        color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                        trendline='ols',
+                        title='Microplastic Count vs Risk Score'
+                    )
+                except:
+                    fig_scatter = px.scatter(
+                        clean_df,
+                        x='MP_Count_per_L',
+                        y='Risk_Score',
+                        color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                        title='Microplastic Count vs Risk Score'
+                    )
+                    st.warning("⚠️ Trendline could not be generated (data issue). Showing scatter only.")
+                
+                st.plotly_chart(fig_scatter, use_container_width=True)
         else:
             st.warning("⚠️ Required columns not found")
         
