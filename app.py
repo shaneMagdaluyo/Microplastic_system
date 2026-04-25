@@ -558,16 +558,39 @@ def main():
         st.markdown("---")
         st.markdown("### 🔬 MP Count vs Risk Score")
         
-        if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
+       if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
+    
+    # 🔥 Force numeric conversion (fix ValueError)
+    df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
+    df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
+    
+    # Drop invalid rows
+    clean_df = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
+    
+    if clean_df.empty:
+        st.warning("⚠️ No valid numeric data for plotting.")
+    else:
+        fig_scatter = px.scatter(
+            clean_df,
+            x='MP_Count_per_L',
+            y='Risk_Score',
+            color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+            title='Microplastic Count vs Risk Score'
+        )
+        
+        # OPTIONAL: add trendline safely
+        try:
             fig_scatter = px.scatter(
-                df, x='MP_Count_per_L', y='Risk_Score',
-                color='Risk_Level' if 'Risk_Level' in df.columns else None,
-                title='Microplastic Count vs Risk Score',
-                labels={'MP_Count_per_L': 'MP Count per Liter', 'Risk_Score': 'Risk Score'},
+                clean_df,
+                x='MP_Count_per_L',
+                y='Risk_Score',
+                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
                 trendline='ols'
             )
-            fig_scatter.update_layout(height=500)
-            st.plotly_chart(fig_scatter, use_container_width=True)
+        except:
+            st.warning("⚠️ Trendline could not be generated (data issue). Showing scatter only.")
+        
+        st.plotly_chart(fig_scatter, use_container_width=True)
         else:
             st.warning("⚠️ Required columns not found")
         
