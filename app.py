@@ -1089,6 +1089,7 @@ def main():
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
+        # Check if models exist
         models_exist = st.session_state.get('trained', False) and len(st.session_state.get('models', {})) > 0
         
         if not models_exist:
@@ -1102,6 +1103,10 @@ def main():
         X_test = st.session_state.X_test
         y_test = st.session_state.y_test
         
+        if X_test is None or y_test is None:
+            st.error("❌ Test data is missing. Please re-run the Model Training step.")
+            return
+        
         st.success(f"✅ Found {len(models)} trained model(s)")
         
         st.markdown("### 🎯 Model Performance Comparison")
@@ -1110,17 +1115,17 @@ def main():
             evaluation_results = evaluate_models(models, X_test, y_test)
         
         if evaluation_results and len(evaluation_results) > 0:
+            # Build metrics dataframe
             metrics_data = {}
             for name, results in evaluation_results.items():
                 metrics_data[name] = {
-                    'Accuracy': results['accuracy'],
-                    'F1 Score': results['f1_score']
+                    'Accuracy': round(results['accuracy'], 3),
+                    'F1 Score': round(results['f1_score'], 3)
                 }
-            
             metrics_df = pd.DataFrame(metrics_data).T
             
+            # Performance Chart
             st.markdown("#### 📈 Performance Metrics Comparison")
-            
             fig_metrics = px.bar(
                 metrics_df.reset_index(),
                 x='index',
@@ -1128,43 +1133,41 @@ def main():
                 barmode='group',
                 title='Model Performance Comparison',
                 labels={'index': 'Model', 'value': 'Score'},
-                color_discrete_sequence=['#3498db', '#e74c3c']
+                color_discrete_sequence=['#3498db', '#e74c3c'],
+                height=400
             )
-            fig_metrics.update_layout(height=400)
             st.plotly_chart(fig_metrics, use_container_width=True)
             
+            # Metrics Table (FIXED - NO .style.format())
             st.markdown("#### 📊 Detailed Metrics Table")
-            
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.dataframe(metrics_df.style.format("{:.3f}"), use_container_width=True)
-            
+                # Convert to formatted strings safely
+                display_df = metrics_df.copy()
+                display_df['Accuracy'] = display_df['Accuracy'].apply(lambda x: f"{x:.3f}")
+                display_df['F1 Score'] = display_df['F1 Score'].apply(lambda x: f"{x:.3f}")
+                st.dataframe(display_df, use_container_width=True)
             with col2:
                 st.markdown("**Best Scores:**")
                 st.metric("Accuracy", f"{metrics_df['Accuracy'].max():.3f}")
                 st.metric("F1 Score", f"{metrics_df['F1 Score'].max():.3f}")
             
-            # ==================== CONFUSION MATRICES (SAFE VERSION) ====================
+            # Confusion Matrices - Select one at a time
             st.markdown("---")
             st.markdown("#### 📊 Confusion Matrices")
             
-            for model_name, results in evaluation_results.items():
-                try:
-                    cm = results.get('confusion_matrix')
-                    
-                    # Validate confusion matrix
-                    if cm is None or not isinstance(cm, np.ndarray) or cm.size == 0:
-                        st.warning(f"⚠️ No confusion matrix for **{model_name}**")
-                        continue
-                    
-                    if cm.ndim != 2 or cm.shape[0] == 0 or cm.shape[1] == 0:
-                        st.warning(f"⚠️ Invalid confusion matrix for **{model_name}**")
-                        continue
-                    
-                    st.markdown(f"**{model_name}**")
+            selected_model = st.selectbox(
+                "Select model to view Confusion Matrix",
+                list(evaluation_results.keys())
+            )
+            
+            if selected_model and selected_model in evaluation_results:
+                cm = evaluation_results[selected_model].get('confusion_matrix')
+                
+                if cm is not None and cm.size > 0:
                     n_classes = cm.shape[0]
                     
-                    # Try Plotly heatmap
+                    # Plotly heatmap
                     try:
                         fig_cm = go.Figure(data=go.Heatmap(
                             z=cm,
@@ -1173,21 +1176,15 @@ def main():
                             colorscale='Blues',
                             text=[[str(int(val)) for val in row] for row in cm],
                             texttemplate="%{text}",
-                            textfont={"size": 16},
-                            showscale=True,
-                            xgap=1,
-                            ygap=1,
-                            hovertemplate='Actual: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>'
+                            textfont={"size": 14},
+                            showscale=True
                         ))
                         fig_cm.update_layout(
-                            title=f'{model_name} - Confusion Matrix',
-                            height=400,
-                            xaxis_title='Predicted Label',
-                            yaxis_title='True Label'
+                            title=f'{selected_model} - Confusion Matrix',
+                            height=400
                         )
                         st.plotly_chart(fig_cm, use_container_width=True)
-                    except Exception:
-                        # Fallback: simple table
+                    except:
                         cm_df = pd.DataFrame(
                             cm,
                             columns=[f'Predicted {i}' for i in range(n_classes)],
@@ -1195,8 +1192,8 @@ def main():
                         )
                         st.dataframe(cm_df, use_container_width=True)
                     
-                    # Table view in expander
-                    with st.expander(f"📋 {model_name} - Table View & Per-Class Metrics"):
+                    # Per-class metrics
+                    with st.expander("📋 Per-Class Metrics"):
                         cm_df = pd.DataFrame(
                             cm,
                             columns=[f'Predicted {i}' for i in range(n_classes)],
@@ -1204,53 +1201,45 @@ def main():
                         )
                         st.dataframe(cm_df, use_container_width=True)
                         
-                        # Per-class metrics
-                        st.markdown("**Per-Class Metrics:**")
+                        st.markdown("**Per-Class Performance:**")
                         metrics_list = []
                         for i in range(n_classes):
                             tp = int(cm[i, i])
                             fp = int(cm[:, i].sum()) - tp
                             fn = int(cm[i, :].sum()) - tp
-                            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-                            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-                            f1_val = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+                            prec = tp/(tp+fp) if (tp+fp) > 0 else 0
+                            rec = tp/(tp+fn) if (tp+fn) > 0 else 0
+                            f1_val = 2*prec*rec/(prec+rec) if (prec+rec) > 0 else 0
                             metrics_list.append({
                                 'Class': f'Class {i}',
-                                'Precision': f'{precision:.3f}',
-                                'Recall': f'{recall:.3f}',
+                                'Precision': f'{prec:.3f}',
+                                'Recall': f'{rec:.3f}',
                                 'F1-Score': f'{f1_val:.3f}',
                                 'Support': int(cm[i, :].sum())
                             })
                         st.dataframe(pd.DataFrame(metrics_list), use_container_width=True)
-                    
-                    st.markdown("---")
-                    
-                except Exception as e:
-                    st.error(f"Error processing **{model_name}**: {str(e)}")
-                    st.markdown("---")
-                    continue
             
-            # ==================== CLASSIFICATION REPORTS ====================
+            # Classification Reports
+            st.markdown("---")
             st.markdown("#### 📋 Detailed Classification Reports")
             
             model_for_report = st.selectbox(
                 "Select model for detailed report",
-                list(evaluation_results.keys())
+                list(evaluation_results.keys()),
+                key='report_select'
             )
             
             if model_for_report in evaluation_results:
                 col1, col2 = st.columns([3, 2])
-                
                 with col1:
                     st.text("Classification Report:")
                     st.code(evaluation_results[model_for_report]['classification_report'], language='text')
-                
                 with col2:
                     st.markdown("**Model Metrics Summary**")
                     st.metric("Accuracy", f"{evaluation_results[model_for_report]['accuracy']:.3f}")
                     st.metric("F1 Score (Weighted)", f"{evaluation_results[model_for_report]['f1_score']:.3f}")
             
-            # ==================== BEST MODEL ====================
+            # Best Model
             st.markdown("---")
             best_model_name = metrics_df['F1 Score'].idxmax()
             best_model = models[best_model_name]
@@ -1271,7 +1260,7 @@ def main():
             with col3:
                 st.metric("Rank", "#1")
             
-            # ==================== MODEL RANKING ====================
+            # Model Ranking
             st.markdown("---")
             st.markdown("### 📊 Model Ranking")
             
@@ -1389,14 +1378,6 @@ def main():
             
         else:
             st.warning("⚠️ Please calculate feature importance in the Feature Engineering section first!")
-            
-            st.info("""
-            **How to get feature importance:**
-            1. Go to **Feature Engineering** section
-            2. Select a target variable
-            3. Click "Calculate Feature Importance"
-            4. Return here to view results
-            """)
     
     # Section: Polymer Analysis
     elif section == "🧬 Polymer Analysis":
