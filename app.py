@@ -1085,7 +1085,7 @@ def main():
                 st.error(f"Error during model training: {str(e)}")
                 st.info("💡 Tip: Try reducing the number of features or use a different target variable.")
     
-    # Section: Model Evaluation
+    # ==================== MODEL EVALUATION (FIXED - NO CRASH) ====================
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
@@ -1094,12 +1094,6 @@ def main():
         if not models_exist:
             st.warning("⚠️ No trained models found!")
             st.info("👉 Please go to **'🤖 Model Training'** section to train your models first.")
-            
-            with st.expander("🔍 Debug Info"):
-                st.write(f"Trained flag: {st.session_state.get('trained', False)}")
-                st.write(f"Models count: {len(st.session_state.get('models', {}))}")
-                st.write(f"Models keys: {list(st.session_state.get('models', {}).keys())}")
-            
             if st.button("🔄 Check Again", use_container_width=True):
                 st.rerun()
             return
@@ -1127,7 +1121,6 @@ def main():
             
             st.markdown("#### 📈 Performance Metrics Comparison")
             
-            # Bar chart comparison
             fig_metrics = px.bar(
                 metrics_df.reset_index(),
                 x='index',
@@ -1140,93 +1133,104 @@ def main():
             fig_metrics.update_layout(height=400)
             st.plotly_chart(fig_metrics, use_container_width=True)
             
-            # Metrics table
             st.markdown("#### 📊 Detailed Metrics Table")
             
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.dataframe(
-                    metrics_df,
-                    column_config={
-                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.3f"),
-                        "F1 Score": st.column_config.NumberColumn("F1 Score", format="%.3f"),
-                    },
-                    use_container_width=True,
-                )
+                st.dataframe(metrics_df.style.format("{:.3f}"), use_container_width=True)
             
             with col2:
                 st.markdown("**Best Scores:**")
                 st.metric("Accuracy", f"{metrics_df['Accuracy'].max():.3f}")
                 st.metric("F1 Score", f"{metrics_df['F1 Score'].max():.3f}")
             
-            # Confusion Matrices - FIXED VERSION (NO CRASH)
+            # ==================== CONFUSION MATRICES (SAFE VERSION) ====================
             st.markdown("---")
             st.markdown("#### 📊 Confusion Matrices")
             
-            try:
-                # Display confusion matrices one by one
-                for name, results in evaluation_results.items():
-                    st.markdown(f"**{name}**")
+            for model_name, results in evaluation_results.items():
+                try:
+                    cm = results.get('confusion_matrix')
                     
+                    # Validate confusion matrix
+                    if cm is None or not isinstance(cm, np.ndarray) or cm.size == 0:
+                        st.warning(f"⚠️ No confusion matrix for **{model_name}**")
+                        continue
+                    
+                    if cm.ndim != 2 or cm.shape[0] == 0 or cm.shape[1] == 0:
+                        st.warning(f"⚠️ Invalid confusion matrix for **{model_name}**")
+                        continue
+                    
+                    st.markdown(f"**{model_name}**")
+                    n_classes = cm.shape[0]
+                    
+                    # Try Plotly heatmap
                     try:
-                        cm = results['confusion_matrix']
-                        
-                        if cm is not None and cm.size > 0 and cm.shape[0] > 0 and cm.shape[1] > 0:
-                            # Create simple heatmap using go.Heatmap
-                            fig_cm = go.Figure(data=go.Heatmap(
-                                z=cm,
-                                x=[f'Predicted {i}' for i in range(cm.shape[0])],
-                                y=[f'Actual {i}' for i in range(cm.shape[0])],
-                                colorscale='Blues',
-                                text=[[str(int(val)) for val in row] for row in cm],
-                                texttemplate="%{text}",
-                                textfont={"size": 16, "color": "black"},
-                                showscale=True,
-                                xgap=1,
-                                ygap=1
-                            ))
-                            
-                            fig_cm.update_layout(
-                                title=f'{name} - Confusion Matrix',
-                                height=400,
-                                xaxis_title='Predicted Label',
-                                yaxis_title='True Label'
-                            )
-                            st.plotly_chart(fig_cm, use_container_width=True)
-                            
-                            # Also show as simple table
-                            with st.expander("View as Table"):
-                                cm_df = pd.DataFrame(
-                                    cm,
-                                    columns=[f'Predicted {i}' for i in range(cm.shape[0])],
-                                    index=[f'Actual {i}' for i in range(cm.shape[0])]
-                                )
-                                st.dataframe(cm_df)
-                        else:
-                            st.warning(f"No valid confusion matrix data for {name}")
+                        fig_cm = go.Figure(data=go.Heatmap(
+                            z=cm,
+                            x=[f'Predicted {i}' for i in range(n_classes)],
+                            y=[f'Actual {i}' for i in range(n_classes)],
+                            colorscale='Blues',
+                            text=[[str(int(val)) for val in row] for row in cm],
+                            texttemplate="%{text}",
+                            textfont={"size": 16},
+                            showscale=True,
+                            xgap=1,
+                            ygap=1,
+                            hovertemplate='Actual: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>'
+                        ))
+                        fig_cm.update_layout(
+                            title=f'{model_name} - Confusion Matrix',
+                            height=400,
+                            xaxis_title='Predicted Label',
+                            yaxis_title='True Label'
+                        )
+                        st.plotly_chart(fig_cm, use_container_width=True)
+                    except Exception:
+                        # Fallback: simple table
+                        cm_df = pd.DataFrame(
+                            cm,
+                            columns=[f'Predicted {i}' for i in range(n_classes)],
+                            index=[f'Actual {i}' for i in range(n_classes)]
+                        )
+                        st.dataframe(cm_df, use_container_width=True)
                     
-                    except Exception as cm_error:
-                        st.warning(f"Could not display confusion matrix for {name}: {str(cm_error)}")
+                    # Table view in expander
+                    with st.expander(f"📋 {model_name} - Table View & Per-Class Metrics"):
+                        cm_df = pd.DataFrame(
+                            cm,
+                            columns=[f'Predicted {i}' for i in range(n_classes)],
+                            index=[f'Actual {i}' for i in range(n_classes)]
+                        )
+                        st.dataframe(cm_df, use_container_width=True)
                         
-                        # Fallback: display as simple table
-                        try:
-                            st.write("Confusion Matrix (table format):")
-                            cm_df = pd.DataFrame(
-                                cm,
-                                columns=[f'Predicted {i}' for i in range(cm.shape[0])],
-                                index=[f'Actual {i}' for i in range(cm.shape[0])]
-                            )
-                            st.dataframe(cm_df)
-                        except:
-                            st.error("Could not display confusion matrix at all")
+                        # Per-class metrics
+                        st.markdown("**Per-Class Metrics:**")
+                        metrics_list = []
+                        for i in range(n_classes):
+                            tp = int(cm[i, i])
+                            fp = int(cm[:, i].sum()) - tp
+                            fn = int(cm[i, :].sum()) - tp
+                            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                            f1_val = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+                            metrics_list.append({
+                                'Class': f'Class {i}',
+                                'Precision': f'{precision:.3f}',
+                                'Recall': f'{recall:.3f}',
+                                'F1-Score': f'{f1_val:.3f}',
+                                'Support': int(cm[i, :].sum())
+                            })
+                        st.dataframe(pd.DataFrame(metrics_list), use_container_width=True)
                     
                     st.markdown("---")
+                    
+                except Exception as e:
+                    st.error(f"Error processing **{model_name}**: {str(e)}")
+                    st.markdown("---")
+                    continue
             
-            except Exception as e:
-                st.error(f"Error displaying confusion matrices: {str(e)}")
-                st.info("Displaying metrics without confusion matrices...")
-            
-            # Classification Reports
+            # ==================== CLASSIFICATION REPORTS ====================
             st.markdown("#### 📋 Detailed Classification Reports")
             
             model_for_report = st.selectbox(
@@ -1246,7 +1250,7 @@ def main():
                     st.metric("Accuracy", f"{evaluation_results[model_for_report]['accuracy']:.3f}")
                     st.metric("F1 Score (Weighted)", f"{evaluation_results[model_for_report]['f1_score']:.3f}")
             
-            # Best Model Selection
+            # ==================== BEST MODEL ====================
             st.markdown("---")
             best_model_name = metrics_df['F1 Score'].idxmax()
             best_model = models[best_model_name]
@@ -1267,7 +1271,7 @@ def main():
             with col3:
                 st.metric("Rank", "#1")
             
-            # Model Ranking
+            # ==================== MODEL RANKING ====================
             st.markdown("---")
             st.markdown("### 📊 Model Ranking")
             
