@@ -2,6 +2,7 @@
 Microplastic Risk Analysis Dashboard
 A comprehensive Streamlit application for analyzing microplastic risk data,
 featuring data preprocessing, EDA, model training, and evaluation.
+Optimized for fast training performance.
 """
 
 import streamlit as st
@@ -20,9 +21,7 @@ from sklearn.metrics import (accuracy_score, f1_score, confusion_matrix,
                              classification_report)
 from imblearn.over_sampling import SMOTE
 import warnings
-import io
-import base64
-from datetime import datetime
+import time
 
 warnings.filterwarnings('ignore')
 
@@ -57,12 +56,6 @@ st.markdown("""
         color: #34495e;
         margin-top: 0.8rem;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
     .success-message {
         color: #27ae60;
         font-weight: 600;
@@ -80,6 +73,8 @@ st.markdown("""
         background-color: #1f77b4;
         color: white;
         font-weight: 600;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
     }
     .stButton > button:hover {
         background-color: #2980b9;
@@ -186,7 +181,6 @@ def generate_sample_data():
     
     return df
 
-
 def handle_missing_values(df):
     """Handle missing values in the dataset."""
     try:
@@ -218,7 +212,6 @@ def handle_missing_values(df):
         st.error(f"Error handling missing values: {str(e)}")
         return df
 
-
 def encode_categorical(df):
     """Encode categorical variables."""
     try:
@@ -240,7 +233,6 @@ def encode_categorical(df):
         st.error(f"Error encoding categorical variables: {str(e)}")
         return df
 
-
 def scale_features(df, feature_cols):
     """Scale numerical features."""
     try:
@@ -257,7 +249,6 @@ def scale_features(df, feature_cols):
     except Exception as e:
         st.error(f"Error scaling features: {str(e)}")
         return df
-
 
 def detect_outliers(df, columns):
     """Detect outliers using IQR method."""
@@ -286,7 +277,6 @@ def detect_outliers(df, columns):
         st.error(f"Error detecting outliers: {str(e)}")
         return {}
 
-
 def plot_distribution(data, column, title):
     """Create distribution plot."""
     try:
@@ -314,7 +304,6 @@ def plot_distribution(data, column, title):
         st.error(f"Error creating distribution plot: {str(e)}")
         return go.Figure()
 
-
 def plot_correlation_heatmap(df, columns):
     """Create correlation heatmap."""
     try:
@@ -340,7 +329,6 @@ def plot_correlation_heatmap(df, columns):
     except Exception as e:
         st.error(f"Error creating correlation heatmap: {str(e)}")
         return go.Figure(), None
-
 
 def prepare_modeling_data(df, feature_cols, target_col):
     """Prepare data for modeling with enhanced error handling."""
@@ -377,101 +365,166 @@ def prepare_modeling_data(df, feature_cols, target_col):
             st.error(f"❌ Only {len(X)} samples available. At least 10 samples are recommended for training.")
             return None, None
         
-        class_counts = pd.Series(y).value_counts()
-        if len(class_counts) < 2:
-            st.warning("⚠️ Only one class found in target variable. Classification may not be meaningful.")
-        
         return X, y
         
     except Exception as e:
         st.error(f"Error preparing modeling data: {str(e)}")
         return None, None
 
-
-def train_models(X_train, X_test, y_train, y_test):
-    """Train classification models with enhanced error handling."""
+def train_models_fast(X_train, X_test, y_train, y_test):
+    """Train classification models with optimized fast performance."""
     models = {}
+    training_times = {}
     
     try:
         n_samples = X_train.shape[0]
-        n_classes = len(np.unique(y_train))
         
-        with st.spinner('Training Logistic Regression...'):
+        # Logistic Regression - Fast
+        start_time = time.time()
+        try:
+            lr_model = LogisticRegression(
+                random_state=42, 
+                max_iter=500,
+                class_weight='balanced',
+                solver='lbfgs',
+                n_jobs=-1
+            )
+            lr_model.fit(X_train, y_train)
+            models['Logistic Regression'] = lr_model
+            training_times['Logistic Regression'] = time.time() - start_time
+        except Exception as e:
             try:
-                cv_adjusted = min(3, max(2, n_samples // n_classes))
-                if cv_adjusted < 2:
-                    cv_adjusted = 2
-                
-                lr_params = {'C': [0.1, 1, 10], 'max_iter': [1000, 2000]}
-                lr_grid = GridSearchCV(
-                    LogisticRegression(random_state=42, class_weight='balanced'),
-                    lr_params, 
-                    cv=min(cv_adjusted, 3), 
-                    scoring='f1_weighted',
-                    error_score='raise'
+                lr_model = LogisticRegression(
+                    random_state=42, 
+                    max_iter=500,
+                    class_weight='balanced',
+                    solver='saga',
+                    n_jobs=-1
                 )
-                lr_grid.fit(X_train, y_train)
-                models['Logistic Regression'] = lr_grid.best_estimator_
-                st.success("✅ Logistic Regression trained successfully")
-            except Exception as e:
-                st.warning(f"⚠️ Logistic Regression GridSearch failed. Trying with default parameters...")
-                try:
-                    lr_model = LogisticRegression(random_state=42, max_iter=2000, class_weight='balanced')
-                    lr_model.fit(X_train, y_train)
-                    models['Logistic Regression'] = lr_model
-                    st.success("✅ Logistic Regression trained with default parameters")
-                except Exception as e2:
-                    st.error(f"❌ Logistic Regression failed: {str(e2)}")
-            
-        with st.spinner('Training Random Forest...'):
+                lr_model.fit(X_train, y_train)
+                models['Logistic Regression'] = lr_model
+                training_times['Logistic Regression'] = time.time() - start_time
+            except Exception as e2:
+                st.error(f"❌ Logistic Regression failed: {str(e2)}")
+        
+        # Random Forest - Optimized
+        start_time = time.time()
+        try:
+            n_estimators = min(80, max(30, n_samples // 5))
+            rf_model = RandomForestClassifier(
+                n_estimators=n_estimators,
+                random_state=42,
+                class_weight='balanced',
+                max_depth=min(12, n_samples // 30),
+                min_samples_split=max(2, n_samples // 100),
+                n_jobs=-1,
+                verbose=0
+            )
+            rf_model.fit(X_train, y_train)
+            models['Random Forest'] = rf_model
+            training_times['Random Forest'] = time.time() - start_time
+        except Exception as e:
             try:
                 rf_model = RandomForestClassifier(
-                    n_estimators=100, 
+                    n_estimators=30, 
                     random_state=42,
-                    class_weight='balanced',
-                    min_samples_split=max(2, n_samples // 100),
-                    min_samples_leaf=1
+                    max_depth=8,
+                    n_jobs=-1
                 )
                 rf_model.fit(X_train, y_train)
                 models['Random Forest'] = rf_model
-                st.success("✅ Random Forest trained successfully")
-            except Exception as e:
-                st.error(f"❌ Random Forest failed: {str(e)}")
-                try:
-                    rf_model = RandomForestClassifier(n_estimators=50, random_state=42)
-                    rf_model.fit(X_train, y_train)
-                    models['Random Forest'] = rf_model
-                    st.success("✅ Random Forest trained with basic parameters")
-                except Exception as e2:
-                    st.error(f"❌ Random Forest backup also failed: {str(e2)}")
-            
-        with st.spinner('Training Decision Tree...'):
+                training_times['Random Forest'] = time.time() - start_time
+            except Exception as e2:
+                st.error(f"❌ Random Forest failed: {str(e2)}")
+        
+        # Decision Tree - Very Fast
+        start_time = time.time()
+        try:
+            dt_model = DecisionTreeClassifier(
+                random_state=42,
+                max_depth=min(10, max(3, n_samples // 30)),
+                min_samples_split=max(2, n_samples // 50),
+                class_weight='balanced'
+            )
+            dt_model.fit(X_train, y_train)
+            models['Decision Tree'] = dt_model
+            training_times['Decision Tree'] = time.time() - start_time
+        except Exception as e:
             try:
-                dt_model = DecisionTreeClassifier(
-                    random_state=42, 
-                    max_depth=min(10, max(2, n_samples // 10)),
-                    min_samples_split=max(2, n_samples // 50),
-                    class_weight='balanced'
-                )
+                dt_model = DecisionTreeClassifier(random_state=42, max_depth=5)
                 dt_model.fit(X_train, y_train)
                 models['Decision Tree'] = dt_model
-                st.success("✅ Decision Tree trained successfully")
-            except Exception as e:
-                st.error(f"❌ Decision Tree failed: {str(e)}")
-                try:
-                    dt_model = DecisionTreeClassifier(random_state=42, max_depth=5)
-                    dt_model.fit(X_train, y_train)
-                    models['Decision Tree'] = dt_model
-                    st.success("✅ Decision Tree trained with basic parameters")
-                except Exception as e2:
-                    st.error(f"❌ Decision Tree backup also failed: {str(e2)}")
-            
-        return models
+                training_times['Decision Tree'] = time.time() - start_time
+            except Exception as e2:
+                st.error(f"❌ Decision Tree failed: {str(e2)}")
+        
+        return models, training_times
         
     except Exception as e:
         st.error(f"Error in model training pipeline: {str(e)}")
-        return {}
+        return {}, {}
 
+def train_models_quality(X_train, X_test, y_train, y_test):
+    """Train classification models with GridSearch for better quality."""
+    models = {}
+    training_times = {}
+    
+    try:
+        n_samples = X_train.shape[0]
+        
+        # Logistic Regression with GridSearch
+        start_time = time.time()
+        try:
+            lr_params = {'C': [0.1, 1, 10], 'max_iter': [1000]}
+            lr_grid = GridSearchCV(
+                LogisticRegression(random_state=42, class_weight='balanced', n_jobs=-1),
+                lr_params, 
+                cv=3, 
+                scoring='f1_weighted'
+            )
+            lr_grid.fit(X_train, y_train)
+            models['Logistic Regression'] = lr_grid.best_estimator_
+            training_times['Logistic Regression'] = time.time() - start_time
+        except Exception as e:
+            st.error(f"❌ Logistic Regression failed: {str(e)}")
+            training_times['Logistic Regression'] = 0
+        
+        # Random Forest
+        start_time = time.time()
+        try:
+            rf_model = RandomForestClassifier(
+                n_estimators=100, 
+                random_state=42,
+                class_weight='balanced',
+                n_jobs=-1
+            )
+            rf_model.fit(X_train, y_train)
+            models['Random Forest'] = rf_model
+            training_times['Random Forest'] = time.time() - start_time
+        except Exception as e:
+            st.error(f"❌ Random Forest failed: {str(e)}")
+            training_times['Random Forest'] = 0
+        
+        # Decision Tree
+        start_time = time.time()
+        try:
+            dt_model = DecisionTreeClassifier(
+                random_state=42, 
+                max_depth=10,
+                class_weight='balanced'
+            )
+            dt_model.fit(X_train, y_train)
+            models['Decision Tree'] = dt_model
+            training_times['Decision Tree'] = time.time() - start_time
+        except Exception as e:
+            st.error(f"❌ Decision Tree failed: {str(e)}")
+            training_times['Decision Tree'] = 0
+        
+        return models, training_times
+        
+    except Exception as e:
+        st.error(f"Error in model training pipeline: {str(e)}")
+        return {}, {}
 
 def evaluate_models(models, X_test, y_test):
     """Evaluate trained models."""
@@ -496,7 +549,6 @@ def evaluate_models(models, X_test, y_test):
     except Exception as e:
         st.error(f"Error evaluating models: {str(e)}")
         return {}
-
 
 def main():
     """Main application function."""
@@ -815,7 +867,7 @@ def main():
                     st.error("No valid features after cleaning")
                     return
                 
-                rf = RandomForestClassifier(n_estimators=100, random_state=42)
+                rf = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
                 rf.fit(X, y)
                 
                 importance_df = pd.DataFrame({
@@ -892,7 +944,12 @@ def main():
         
         with col2:
             use_smote = st.checkbox("Use SMOTE for class imbalance", value=True)
-            st.info("ℹ️ SMOTE will be applied only if data meets requirements")
+            fast_mode = st.checkbox("⚡ Fast Training Mode", value=True, 
+                                   help="Enable for faster training (recommended)")
+            if fast_mode:
+                st.success("⚡ Fast mode enabled: Training will be optimized for speed")
+            else:
+                st.info("🔬 Quality mode: Training will use GridSearchCV for better results (slower)")
         
         if st.button("🚀 Train Models", type="primary", use_container_width=True):
             if len(feature_cols) == 0:
@@ -970,8 +1027,17 @@ def main():
                     st.error(f"❌ Not enough training samples ({X_train.shape[0]}). Need at least 5 samples.")
                     return
                 
-                with st.spinner('Training models... This may take a moment.'):
-                    models = train_models(X_train, X_test, y_train, y_test)
+                # Train models based on selected mode
+                total_start = time.time()
+                
+                if fast_mode:
+                    with st.spinner('⚡ Training models in FAST mode...'):
+                        models, training_times = train_models_fast(X_train, X_test, y_train, y_test)
+                else:
+                    with st.spinner('🔬 Training models in QUALITY mode (this may take longer)...'):
+                        models, training_times = train_models_quality(X_train, X_test, y_train, y_test)
+                
+                total_time = time.time() - total_start
                 
                 if models and len(models) > 0:
                     st.session_state.models = models
@@ -981,23 +1047,29 @@ def main():
                     st.session_state.y_train = y_train
                     st.session_state.trained = True
                     
-                    st.success(f"✅ Successfully trained {len(models)} models!")
-                    st.balloons()
+                    st.success(f"✅ Successfully trained {len(models)} models in {total_time:.2f} seconds!")
+                    if fast_mode:
+                        st.balloons()
+                    
+                    # Show training times
+                    if training_times:
+                        with st.expander("⏱️ Training Time Details"):
+                            for name, t in training_times.items():
+                                st.write(f"**{name}**: {t:.2f} seconds")
                     
                     st.markdown("### 📊 Quick Performance Overview")
                     
-                    for name, model in models.items():
+                    # Display results in columns
+                    cols = st.columns(len(models))
+                    for idx, (name, model) in enumerate(models.items()):
                         try:
                             train_score = model.score(X_train, y_train)
                             test_score = model.score(X_test, y_test)
                             
-                            col1, col2, col3 = st.columns([2, 1, 1])
-                            with col1:
+                            with cols[idx]:
                                 st.markdown(f"**{name}**")
-                            with col2:
-                                st.metric(f"Train Score", f"{train_score:.3f}")
-                            with col3:
-                                st.metric(f"Test Score", f"{test_score:.3f}")
+                                st.metric("Train Score", f"{train_score:.3f}")
+                                st.metric("Test Score", f"{test_score:.3f}")
                         except Exception as score_error:
                             st.warning(f"⚠️ Could not calculate scores for {name}")
                     
@@ -1070,14 +1142,8 @@ def main():
                 st.dataframe(
                     metrics_df,
                     column_config={
-                        "Accuracy": st.column_config.NumberColumn(
-                            "Accuracy",
-                            format="%.3f",
-                        ),
-                        "F1 Score": st.column_config.NumberColumn(
-                            "F1 Score",
-                            format="%.3f",
-                        ),
+                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.3f"),
+                        "F1 Score": st.column_config.NumberColumn("F1 Score", format="%.3f"),
                     },
                     use_container_width=True,
                 )
@@ -1216,14 +1282,8 @@ def main():
                     display_df,
                     column_config={
                         "feature": st.column_config.TextColumn("Feature"),
-                        "importance": st.column_config.NumberColumn(
-                            "Importance",
-                            format="%.4f",
-                        ),
-                        "percentage": st.column_config.NumberColumn(
-                            "Percentage %",
-                            format="%.2f%%",
-                        ),
+                        "importance": st.column_config.NumberColumn("Importance", format="%.4f"),
+                        "percentage": st.column_config.NumberColumn("Percentage %", format="%.2f%%"),
                     },
                     use_container_width=True,
                     hide_index=True,
