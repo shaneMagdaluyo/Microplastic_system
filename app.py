@@ -1089,7 +1089,6 @@ def main():
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
-        # Check if models exist
         if not st.session_state.get('trained', False) or len(st.session_state.get('models', {})) == 0:
             st.warning("⚠️ No trained models found!")
             st.info("👉 Please go to **'🤖 Model Training'** section to train your models first.")
@@ -1111,16 +1110,15 @@ def main():
             evaluation_results = evaluate_models(models, X_test, y_test)
         
         if evaluation_results and len(evaluation_results) > 0:
-            # Build metrics dataframe
             metrics_data = {}
             for name, results in evaluation_results.items():
                 metrics_data[name] = {
                     'Accuracy': results['accuracy'],
                     'F1 Score': results['f1_score']
                 }
+            
             metrics_df = pd.DataFrame(metrics_data).T
             
-            # Performance Chart
             st.markdown("#### 📈 Performance Metrics Comparison")
             fig_metrics = px.bar(
                 metrics_df.reset_index(),
@@ -1134,7 +1132,6 @@ def main():
             fig_metrics.update_layout(height=400)
             st.plotly_chart(fig_metrics, use_container_width=True)
             
-            # Metrics Table - FIXED (no .style.format)
             st.markdown("#### 📊 Detailed Metrics Table")
             col1, col2 = st.columns([3, 1])
             with col1:
@@ -1144,22 +1141,15 @@ def main():
                 st.metric("Accuracy", f"{metrics_df['Accuracy'].max():.3f}")
                 st.metric("F1 Score", f"{metrics_df['F1 Score'].max():.3f}")
             
-            # Confusion Matrices - Select ONE at a time (no lag)
             st.markdown("---")
             st.markdown("#### 📊 Confusion Matrices")
             
-            selected_model = st.selectbox(
-                "Select model to view Confusion Matrix",
-                list(evaluation_results.keys())
-            )
+            selected_model = st.selectbox("Select model to view Confusion Matrix", list(evaluation_results.keys()))
             
-            if selected_model and selected_model in evaluation_results:
+            if selected_model:
                 cm = evaluation_results[selected_model].get('confusion_matrix')
-                
                 if cm is not None and cm.size > 0:
                     n_classes = cm.shape[0]
-                    
-                    # Simple heatmap
                     try:
                         fig_cm = go.Figure(data=go.Heatmap(
                             z=cm,
@@ -1171,24 +1161,15 @@ def main():
                             textfont={"size": 14},
                             showscale=True
                         ))
-                        fig_cm.update_layout(
-                            title=f'{selected_model} - Confusion Matrix',
-                            height=400
-                        )
+                        fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
                         st.plotly_chart(fig_cm, use_container_width=True)
                     except:
-                        cm_df = pd.DataFrame(cm,
-                            columns=[f'Predicted {i}' for i in range(n_classes)],
-                            index=[f'Actual {i}' for i in range(n_classes)])
-                        st.dataframe(cm_df)
+                        st.dataframe(pd.DataFrame(cm))
                     
-                    # Per-class metrics
                     with st.expander("📋 Per-Class Metrics"):
-                        cm_df = pd.DataFrame(cm,
-                            columns=[f'Predicted {i}' for i in range(n_classes)],
-                            index=[f'Actual {i}' for i in range(n_classes)])
+                        cm_df = pd.DataFrame(cm, columns=[f'Predicted {i}' for i in range(n_classes)],
+                                            index=[f'Actual {i}' for i in range(n_classes)])
                         st.dataframe(cm_df)
-                        
                         metrics_list = []
                         for i in range(n_classes):
                             tp = int(cm[i, i])
@@ -1206,15 +1187,11 @@ def main():
                             })
                         st.dataframe(pd.DataFrame(metrics_list))
             
-            # Classification Reports
             st.markdown("---")
             st.markdown("#### 📋 Detailed Classification Reports")
             
-            model_for_report = st.selectbox(
-                "Select model for detailed report",
-                list(evaluation_results.keys()),
-                key='report_select'
-            )
+            model_for_report = st.selectbox("Select model for detailed report", 
+                                           list(evaluation_results.keys()), key='report_select')
             
             if model_for_report in evaluation_results:
                 col1, col2 = st.columns([3, 2])
@@ -1224,11 +1201,18 @@ def main():
                     st.metric("Accuracy", f"{evaluation_results[model_for_report]['accuracy']:.3f}")
                     st.metric("F1 Score", f"{evaluation_results[model_for_report]['f1_score']:.3f}")
             
-            # Best Model
             st.markdown("---")
             best_model_name = metrics_df['F1 Score'].idxmax()
+            best_model = models[best_model_name]
+            
+            st.session_state.best_model = {
+                'name': best_model_name,
+                'model': best_model,
+                'metrics': evaluation_results[best_model_name]
+            }
             
             st.markdown(f"## 🏆 Best Performing Model: **{best_model_name}**")
+            
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Accuracy", f"{evaluation_results[best_model_name]['accuracy']:.3f}")
@@ -1237,7 +1221,6 @@ def main():
             with col3:
                 st.metric("Rank", "#1")
             
-            # Model Ranking
             st.markdown("---")
             st.markdown("### 📊 Model Ranking")
             
