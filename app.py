@@ -128,7 +128,6 @@ def load_dataset(uploaded_file):
     """Load dataset from uploaded file with encoding fix."""
     try:
         if uploaded_file.name.endswith('.csv'):
-            # Try multiple encodings (prevents utf-8 crash)
             try:
                 data = pd.read_csv(uploaded_file, encoding='utf-8')
             except UnicodeDecodeError:
@@ -850,7 +849,6 @@ def main():
     elif section == "🤖 Model Training":
         st.markdown('<p class="section-header">🤖 Model Training</p>', unsafe_allow_html=True)
         
-        # Check if models already trained
         if st.session_state.get('trained', False) and len(st.session_state.get('models', {})) > 0:
             st.success(f"✅ Models are already trained! ({len(st.session_state.models)} models available)")
             st.info("👉 Go to '📊 Model Evaluation' to see results, or configure and retrain below.")
@@ -976,7 +974,6 @@ def main():
                     models = train_models(X_train, X_test, y_train, y_test)
                 
                 if models and len(models) > 0:
-                    # Store ALL relevant data in session state
                     st.session_state.models = models
                     st.session_state.X_test = X_test
                     st.session_state.y_test = y_test
@@ -1016,14 +1013,12 @@ def main():
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
-        # Check if models exist
         models_exist = st.session_state.get('trained', False) and len(st.session_state.get('models', {})) > 0
         
         if not models_exist:
             st.warning("⚠️ No trained models found!")
             st.info("👉 Please go to **'🤖 Model Training'** section to train your models first.")
             
-            # Debug information
             with st.expander("🔍 Debug Info"):
                 st.write(f"Trained flag: {st.session_state.get('trained', False)}")
                 st.write(f"Models count: {len(st.session_state.get('models', {}))}")
@@ -1045,7 +1040,6 @@ def main():
             evaluation_results = evaluate_models(models, X_test, y_test)
         
         if evaluation_results and len(evaluation_results) > 0:
-            # Performance metrics
             metrics_data = {}
             for name, results in evaluation_results.items():
                 metrics_data[name] = {
@@ -1069,19 +1063,30 @@ def main():
             fig_metrics.update_layout(height=400)
             st.plotly_chart(fig_metrics, use_container_width=True)
             
-            # Metrics table
             st.markdown("#### 📊 Detailed Metrics Table")
+            
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.dataframe(
-                    metrics_df.style.highlight_max(axis=0, color='lightgreen'),
-                    use_container_width=True
+                    metrics_df,
+                    column_config={
+                        "Accuracy": st.column_config.NumberColumn(
+                            "Accuracy",
+                            format="%.3f",
+                        ),
+                        "F1 Score": st.column_config.NumberColumn(
+                            "F1 Score",
+                            format="%.3f",
+                        ),
+                    },
+                    use_container_width=True,
                 )
-            with col2:
-                st.markdown("**Legend:**")
-                st.markdown("🟢 Highest Score")
             
-            # Confusion Matrices
+            with col2:
+                st.markdown("**Best Scores:**")
+                st.metric("Accuracy", f"{metrics_df['Accuracy'].max():.3f}")
+                st.metric("F1 Score", f"{metrics_df['F1 Score'].max():.3f}")
+            
             st.markdown("---")
             st.markdown("#### 📊 Confusion Matrices")
             
@@ -1114,7 +1119,6 @@ def main():
                         )
                         st.plotly_chart(fig_cm, use_container_width=True)
             
-            # Classification Reports
             st.markdown("---")
             st.markdown("#### 📋 Detailed Classification Reports")
             
@@ -1135,7 +1139,6 @@ def main():
                     st.metric("Accuracy", f"{evaluation_results[model_for_report]['accuracy']:.3f}")
                     st.metric("F1 Score (Weighted)", f"{evaluation_results[model_for_report]['f1_score']:.3f}")
             
-            # Best Model
             st.markdown("---")
             best_model_name = metrics_df['F1 Score'].idxmax()
             best_model = models[best_model_name]
@@ -1156,7 +1159,6 @@ def main():
             with col3:
                 st.metric("Rank", "#1")
             
-            # Model Ranking
             st.markdown("---")
             st.markdown("### 📊 Model Ranking")
             
@@ -1202,7 +1204,55 @@ def main():
             
             st.markdown("---")
             st.markdown("### 📊 Feature Importance Table")
-            st.dataframe(importance_df.style.background_gradient(cmap='Blues'), use_container_width=True)
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                display_df = importance_df.copy()
+                display_df['importance'] = display_df['importance'].round(4)
+                display_df['percentage'] = (display_df['importance'] / display_df['importance'].sum() * 100).round(2)
+                display_df = display_df.sort_values('importance', ascending=False)
+                
+                st.dataframe(
+                    display_df,
+                    column_config={
+                        "feature": st.column_config.TextColumn("Feature"),
+                        "importance": st.column_config.NumberColumn(
+                            "Importance",
+                            format="%.4f",
+                        ),
+                        "percentage": st.column_config.NumberColumn(
+                            "Percentage %",
+                            format="%.2f%%",
+                        ),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            
+            with col2:
+                st.markdown("**Top 5 Features**")
+                top5 = importance_df.nlargest(5, 'importance')
+                for idx, (_, row) in enumerate(top5.iterrows(), 1):
+                    st.metric(f"#{idx} {row['feature'][:20]}", f"{row['importance']:.3f}")
+            
+            st.markdown("---")
+            st.markdown("### 📈 Feature Importance Details")
+            
+            top_features = importance_df.nlargest(15, 'importance')
+            
+            fig_table = px.bar(
+                top_features,
+                x='importance',
+                y='feature',
+                orientation='h',
+                text=top_features['importance'].apply(lambda x: f'{x:.4f}'),
+                title='Feature Importance Scores',
+                color='importance',
+                color_continuous_scale='Blues'
+            )
+            fig_table.update_traces(textposition='outside')
+            fig_table.update_layout(height=500)
+            st.plotly_chart(fig_table, use_container_width=True)
             
             st.markdown("---")
             st.markdown("### 💡 Feature Importance Interpretation")
@@ -1210,12 +1260,36 @@ def main():
             top_3 = importance_df.nlargest(3, 'importance')
             
             for idx, (index, row) in enumerate(top_3.iterrows()):
-                st.markdown(f"**{idx+1}. {row['feature']}** (Importance: {row['importance']:.3f})")
-                st.markdown(f"   - This feature has strong predictive power for the target variable")
-                st.markdown(f"   - Consider investigating its relationship with microplastic risk")
-                st.progress(float(row['importance'] / importance_df['importance'].max()))
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.markdown(f"### #{idx+1}")
+                with col2:
+                    st.markdown(f"**{row['feature']}**")
+                    st.markdown(f"Importance Score: **{row['importance']:.4f}**")
+                    st.progress(
+                        float(row['importance'] / importance_df['importance'].max()),
+                        text=f"{row['importance']/importance_df['importance'].max()*100:.1f}% of max"
+                    )
+            
+            st.markdown("---")
+            csv = importance_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Feature Importance (CSV)",
+                data=csv,
+                file_name="feature_importance.csv",
+                mime="text/csv",
+            )
+            
         else:
             st.warning("⚠️ Please calculate feature importance in the Feature Engineering section first!")
+            
+            st.info("""
+            **How to get feature importance:**
+            1. Go to **Feature Engineering** section
+            2. Select a target variable
+            3. Click "Calculate Feature Importance"
+            4. Return here to view results
+            """)
     
     # Section: Polymer Analysis
     elif section == "🧬 Polymer Analysis":
