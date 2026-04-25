@@ -92,25 +92,35 @@ if 'best_model' not in st.session_state:
 if 'preprocessing_log' not in st.session_state:
     st.session_state.preprocessing_log = []
 
-
 def load_dataset(uploaded_file):
-    """Load dataset from uploaded file."""
+    """Load dataset from uploaded file with encoding fix."""
     try:
         if uploaded_file.name.endswith('.csv'):
-            data = pd.read_csv(uploaded_file)
+            # Try multiple encodings (prevents utf-8 crash)
+            try:
+                data = pd.read_csv(uploaded_file, encoding='utf-8')
+            except UnicodeDecodeError:
+                uploaded_file.seek(0)
+                try:
+                    data = pd.read_csv(uploaded_file, encoding='latin1')
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    data = pd.read_csv(uploaded_file, encoding='cp1252')
+
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             data = pd.read_excel(uploaded_file)
+
         else:
             st.error("Unsupported file format. Please upload CSV or Excel file.")
             return None
-        
+
         st.session_state.data = data
         st.success(f"✅ Dataset loaded successfully! Shape: {data.shape}")
         return data
-    except Exception as e:
-        st.error(f"Error loading file: {str(e)}")
-        return None
 
+    except Exception as e:
+        st.error(f"❌ Error loading file: {str(e)}")
+        return None
 
 def generate_sample_data():
     """Generate sample microplastic data for demonstration."""
