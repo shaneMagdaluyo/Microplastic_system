@@ -469,28 +469,7 @@ def main():
             with col3:
                 st.metric("Missing Values", df.isnull().sum().sum())
             
-            # Enhanced preview with styled HTML table
-            preview_df = df.head(10)
-            html_preview = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-size: 0.85rem;">'
-            html_preview += '<tr style="background-color: #1f77b4; color: white;">'
-            for col in preview_df.columns:
-                html_preview += f'<th style="padding: 8px; text-align: left;">{col}</th>'
-            html_preview += '</tr>'
-            
-            for i, (_, row) in enumerate(preview_df.iterrows()):
-                bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                html_preview += f'<tr style="background-color: {bg};">'
-                for val in row:
-                    if pd.isna(val):
-                        html_preview += '<td style="padding: 6px; color: #e74c3c; font-style: italic;">NULL</td>'
-                    elif isinstance(val, float):
-                        html_preview += f'<td style="padding: 6px;">{val:.2f}</td>'
-                    else:
-                        html_preview += f'<td style="padding: 6px;">{val}</td>'
-                html_preview += '</tr>'
-            
-            html_preview += '</table></div>'
-            st.markdown(html_preview, unsafe_allow_html=True)
+            st.dataframe(df.head(10), use_container_width=True)
             
             st.markdown("---")
             st.markdown("#### Dataset Information")
@@ -809,7 +788,7 @@ def main():
             else:
                 st.error("❌ No models were successfully trained. Please check your data and try again.")
     
-    # ==================== MODEL EVALUATION (ENHANCED TABLES) ====================
+    # ==================== MODEL EVALUATION (WITH FORMATTED INSIGHTS) ====================
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
@@ -840,216 +819,143 @@ def main():
                 }
             metrics_df = pd.DataFrame(metrics_data).T
             
-            # ==================== STYLED METRICS TABLE ====================
-            st.markdown("#### 📈 Model Performance Comparison")
+            # ==================== FORMATTED EVALUATION SUMMARY ====================
+            st.markdown("---")
+            st.markdown("#### 📋 Model Evaluation Results")
             
-            styled_df = metrics_df.copy().round(4)
-            styled_df['Model'] = styled_df.index
-            styled_df['Accuracy %'] = (styled_df['Accuracy'] * 100).round(2)
-            styled_df['F1 Score %'] = (styled_df['F1 Score'] * 100).round(2)
-            styled_df['Rank'] = styled_df['F1 Score'].rank(ascending=False).astype(int)
+            # Get target variable name
+            target_name = "Target Variable"
+            if st.session_state.get('target_encoder') and hasattr(st.session_state.target_encoder, 'classes_'):
+                target_name = "Target"
             
-            best_acc_idx = styled_df['Accuracy'].idxmax()
-            best_f1_idx = styled_df['F1 Score'].idxmax()
+            st.markdown(f"**From your evaluation for {target_name} prediction:**")
+            st.markdown("")
             
-            col1, col2, col3 = st.columns([2, 1, 1])
+            # Display each model's F1 score in the requested format
+            for name, results in evaluation_results.items():
+                f1 = results['f1_score']
+                st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average)")
+                st.markdown("")
             
-            with col1:
-                st.markdown("**📊 Performance Metrics**")
-                
-                html_table = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-family: Arial;">'
-                html_table += '<tr style="background-color: #1f77b4; color: white;">'
-                html_table += '<th style="padding: 12px; text-align: left;">Model</th>'
-                html_table += '<th style="padding: 12px; text-align: center;">Accuracy</th>'
-                html_table += '<th style="padding: 12px; text-align: center;">F1 Score</th>'
-                html_table += '<th style="padding: 12px; text-align: center;">Rank</th></tr>'
-                
-                for i, (model, row) in enumerate(styled_df.iterrows()):
-                    bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                    if model == best_f1_idx:
-                        bg = '#d4edda'
-                    
-                    html_table += f'<tr style="background-color: {bg};">'
-                    html_table += f'<td style="padding: 10px; font-weight: bold;">{model}</td>'
-                    html_table += f'<td style="padding: 10px; text-align: center;">{row["Accuracy"]:.4f}</td>'
-                    html_table += f'<td style="padding: 10px; text-align: center;">{row["F1 Score"]:.4f}</td>'
-                    
-                    rank = row['Rank']
-                    if rank == 1: medal = '🥇'
-                    elif rank == 2: medal = '🥈'
-                    elif rank == 3: medal = '🥉'
-                    else: medal = f'#{rank}'
-                    html_table += f'<td style="padding: 10px; text-align: center; font-size: 1.2rem;">{medal}</td>'
-                    html_table += '</tr>'
-                
-                html_table += '</table></div>'
-                st.markdown(html_table, unsafe_allow_html=True)
+            # Find best model
+            best_model_name = metrics_df['F1 Score'].idxmax()
+            best_f1 = metrics_df['F1 Score'].max()
             
-            with col2:
-                st.markdown("**🏆 Best Scores**")
-                st.metric("Accuracy", f"{best_acc_idx}", 
-                         delta=f"{styled_df.loc[best_acc_idx, 'Accuracy %']:.1f}%")
-                st.metric("F1 Score", f"{best_f1_idx}", 
-                         delta=f"{styled_df.loc[best_f1_idx, 'F1 Score %']:.1f}%")
-                
-                st.markdown("**📊 Score Distribution**")
-                for model in styled_df.index:
-                    st.write(f"**{model}**")
-                    st.progress(float(styled_df.loc[model, 'Accuracy']))
+            # Create conclusion
+            st.markdown("---")
+            st.markdown(f"""
+            <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                <p style="font-size: 1.1rem; margin: 0; color: #155724;">
+                    ✅ The <b>{best_model_name}</b> performed best for <b>{target_name}</b> prediction 
+                    with an F1-Score of <b>{best_f1:.4f}</b> (weighted average).
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
             
-            with col3:
-                st.markdown("**📈 Quick Stats**")
-                st.metric("Avg Accuracy", f"{styled_df['Accuracy'].mean():.3f}")
-                st.metric("Avg F1 Score", f"{styled_df['F1 Score'].mean():.3f}")
-                st.metric("Best Margin", 
-                         f"{(styled_df['F1 Score'].max() - styled_df['F1 Score'].min()):.3f}")
+            # ==================== COMPARISON TABLE ====================
+            st.markdown("#### 📊 Performance Comparison Table")
+            
+            comparison_df = metrics_df.round(4)
+            comparison_df['Model'] = comparison_df.index
+            comparison_df['F1 Score (Weighted)'] = comparison_df['F1 Score']
+            comparison_df['Rank'] = comparison_df['F1 Score'].rank(ascending=False).astype(int)
+            
+            st.dataframe(
+                comparison_df[['Model', 'Accuracy', 'F1 Score (Weighted)', 'Rank']],
+                column_config={
+                    "Model": st.column_config.TextColumn("Model", width="large"),
+                    "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
+                    "F1 Score (Weighted)": st.column_config.NumberColumn("F1 Score (Weighted)", format="%.4f"),
+                    "Rank": st.column_config.NumberColumn("Rank", format="%d"),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
             
             # ==================== CONFUSION MATRIX ====================
             st.markdown("---")
-            st.markdown("#### 📊 Confusion Matrices")
+            st.markdown("#### 🧩 Confusion Matrix")
             
-            selected_model = st.selectbox("Select model to view", list(evaluation_results.keys()))
+            selected_model = st.selectbox("Select model to view Confusion Matrix", list(evaluation_results.keys()))
             
             if selected_model:
                 cm = evaluation_results[selected_model].get('confusion_matrix')
                 if cm is not None and cm.size > 0:
                     n_classes = cm.shape[0]
                     
-                    col_a, col_b = st.columns([1, 1])
+                    row_sums = cm.sum(axis=1, keepdims=True)
+                    row_sums[row_sums == 0] = 1
+                    cm_percent = (cm.astype('float') / row_sums * 100)
                     
-                    with col_a:
-                        st.markdown(f"**{selected_model} - Confusion Matrix**")
-                        
-                        html_cm = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-family: monospace;">'
-                        html_cm += '<tr style="background-color: #2c3e50; color: white;">'
-                        html_cm += '<th style="padding: 10px;"></th>'
+                    annotations = []
+                    for i in range(n_classes):
+                        row_ann = []
                         for j in range(n_classes):
-                            html_cm += f'<th style="padding: 10px; text-align: center;">Pred {j}</th>'
-                        html_cm += '<th style="padding: 10px; text-align: center;">Total</th></tr>'
-                        
-                        for i in range(n_classes):
-                            row_sum = cm[i, :].sum()
-                            html_cm += '<tr>'
-                            html_cm += f'<td style="padding: 10px; font-weight: bold; background-color: #34495e; color: white;">Actual {i}</td>'
-                            for j in range(n_classes):
-                                val = cm[i, j]
-                                bg = '#d4edda' if i == j else '#f8d7da' if val > 0 else '#ffffff'
-                                html_cm += f'<td style="padding: 10px; text-align: center; background-color: {bg};">{val}</td>'
-                            html_cm += f'<td style="padding: 10px; text-align: center; font-weight: bold;">{row_sum}</td>'
-                            html_cm += '</tr>'
-                        
-                        html_cm += '</table></div>'
-                        st.markdown(html_cm, unsafe_allow_html=True)
+                            count = cm[i, j]
+                            pct = cm_percent[i, j]
+                            row_ann.append(f"<b>{count}</b><br><sub>({pct:.1f}%)</sub>")
+                        annotations.append(row_ann)
                     
-                    with col_b:
-                        st.markdown(f"**Per-Class Metrics**")
-                        
-                        metrics_list = []
+                    fig_cm = go.Figure(data=go.Heatmap(
+                        z=cm,
+                        x=[f'<b>Predicted<br>Class {i}</b>' for i in range(n_classes)],
+                        y=[f'<b>Actual<br>Class {i}</b>' for i in range(n_classes)],
+                        colorscale=[[0.0,'#f7fbff'],[0.25,'#deebf7'],[0.5,'#9ecae1'],[0.75,'#4292c6'],[1.0,'#2171b5']],
+                        text=annotations, texttemplate="%{text}", textfont={"size":14,"color":"black"},
+                        showscale=True, colorbar=dict(title="Count",tickformat="d"),
+                        xgap=3, ygap=3,
+                        hovertemplate="Actual: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>"
+                    ))
+                    
+                    shapes = [dict(type="rect",x0=j-0.5,y0=j-0.5,x1=j+0.5,y1=j+0.5,
+                                  line=dict(color="#2ecc71",width=3),
+                                  fillcolor="rgba(46,204,113,0.1)") for j in range(n_classes)]
+                    
+                    fig_cm.update_layout(
+                        title=f"<b>{selected_model}</b><br><sub>Confusion Matrix (Count & Row %)</sub>",
+                        height=450, shapes=shapes, plot_bgcolor='white', paper_bgcolor='white',
+                        xaxis=dict(title="<b>Predicted Label</b>",tickfont=dict(size=11)),
+                        yaxis=dict(title="<b>True Label</b>",tickfont=dict(size=11))
+                    )
+                    st.plotly_chart(fig_cm, use_container_width=True)
+                    
+                    with st.expander("📋 View Per-Class Metrics"):
+                        per_class_list = []
                         for i in range(n_classes):
-                            tp = int(cm[i, i])
-                            fp = int(cm[:, i].sum()) - tp
-                            fn = int(cm[i, :].sum()) - tp
-                            prec = tp/(tp+fp) if (tp+fp) > 0 else 0
-                            rec = tp/(tp+fn) if (tp+fn) > 0 else 0
-                            f1_val = 2*prec*rec/(prec+rec) if (prec+rec) > 0 else 0
-                            support = int(cm[i, :].sum())
-                            metrics_list.append({
-                                'Class': f'Class {i}',
-                                'Precision': f'{prec:.3f}',
-                                'Recall': f'{rec:.3f}',
-                                'F1-Score': f'{f1_val:.3f}',
-                                'Support': support
+                            tp = int(cm[i,i]); fp = int(cm[:,i].sum())-tp; fn = int(cm[i,:].sum())-tp
+                            precision = tp/(tp+fp) if (tp+fp)>0 else 0
+                            recall = tp/(tp+fn) if (tp+fn)>0 else 0
+                            f1_val = 2*precision*recall/(precision+recall) if (precision+recall)>0 else 0
+                            per_class_list.append({
+                                'Class':f'Class {i}','TP':tp,'FP':fp,'FN':fn,
+                                'Precision':round(precision,4),'Recall':round(recall,4),
+                                'F1-Score':round(f1_val,4),'Support':int(cm[i,:].sum())
                             })
-                        
-                        html_metrics = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">'
-                        html_metrics += '<tr style="background-color: #1f77b4; color: white;">'
-                        for col in ['Class', 'Precision', 'Recall', 'F1-Score', 'Support']:
-                            html_metrics += f'<th style="padding: 8px; text-align: center;">{col}</th>'
-                        html_metrics += '</tr>'
-                        
-                        for i, row in enumerate(metrics_list):
-                            bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                            html_metrics += f'<tr style="background-color: {bg};">'
-                            html_metrics += f'<td style="padding: 8px; text-align: center; font-weight: bold;">{row["Class"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["Precision"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["Recall"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["F1-Score"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["Support"]}</td>'
-                            html_metrics += '</tr>'
-                        
-                        html_metrics += '</table></div>'
-                        st.markdown(html_metrics, unsafe_allow_html=True)
-                    
-                    if st.checkbox("📈 Show Heatmap Chart", key='show_heatmap'):
-                        fig_cm = go.Figure(data=go.Heatmap(
-                            z=cm,
-                            x=[f'Predicted {i}' for i in range(n_classes)],
-                            y=[f'Actual {i}' for i in range(n_classes)],
-                            colorscale='Blues',
-                            text=[[str(int(val)) for val in row] for row in cm],
-                            texttemplate="%{text}",
-                            textfont={"size": 14},
-                            showscale=True
-                        ))
-                        fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
-                        st.plotly_chart(fig_cm, use_container_width=True)
+                        st.dataframe(pd.DataFrame(per_class_list), use_container_width=True, hide_index=True)
             
             # ==================== CLASSIFICATION REPORT ====================
             st.markdown("---")
-            st.markdown("#### 📋 Classification Report")
+            st.markdown("#### 📋 Detailed Classification Report")
+            report_model = st.selectbox("Select model for text report", list(evaluation_results.keys()), key='rep')
+            if report_model in evaluation_results:
+                st.code(evaluation_results[report_model]['classification_report'])
             
-            model_for_report = st.selectbox("Select model for report", 
-                                           list(evaluation_results.keys()), key='report')
-            if model_for_report in evaluation_results:
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.markdown(f"**{model_for_report} - Detailed Report**")
-                    st.code(evaluation_results[model_for_report]['classification_report'])
-                with col2:
-                    acc = evaluation_results[model_for_report]['accuracy']
-                    f1 = evaluation_results[model_for_report]['f1_score']
-                    
-                    st.markdown("**Model Summary**")
-                    st.metric("Accuracy", f"{acc:.4f}")
-                    st.metric("F1 Score", f"{f1:.4f}")
-                    
-                    if acc >= 0.90: badge = "🌟 Excellent"
-                    elif acc >= 0.80: badge = "👍 Good"
-                    elif acc >= 0.70: badge = "📊 Fair"
-                    else: badge = "⚠️ Needs Work"
-                    st.markdown(f"**Performance: {badge}**")
-            
-            # ==================== BEST MODEL & RANKING ====================
+            # ==================== FINAL SUMMARY ====================
             st.markdown("---")
-            best_model_name = metrics_df['F1 Score'].idxmax()
+            st.markdown("#### 📊 Summary of Best F1 Scores")
             
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1f77b4, #2c3e50); 
-                        padding: 20px; border-radius: 15px; text-align: center;">
-                <h2 style="color: white; margin: 0;">🏆 Best Performing Model</h2>
-                <h1 style="color: #ffd700; font-size: 2.5rem; margin: 10px 0;">{best_model_name}</h1>
-                <p style="color: white;">Accuracy: {evaluation_results[best_model_name]['accuracy']:.3f} | 
-                   F1 Score: {evaluation_results[best_model_name]['f1_score']:.3f}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            summary_data = []
+            for name, results in evaluation_results.items():
+                summary_data.append({
+                    'Model': name,
+                    'F1-Score (Weighted)': f"{results['f1_score']:.4f}",
+                    'Accuracy': f"{results['accuracy']:.4f}"
+                })
             
-            st.markdown("### 📊 Model Ranking")
-            ranked = metrics_df.sort_values('F1 Score', ascending=False)
-            for i, (name, row) in enumerate(ranked.iterrows(), 1):
-                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-                bar_width = int(row['F1 Score'] * 100)
-                st.markdown(f"""
-                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 8px;">
-                    <span style="font-size: 1.5rem;">{medal}</span>
-                    <span style="font-weight: bold; width: 180px;">{name}</span>
-                    <div style="flex-grow: 1; background: #e9ecef; border-radius: 5px; height: 25px;">
-                        <div style="width: {bar_width}%; background: linear-gradient(90deg, #1f77b4, #3498db); 
-                                    height: 100%; border-radius: 5px; display: flex; align-items: center; padding-left: 10px;">
-                            <span style="color: white; font-size: 0.8rem; font-weight: bold;">Acc: {row['Accuracy']:.3f} | F1: {row['F1 Score']:.3f}</span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            
+            st.success(f"🏆 **Conclusion:** The **{best_model_name}** performed best with F1-Score = **{best_f1:.4f}** (weighted average)")
         
         else:
             st.warning("⚠️ No evaluation results available.")
