@@ -788,7 +788,7 @@ def main():
             else:
                 st.error("❌ No models were successfully trained. Please check your data and try again.")
     
-    # ==================== MODEL EVALUATION (LIGHTWEIGHT - NO LAG) ====================
+    # ==================== MODEL EVALUATION (FIXED - NO CACHE, NO LAG) ====================
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
@@ -807,13 +807,9 @@ def main():
         
         st.success(f"✅ Found {len(models)} trained model(s)")
         
-        # Cache evaluation results
-        @st.cache_data
-        def get_cached_evaluation(m, xt, yt):
-            return evaluate_models(m, xt, yt)
-        
+        # Evaluate models directly (NO CACHING)
         with st.spinner('Evaluating models...'):
-            evaluation_results = get_cached_evaluation(models, X_test, y_test)
+            evaluation_results = evaluate_models(models, X_test, y_test)
         
         if evaluation_results and len(evaluation_results) > 0:
             # Simple metrics display
@@ -899,6 +895,9 @@ def main():
             for i, (name, row) in enumerate(ranked.iterrows(), 1):
                 medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
                 st.write(f"{medal} **{name}**: Acc={row['Accuracy']:.3f}, F1={row['F1 Score']:.3f}")
+        
+        else:
+            st.warning("⚠️ No evaluation results available.")
     
     # Section: Feature Importance
     elif section == "🎯 Feature Importance":
