@@ -171,27 +171,33 @@ def generate_sample_data():
 def handle_missing_values(df):
     """Handle missing values in the dataset."""
     df_clean = df.copy()
-    for col in df_clean.columns:
-        if df_clean[col].isnull().sum() > 0:
-            if df_clean[col].dtype in ['float64', 'int64']:
-                median_val = df_clean[col].median()
-                if pd.isna(median_val):
-                    median_val = 0
-                df_clean[col].fillna(median_val, inplace=True)
-            else:
-                mode_series = df_clean[col].mode()
-                mode_val = mode_series[0] if not mode_series.empty else 'Unknown'
-                df_clean[col].fillna(mode_val, inplace=True)
+    log_messages = []
+    missing_before = df_clean.isnull().sum().sum()
+    if missing_before > 0:
+        for col in df_clean.columns:
+            if df_clean[col].isnull().sum() > 0:
+                if df_clean[col].dtype in ['float64', 'int64']:
+                    median_val = df_clean[col].median()
+                    if pd.isna(median_val):
+                        median_val = 0
+                    df_clean[col].fillna(median_val, inplace=True)
+                else:
+                    mode_series = df_clean[col].mode()
+                    mode_val = mode_series[0] if not mode_series.empty else 'Unknown'
+                    df_clean[col].fillna(mode_val, inplace=True)
     return df_clean
 
 def encode_categorical(df):
     """Encode categorical variables."""
     df_encoded = df.copy()
+    encoders = {}
     categorical_cols = df_encoded.select_dtypes(include=['object']).columns
     for col in categorical_cols:
         if col not in ['Sample_ID']:
             le = LabelEncoder()
             df_encoded[f'{col}_Encoded'] = le.fit_transform(df_encoded[col].astype(str))
+            encoders[col] = le
+    st.session_state.encoders = encoders
     return df_encoded
 
 def scale_features(df, feature_cols):
@@ -469,28 +475,7 @@ def main():
             with col3:
                 st.metric("Missing Values", df.isnull().sum().sum())
             
-            # Enhanced preview with styled HTML table
-            preview_df = df.head(10)
-            html_preview = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-size: 0.85rem;">'
-            html_preview += '<tr style="background-color: #1f77b4; color: white;">'
-            for col in preview_df.columns:
-                html_preview += f'<th style="padding: 8px; text-align: left;">{col}</th>'
-            html_preview += '</tr>'
-            
-            for i, (_, row) in enumerate(preview_df.iterrows()):
-                bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                html_preview += f'<tr style="background-color: {bg};">'
-                for val in row:
-                    if pd.isna(val):
-                        html_preview += '<td style="padding: 6px; color: #e74c3c; font-style: italic;">NULL</td>'
-                    elif isinstance(val, float):
-                        html_preview += f'<td style="padding: 6px;">{val:.2f}</td>'
-                    else:
-                        html_preview += f'<td style="padding: 6px;">{val}</td>'
-                html_preview += '</tr>'
-            
-            html_preview += '</table></div>'
-            st.markdown(html_preview, unsafe_allow_html=True)
+            st.dataframe(df.head(10), use_container_width=True)
             
             st.markdown("---")
             st.markdown("#### Dataset Information")
@@ -809,7 +794,7 @@ def main():
             else:
                 st.error("❌ No models were successfully trained. Please check your data and try again.")
     
-    # ==================== MODEL EVALUATION (ENHANCED TABLES) ====================
+    # ==================== MODEL EVALUATION (ENHANCED) ====================
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
@@ -840,344 +825,329 @@ def main():
                 }
             metrics_df = pd.DataFrame(metrics_data).T
             
-            # ==================== STYLED METRICS TABLE ====================
+            # ==================== EXECUTIVE SUMMARY ====================
+            best_model_name = metrics_df['F1 Score'].idxmax()
+            best_f1 = metrics_df['F1 Score'].max()
+            best_acc = metrics_df.loc[best_model_name, 'Accuracy']
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1f77b4, #2c3e50); 
+                        padding: 25px; border-radius: 15px; margin-bottom: 20px;">
+                <h2 style="color: white; margin: 0 0 15px 0; text-align: center;">📊 Model Performance Summary</h2>
+                <div style="display: flex; justify-content: center; gap: 30px; flex-wrap: wrap;">
+                    <div style="text-align: center; background: rgba(255,255,255,0.1); padding: 15px 25px; border-radius: 10px;">
+                        <p style="color: #ffd700; font-size: 0.9rem; margin: 0;">🏆 Best Model</p>
+                        <p style="color: white; font-size: 1.5rem; font-weight: bold; margin: 5px 0;">{best_model_name}</p>
+                    </div>
+                    <div style="text-align: center; background: rgba(255,255,255,0.1); padding: 15px 25px; border-radius: 10px;">
+                        <p style="color: #ffd700; font-size: 0.9rem; margin: 0;">📈 F1 Score</p>
+                        <p style="color: white; font-size: 1.5rem; font-weight: bold; margin: 5px 0;">{best_f1:.4f}</p>
+                    </div>
+                    <div style="text-align: center; background: rgba(255,255,255,0.1); padding: 15px 25px; border-radius: 10px;">
+                        <p style="color: #ffd700; font-size: 0.9rem; margin: 0;">🎯 Accuracy</p>
+                        <p style="color: white; font-size: 1.5rem; font-weight: bold; margin: 5px 0;">{best_acc:.4f}</p>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # ==================== CLEAN COMPARISON TABLE ====================
             st.markdown("#### 📈 Model Performance Comparison")
             
-            styled_df = metrics_df.copy().round(4)
-            styled_df['Model'] = styled_df.index
-            styled_df['Accuracy %'] = (styled_df['Accuracy'] * 100).round(2)
-            styled_df['F1 Score %'] = (styled_df['F1 Score'] * 100).round(2)
-            styled_df['Rank'] = styled_df['F1 Score'].rank(ascending=False).astype(int)
+            comparison_df = metrics_df.round(4)
+            comparison_df['Model'] = comparison_df.index
+            comparison_df['Rank'] = comparison_df['F1 Score'].rank(ascending=False).astype(int)
             
-            best_acc_idx = styled_df['Accuracy'].idxmax()
-            best_f1_idx = styled_df['F1 Score'].idxmax()
-            
-            col1, col2, col3 = st.columns([2, 1, 1])
-            
+            col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown("**📊 Performance Metrics**")
-                
-                html_table = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-family: Arial;">'
-                html_table += '<tr style="background-color: #1f77b4; color: white;">'
-                html_table += '<th style="padding: 12px; text-align: left;">Model</th>'
-                html_table += '<th style="padding: 12px; text-align: center;">Accuracy</th>'
-                html_table += '<th style="padding: 12px; text-align: center;">F1 Score</th>'
-                html_table += '<th style="padding: 12px; text-align: center;">Rank</th></tr>'
-                
-                for i, (model, row) in enumerate(styled_df.iterrows()):
-                    bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                    if model == best_f1_idx:
-                        bg = '#d4edda'
-                    
-                    html_table += f'<tr style="background-color: {bg};">'
-                    html_table += f'<td style="padding: 10px; font-weight: bold;">{model}</td>'
-                    html_table += f'<td style="padding: 10px; text-align: center;">{row["Accuracy"]:.4f}</td>'
-                    html_table += f'<td style="padding: 10px; text-align: center;">{row["F1 Score"]:.4f}</td>'
-                    
-                    rank = row['Rank']
-                    if rank == 1: medal = '🥇'
-                    elif rank == 2: medal = '🥈'
-                    elif rank == 3: medal = '🥉'
-                    else: medal = f'#{rank}'
-                    html_table += f'<td style="padding: 10px; text-align: center; font-size: 1.2rem;">{medal}</td>'
-                    html_table += '</tr>'
-                
-                html_table += '</table></div>'
-                st.markdown(html_table, unsafe_allow_html=True)
-            
+                st.dataframe(
+                    comparison_df[['Model', 'Accuracy', 'F1 Score', 'Rank']],
+                    column_config={
+                        "Model": st.column_config.TextColumn("Model", width="medium"),
+                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
+                        "F1 Score": st.column_config.NumberColumn("F1 Score", format="%.4f"),
+                        "Rank": st.column_config.NumberColumn("Rank", format="%d"),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                )
             with col2:
-                st.markdown("**🏆 Best Scores**")
-                st.metric("Accuracy", f"{best_acc_idx}", 
-                         delta=f"{styled_df.loc[best_acc_idx, 'Accuracy %']:.1f}%")
-                st.metric("F1 Score", f"{best_f1_idx}", 
-                         delta=f"{styled_df.loc[best_f1_idx, 'F1 Score %']:.1f}%")
-                
-                st.markdown("**📊 Score Distribution**")
-                for model in styled_df.index:
-                    st.write(f"**{model}**")
-                    st.progress(float(styled_df.loc[model, 'Accuracy']))
+                st.markdown("**Quick Stats**")
+                st.metric("🏆 Best Model", best_model_name)
+                st.metric("📈 Best F1 Score", f"{best_f1:.4f}")
+                st.metric("📊 Avg F1 Score", f"{metrics_df['F1 Score'].mean():.4f}")
             
-            with col3:
-                st.markdown("**📈 Quick Stats**")
-                st.metric("Avg Accuracy", f"{styled_df['Accuracy'].mean():.3f}")
-                st.metric("Avg F1 Score", f"{styled_df['F1 Score'].mean():.3f}")
-                st.metric("Best Margin", 
-                         f"{(styled_df['F1 Score'].max() - styled_df['F1 Score'].min()):.3f}")
-            
-            # ==================== CONFUSION MATRIX ====================
+            # ==================== DETAILED MODEL BREAKDOWN ====================
             st.markdown("---")
-            st.markdown("#### 📊 Confusion Matrices")
+            st.markdown("#### 📋 Detailed Model Analysis")
             
-            selected_model = st.selectbox("Select model to view", list(evaluation_results.keys()))
+            for name, results in evaluation_results.items():
+                acc = results['accuracy']
+                f1 = results['f1_score']
+                
+                if f1 >= 0.90:
+                    rating = "🌟 Excellent"
+                    color = "#27ae60"
+                elif f1 >= 0.80:
+                    rating = "👍 Good"
+                    color = "#2980b9"
+                elif f1 >= 0.70:
+                    rating = "📊 Fair"
+                    color = "#f39c12"
+                else:
+                    rating = "⚠️ Needs Improvement"
+                    color = "#e74c3c"
+                
+                st.markdown(f"""
+                <div style="border: 2px solid {color}; border-radius: 10px; padding: 15px; margin-bottom: 10px;">
+                    <h3 style="margin: 0; color: {color};">{name}</h3>
+                    <p style="margin: 5px 0;">
+                        <b>F1 Score (Weighted):</b> <span style="color: {color}; font-size: 1.1rem;">{f1:.4f}</span> &nbsp; | &nbsp;
+                        <b>Accuracy:</b> {acc:.4f} &nbsp; | &nbsp;
+                        <b>Rating:</b> {rating}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # ==================== CONFUSION MATRIX HEATMAP ====================
+            st.markdown("---")
+            st.markdown("#### 🧩 Confusion Matrix Heatmap")
+            
+            selected_model = st.selectbox("Select model to view Confusion Matrix", list(evaluation_results.keys()))
+            
+            if selected_model:
+                cm = evaluation_results[selected_model].get('confusion_matrix')
+                
+                if cm is not None and cm.size > 0:
+                    n_classes = cm.shape[0]
+                    
+                    row_sums = cm.sum(axis=1, keepdims=True)
+                    row_sums[row_sums == 0] = 1
+                    cm_percent = (cm.astype('float') / row_sums * 100)
+                    
+                    annotations = []
+                    for i in range(n_classes):
+                        row_ann = []
+                        for j in range(n_classes):
+                            count = cm[i, j]
+                            pct = cm_percent[i, j]
+                            row_ann.append(f"<b>{count}</b><br><sub>({pct:.1f}%)</sub>")
+                        annotations.append(row_ann)
+                    
+                    fig_cm = go.Figure(data=go.Heatmap(
+                        z=cm,
+                        x=[f'<b>Predicted<br>Class {i}</b>' for i in range(n_classes)],
+                        y=[f'<b>Actual<br>Class {i}</b>' for i in range(n_classes)],
+                        colorscale=[[0.0,'#f7fbff'],[0.25,'#deebf7'],[0.5,'#9ecae1'],[0.75,'#4292c6'],[1.0,'#2171b5']],
+                        text=annotations, texttemplate="%{text}", textfont={"size":15,"color":"black"},
+                        showscale=True, colorbar=dict(title="Count",tickformat="d"),
+                        xgap=3, ygap=3,
+                        hovertemplate="Actual: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>"
+                    ))
+                    
+                    shapes = [dict(type="rect",x0=j-0.5,y0=j-0.5,x1=j+0.5,y1=j+0.5,
+                                  line=dict(color="#2ecc71",width=3),
+                                  fillcolor="rgba(46,204,113,0.1)") for j in range(n_classes)]
+                    
+                    fig_cm.update_layout(
+                        title=f"<b>{selected_model}</b><br><sub>Confusion Matrix (Count & Row %)</sub>",
+                        height=500, shapes=shapes, plot_bgcolor='white', paper_bgcolor='white',
+                        xaxis=dict(title="<b>Predicted Label</b>",tickfont=dict(size=12)),
+                        yaxis=dict(title="<b>True Label</b>",tickfont=dict(size=12))
+                    )
+                    st.plotly_chart(fig_cm, use_container_width=True)
+            
+            # ==================== PER-CLASS METRICS ====================
+            st.markdown("---")
+            st.markdown("#### 📋 Per-Class Metrics")
             
             if selected_model:
                 cm = evaluation_results[selected_model].get('confusion_matrix')
                 if cm is not None and cm.size > 0:
                     n_classes = cm.shape[0]
                     
-                    col_a, col_b = st.columns([1, 1])
+                    per_class_list = []
+                    for i in range(n_classes):
+                        tp = int(cm[i,i]); fp = int(cm[:,i].sum())-tp; fn = int(cm[i,:].sum())-tp
+                        precision = tp/(tp+fp) if (tp+fp)>0 else 0
+                        recall = tp/(tp+fn) if (tp+fn)>0 else 0
+                        f1_val = 2*precision*recall/(precision+recall) if (precision+recall)>0 else 0
+                        per_class_list.append({
+                            'Class':f'Class {i}','TP':tp,'FP':fp,'FN':fn,
+                            'Precision':round(precision,4),'Recall':round(recall,4),
+                            'F1-Score':round(f1_val,4),'Support':int(cm[i,:].sum())
+                        })
                     
-                    with col_a:
-                        st.markdown(f"**{selected_model} - Confusion Matrix**")
-                        
-                        html_cm = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-family: monospace;">'
-                        html_cm += '<tr style="background-color: #2c3e50; color: white;">'
-                        html_cm += '<th style="padding: 10px;"></th>'
-                        for j in range(n_classes):
-                            html_cm += f'<th style="padding: 10px; text-align: center;">Pred {j}</th>'
-                        html_cm += '<th style="padding: 10px; text-align: center;">Total</th></tr>'
-                        
-                        for i in range(n_classes):
-                            row_sum = cm[i, :].sum()
-                            html_cm += '<tr>'
-                            html_cm += f'<td style="padding: 10px; font-weight: bold; background-color: #34495e; color: white;">Actual {i}</td>'
-                            for j in range(n_classes):
-                                val = cm[i, j]
-                                bg = '#d4edda' if i == j else '#f8d7da' if val > 0 else '#ffffff'
-                                html_cm += f'<td style="padding: 10px; text-align: center; background-color: {bg};">{val}</td>'
-                            html_cm += f'<td style="padding: 10px; text-align: center; font-weight: bold;">{row_sum}</td>'
-                            html_cm += '</tr>'
-                        
-                        html_cm += '</table></div>'
-                        st.markdown(html_cm, unsafe_allow_html=True)
+                    per_class_df = pd.DataFrame(per_class_list)
+                    macro_p = per_class_df['Precision'].mean()
+                    macro_r = per_class_df['Recall'].mean()
+                    macro_f1 = per_class_df['F1-Score'].mean()
                     
-                    with col_b:
-                        st.markdown(f"**Per-Class Metrics**")
-                        
-                        metrics_list = []
-                        for i in range(n_classes):
-                            tp = int(cm[i, i])
-                            fp = int(cm[:, i].sum()) - tp
-                            fn = int(cm[i, :].sum()) - tp
-                            prec = tp/(tp+fp) if (tp+fp) > 0 else 0
-                            rec = tp/(tp+fn) if (tp+fn) > 0 else 0
-                            f1_val = 2*prec*rec/(prec+rec) if (prec+rec) > 0 else 0
-                            support = int(cm[i, :].sum())
-                            metrics_list.append({
-                                'Class': f'Class {i}',
-                                'Precision': f'{prec:.3f}',
-                                'Recall': f'{rec:.3f}',
-                                'F1-Score': f'{f1_val:.3f}',
-                                'Support': support
-                            })
-                        
-                        html_metrics = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">'
-                        html_metrics += '<tr style="background-color: #1f77b4; color: white;">'
-                        for col in ['Class', 'Precision', 'Recall', 'F1-Score', 'Support']:
-                            html_metrics += f'<th style="padding: 8px; text-align: center;">{col}</th>'
-                        html_metrics += '</tr>'
-                        
-                        for i, row in enumerate(metrics_list):
-                            bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                            html_metrics += f'<tr style="background-color: {bg};">'
-                            html_metrics += f'<td style="padding: 8px; text-align: center; font-weight: bold;">{row["Class"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["Precision"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["Recall"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["F1-Score"]}</td>'
-                            html_metrics += f'<td style="padding: 8px; text-align: center;">{row["Support"]}</td>'
-                            html_metrics += '</tr>'
-                        
-                        html_metrics += '</table></div>'
-                        st.markdown(html_metrics, unsafe_allow_html=True)
+                    st.dataframe(per_class_df,
+                        column_config={
+                            "Class":"Class","TP":st.column_config.NumberColumn("True Positive",format="%d"),
+                            "FP":st.column_config.NumberColumn("False Positive",format="%d"),
+                            "FN":st.column_config.NumberColumn("False Negative",format="%d"),
+                            "Precision":st.column_config.NumberColumn("Precision",format="%.4f"),
+                            "Recall":st.column_config.NumberColumn("Recall",format="%.4f"),
+                            "F1-Score":st.column_config.NumberColumn("F1-Score",format="%.4f"),
+                            "Support":st.column_config.NumberColumn("Support",format="%d"),
+                        }, use_container_width=True, hide_index=True)
                     
-                    if st.checkbox("📈 Show Heatmap Chart", key='show_heatmap'):
-                        fig_cm = go.Figure(data=go.Heatmap(
-                            z=cm,
-                            x=[f'Predicted {i}' for i in range(n_classes)],
-                            y=[f'Actual {i}' for i in range(n_classes)],
-                            colorscale='Blues',
-                            text=[[str(int(val)) for val in row] for row in cm],
-                            texttemplate="%{text}",
-                            textfont={"size": 14},
-                            showscale=True
-                        ))
-                        fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
-                        st.plotly_chart(fig_cm, use_container_width=True)
+                    st.markdown(f"**{selected_model} - Macro Averages**")
+                    c1,c2,c3=st.columns(3)
+                    with c1: st.metric("Macro Avg Precision",f"{macro_p:.4f}")
+                    with c2: st.metric("Macro Avg Recall",f"{macro_r:.4f}")
+                    with c3: st.metric("Macro Avg F1-Score",f"{macro_f1:.4f}")
             
             # ==================== CLASSIFICATION REPORT ====================
             st.markdown("---")
             st.markdown("#### 📋 Classification Report")
+            report_model = st.selectbox("Select model for text report",list(evaluation_results.keys()),key='rep')
+            if report_model in evaluation_results:
+                st.code(evaluation_results[report_model]['classification_report'])
             
-            model_for_report = st.selectbox("Select model for report", 
-                                           list(evaluation_results.keys()), key='report')
-            if model_for_report in evaluation_results:
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.markdown(f"**{model_for_report} - Detailed Report**")
-                    st.code(evaluation_results[model_for_report]['classification_report'])
-                with col2:
-                    acc = evaluation_results[model_for_report]['accuracy']
-                    f1 = evaluation_results[model_for_report]['f1_score']
-                    
-                    st.markdown("**Model Summary**")
-                    st.metric("Accuracy", f"{acc:.4f}")
-                    st.metric("F1 Score", f"{f1:.4f}")
-                    
-                    if acc >= 0.90: badge = "🌟 Excellent"
-                    elif acc >= 0.80: badge = "👍 Good"
-                    elif acc >= 0.70: badge = "📊 Fair"
-                    else: badge = "⚠️ Needs Work"
-                    st.markdown(f"**Performance: {badge}**")
-            
-            # ==================== BEST MODEL & RANKING ====================
+            # ==================== FINAL SUMMARY ====================
             st.markdown("---")
-            best_model_name = metrics_df['F1 Score'].idxmax()
+            st.markdown("#### 🏆 Final Summary")
+            
+            summary_data = []
+            for name, results in evaluation_results.items():
+                summary_data.append({
+                    'Model':name,
+                    'Accuracy':f"{results['accuracy']:.4f}",
+                    'F1 Score (Weighted)':f"{results['f1_score']:.4f}"
+                })
+            
+            summary_df = pd.DataFrame(summary_data)
+            best_model_final = metrics_df['F1 Score'].idxmax()
             
             st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1f77b4, #2c3e50); 
-                        padding: 20px; border-radius: 15px; text-align: center;">
-                <h2 style="color: white; margin: 0;">🏆 Best Performing Model</h2>
-                <h1 style="color: #ffd700; font-size: 2.5rem; margin: 10px 0;">{best_model_name}</h1>
-                <p style="color: white;">Accuracy: {evaluation_results[best_model_name]['accuracy']:.3f} | 
-                   F1 Score: {evaluation_results[best_model_name]['f1_score']:.3f}</p>
+            <div style="background:#d4edda;border:2px solid #27ae60;border-radius:10px;padding:15px;margin-bottom:15px;">
+                <p style="margin:0;font-size:1.1rem;">
+                    ✅ <b>Best Model:</b> <span style="color:#27ae60;">{best_model_final}</span> 
+                    with F1 Score of <span style="color:#27ae60;font-weight:bold;">{metrics_df.loc[best_model_final,'F1 Score']:.4f}</span>
+                    (weighted average)
+                </p>
             </div>
-            """, unsafe_allow_html=True)
+            """,unsafe_allow_html=True)
             
-            st.markdown("### 📊 Model Ranking")
-            ranked = metrics_df.sort_values('F1 Score', ascending=False)
-            for i, (name, row) in enumerate(ranked.iterrows(), 1):
-                medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-                bar_width = int(row['F1 Score'] * 100)
+            st.dataframe(summary_df,
+                column_config={
+                    "Model":st.column_config.TextColumn("Model",width="medium"),
+                    "Accuracy":st.column_config.TextColumn("Accuracy"),
+                    "F1 Score (Weighted)":st.column_config.TextColumn("F1 Score (Weighted)"),
+                },use_container_width=True,hide_index=True)
+            
+            # Model Ranking
+            st.markdown("#### 📊 Model Ranking")
+            ranked=metrics_df.sort_values('F1 Score',ascending=False)
+            for i,(name,row) in enumerate(ranked.iterrows(),1):
+                medal="🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"  {i}."
+                bar_pct=int(row['F1 Score']*100)
                 st.markdown(f"""
-                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 8px;">
-                    <span style="font-size: 1.5rem;">{medal}</span>
-                    <span style="font-weight: bold; width: 180px;">{name}</span>
-                    <div style="flex-grow: 1; background: #e9ecef; border-radius: 5px; height: 25px;">
-                        <div style="width: {bar_width}%; background: linear-gradient(90deg, #1f77b4, #3498db); 
-                                    height: 100%; border-radius: 5px; display: flex; align-items: center; padding-left: 10px;">
-                            <span style="color: white; font-size: 0.8rem; font-weight: bold;">Acc: {row['Accuracy']:.3f} | F1: {row['F1 Score']:.3f}</span>
-                        </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;">
+                    <span style="font-size:1.3rem;">{medal}</span>
+                    <span style="font-weight:bold;width:180px;">{name}</span>
+                    <span style="color:#666;font-size:0.9rem;">F1: {row['F1 Score']:.4f}</span>
+                    <div style="flex-grow:1;background:#e9ecef;border-radius:5px;height:20px;">
+                        <div style="width:{bar_pct}%;background:linear-gradient(90deg,#1f77b4,#3498db);height:100%;border-radius:5px;"></div>
                     </div>
+                    <span style="font-weight:bold;">{row['F1 Score']:.4f}</span>
                 </div>
-                """, unsafe_allow_html=True)
+                """,unsafe_allow_html=True)
         
         else:
             st.warning("⚠️ No evaluation results available.")
+            if st.button("🔄 Retry Evaluation",use_container_width=True):
+                st.rerun()
     
     # Section: Feature Importance
     elif section == "🎯 Feature Importance":
-        st.markdown('<p class="section-header">🎯 Feature Importance Analysis</p>', 
-                   unsafe_allow_html=True)
+        st.markdown('<p class="section-header">🎯 Feature Importance Analysis</p>', unsafe_allow_html=True)
         
         if st.session_state.feature_importance is not None:
             importance_df = st.session_state.feature_importance
             
             st.markdown("### 🌲 Feature Importance from Random Forest")
-            
-            fig = px.bar(
-                importance_df.nlargest(20, 'importance'),
-                x='importance',
-                y='feature',
-                orientation='h',
-                title='Top 20 Most Important Features',
-                color='importance',
-                color_continuous_scale='Viridis'
-            )
-            fig.update_layout(height=600)
-            st.plotly_chart(fig, use_container_width=True)
+            fig = px.bar(importance_df.nlargest(20,'importance'),x='importance',y='feature',
+                        orientation='h',title='Top 20 Most Important Features',
+                        color='importance',color_continuous_scale='Viridis',height=600)
+            st.plotly_chart(fig,use_container_width=True)
             
             st.markdown("---")
             st.markdown("### 📊 Feature Importance Table")
-            
-            col1, col2 = st.columns([3, 1])
+            col1,col2=st.columns([3,1])
             with col1:
-                display_df = importance_df.copy()
-                display_df['importance'] = display_df['importance'].round(4)
-                display_df['percentage'] = (display_df['importance'] / display_df['importance'].sum() * 100).round(2)
-                display_df = display_df.sort_values('importance', ascending=False)
-                display_df['Rank'] = range(1, len(display_df) + 1)
-                display_df['Bar'] = display_df['importance'].apply(lambda x: '█' * int(x * 100))
-                
-                html_imp = '<div style="overflow-x: auto;"><table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">'
-                html_imp += '<tr style="background-color: #1f77b4; color: white;">'
-                for col in ['Rank', 'Feature', 'Importance', 'Percentage', 'Visualization']:
-                    html_imp += f'<th style="padding: 10px; text-align: left;">{col}</th>'
-                html_imp += '</tr>'
-                
-                for i, (_, row) in enumerate(display_df.iterrows()):
-                    bg = '#f8f9fa' if i % 2 == 0 else '#ffffff'
-                    if i < 3: bg = '#d4edda'
-                    
-                    html_imp += f'<tr style="background-color: {bg};">'
-                    html_imp += f'<td style="padding: 8px; font-weight: bold;">#{row["Rank"]}</td>'
-                    html_imp += f'<td style="padding: 8px;">{row["feature"]}</td>'
-                    html_imp += f'<td style="padding: 8px;">{row["importance"]:.4f}</td>'
-                    html_imp += f'<td style="padding: 8px;">{row["percentage"]:.1f}%</td>'
-                    html_imp += f'<td style="padding: 8px; font-family: monospace; color: #1f77b4;">{row["Bar"]}</td>'
-                    html_imp += '</tr>'
-                
-                html_imp += '</table></div>'
-                st.markdown(html_imp, unsafe_allow_html=True)
-            
+                display_df=importance_df.copy()
+                display_df['importance']=display_df['importance'].round(4)
+                display_df['percentage']=(display_df['importance']/display_df['importance'].sum()*100).round(2)
+                display_df=display_df.sort_values('importance',ascending=False)
+                display_df['Rank']=range(1,len(display_df)+1)
+                st.dataframe(display_df[['Rank','feature','importance','percentage']],
+                    column_config={
+                        "Rank":st.column_config.NumberColumn("Rank",format="%d"),
+                        "feature":"Feature",
+                        "importance":st.column_config.NumberColumn("Importance",format="%.4f"),
+                        "percentage":st.column_config.NumberColumn("%",format="%.2f%%"),
+                    },use_container_width=True,hide_index=True)
             with col2:
                 st.markdown("**Top 5 Features**")
-                top5 = importance_df.nlargest(5, 'importance')
-                for idx, (_, row) in enumerate(top5.iterrows(), 1):
-                    st.metric(f"#{idx} {row['feature'][:20]}", f"{row['importance']:.3f}")
+                for idx,(_,row) in enumerate(importance_df.nlargest(5,'importance').iterrows(),1):
+                    st.metric(f"#{idx} {row['feature'][:20]}",f"{row['importance']:.3f}")
             
             st.markdown("---")
             st.markdown("### 💡 Feature Importance Interpretation")
-            top_3 = importance_df.nlargest(3, 'importance')
-            for idx, (index, row) in enumerate(top_3.iterrows()):
+            top_3=importance_df.nlargest(3,'importance')
+            for idx,(_,row) in enumerate(top_3.iterrows()):
                 st.markdown(f"**{idx+1}. {row['feature']}** (Importance: {row['importance']:.4f})")
-                st.progress(float(row['importance'] / importance_df['importance'].max()))
+                st.progress(float(row['importance']/importance_df['importance'].max()))
             
-            csv = importance_df.to_csv(index=False)
-            st.download_button("📥 Download Feature Importance (CSV)", csv, "feature_importance.csv", "text/csv")
+            csv=importance_df.to_csv(index=False)
+            st.download_button("📥 Download Feature Importance (CSV)",csv,"feature_importance.csv","text/csv")
         else:
             st.warning("⚠️ Please calculate feature importance in the Feature Engineering section first!")
     
     # Section: Polymer Analysis
     elif section == "🧬 Polymer Analysis":
-        st.markdown('<p class="section-header">🧬 Polymer Type Analysis</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">🧬 Polymer Type Analysis</p>',unsafe_allow_html=True)
         
-        data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
+        data_to_use=st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
         
         if data_to_use is None:
             st.warning("⚠️ Please load data first!")
             return
         
-        df = data_to_use
+        df=data_to_use
         
         st.markdown("### 🧪 Polymer Type Distribution")
-        
         if 'Polymer_Type' in df.columns:
-            polymer_counts = df['Polymer_Type'].value_counts()
-            
-            col1, col2 = st.columns(2)
-            
+            polymer_counts=df['Polymer_Type'].value_counts()
+            col1,col2=st.columns(2)
             with col1:
-                st.markdown("#### 📊 Bar Chart")
-                fig_bar = px.bar(x=polymer_counts.index, y=polymer_counts.values,
-                                title='Polymer Type Distribution',
-                                color=polymer_counts.values, color_continuous_scale='Viridis')
-                st.plotly_chart(fig_bar, use_container_width=True)
-            
+                fig_bar=px.bar(x=polymer_counts.index,y=polymer_counts.values,
+                              title='Polymer Type Distribution',color=polymer_counts.values,
+                              color_continuous_scale='Viridis')
+                st.plotly_chart(fig_bar,use_container_width=True)
             with col2:
-                st.markdown("#### 🥧 Pie Chart")
-                fig_pie = px.pie(values=polymer_counts.values, names=polymer_counts.index,
-                                title='Polymer Type Distribution')
-                st.plotly_chart(fig_pie, use_container_width=True)
+                fig_pie=px.pie(values=polymer_counts.values,names=polymer_counts.index,
+                              title='Polymer Type Distribution')
+                st.plotly_chart(fig_pie,use_container_width=True)
             
             st.markdown("---")
             st.markdown("### 📊 Polymer Statistics")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Polymer Types", len(polymer_counts))
-            with col2:
-                st.metric("Most Common", polymer_counts.index[0])
-            with col3:
-                st.metric("Most Common Count", polymer_counts.values[0])
+            col1,col2,col3=st.columns(3)
+            with col1: st.metric("Total Polymer Types",len(polymer_counts))
+            with col2: st.metric("Most Common",polymer_counts.index[0])
+            with col3: st.metric("Most Common Count",polymer_counts.values[0])
             
             st.markdown("---")
             st.markdown("### 🔬 Polymer Type vs Risk Level")
-            
             if 'Risk_Level' in df.columns:
-                fig_cross = px.histogram(df, x='Polymer_Type', color='Risk_Level',
-                                        title='Polymer Type Distribution by Risk Level', barmode='group')
+                fig_cross=px.histogram(df,x='Polymer_Type',color='Risk_Level',
+                                      title='Polymer Type Distribution by Risk Level',barmode='group')
                 fig_cross.update_layout(height=500)
-                st.plotly_chart(fig_cross, use_container_width=True)
+                st.plotly_chart(fig_cross,use_container_width=True)
         else:
             st.warning("⚠️ 'Polymer_Type' column not found in dataset")
             st.write("Available columns in dataset:")
