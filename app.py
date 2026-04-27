@@ -451,7 +451,7 @@ def main():
     st.markdown('<p class="main-header">🔬 Microplastic Risk Analysis Dashboard</p>', 
                 unsafe_allow_html=True)
     
-    # Sidebar navigation - 5 SECTIONS ONLY
+    # Sidebar navigation - 5 SECTIONS
     st.sidebar.markdown("## 📊 Navigation")
     section = st.sidebar.radio(
         "Select Section",
@@ -792,25 +792,26 @@ def main():
                     if fast_mode:
                         st.balloons()
                     
-                    st.markdown("### 📊 Model Performance Summary")
+                    # ==================== MODEL PERFORMANCE RESULTS ====================
+                    st.markdown("---")
+                    st.markdown("## 📊 Model Performance Results")
                     
-                    # Evaluate and display results
                     eval_results = evaluate_models(models, X_test, y_test)
                     
                     if eval_results:
-                        # Display each model's F1 score
                         target_name = target_col
                         st.markdown(f"**From your evaluation for {target_name} prediction:**")
                         st.markdown("")
                         
                         for name, results in eval_results.items():
                             f1 = results['f1_score']
-                            st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average)")
+                            acc = results['accuracy']
+                            st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average) | Accuracy = **{acc:.4f}**")
                             st.markdown("")
                         
-                        # Best model
                         best_model_name = max(eval_results.items(), key=lambda x: x[1]['f1_score'])[0]
                         best_f1 = max(eval_results.items(), key=lambda x: x[1]['f1_score'])[1]['f1_score']
+                        best_acc = eval_results[best_model_name]['accuracy']
                         
                         st.markdown("---")
                         st.markdown(f"""
@@ -822,16 +823,85 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Performance table
-                        st.markdown("**Performance Summary:**")
+                        # Performance Comparison Table
+                        st.markdown("### 📊 Performance Comparison Table")
                         summary_data = []
                         for name, results in eval_results.items():
                             summary_data.append({
                                 'Model': name,
                                 'Accuracy': f"{results['accuracy']:.4f}",
-                                'F1-Score': f"{results['f1_score']:.4f}"
+                                'F1-Score (Weighted)': f"{results['f1_score']:.4f}"
                             })
-                        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+                        summary_df = pd.DataFrame(summary_data)
+                        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                        
+                        # Performance Chart
+                        st.markdown("### 📈 Performance Metrics Comparison")
+                        metrics_dict = {}
+                        for name, results in eval_results.items():
+                            metrics_dict[name] = {
+                                'Accuracy': results['accuracy'],
+                                'F1 Score': results['f1_score']
+                            }
+                        metrics_df = pd.DataFrame(metrics_dict).T
+                        
+                        fig_metrics = px.bar(
+                            metrics_df.reset_index(),
+                            x='index',
+                            y=['Accuracy', 'F1 Score'],
+                            barmode='group',
+                            title='Model Performance Comparison',
+                            labels={'index': 'Model', 'value': 'Score'},
+                            color_discrete_sequence=['#3498db', '#e74c3c']
+                        )
+                        fig_metrics.update_layout(height=400)
+                        st.plotly_chart(fig_metrics, use_container_width=True)
+                        
+                        # Confusion Matrix
+                        st.markdown("---")
+                        st.markdown("### 🧩 Confusion Matrix")
+                        selected_model = st.selectbox("Select model to view Confusion Matrix", 
+                                                     list(eval_results.keys()), key='cm_model')
+                        
+                        if selected_model:
+                            cm = eval_results[selected_model].get('confusion_matrix')
+                            if cm is not None and cm.size > 0:
+                                n_classes = cm.shape[0]
+                                fig_cm = go.Figure(data=go.Heatmap(
+                                    z=cm,
+                                    x=[f'Predicted {i}' for i in range(n_classes)],
+                                    y=[f'Actual {i}' for i in range(n_classes)],
+                                    colorscale='Blues',
+                                    text=[[str(int(val)) for val in row] for row in cm],
+                                    texttemplate="%{text}",
+                                    textfont={"size": 14},
+                                    showscale=True
+                                ))
+                                fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
+                                st.plotly_chart(fig_cm, use_container_width=True)
+                        
+                        # Classification Report
+                        st.markdown("---")
+                        st.markdown("### 📋 Classification Report")
+                        report_model = st.selectbox("Select model for detailed report", 
+                                                   list(eval_results.keys()), key='report_model')
+                        if report_model:
+                            st.code(eval_results[report_model]['classification_report'])
+                        
+                        # Summary of Best F1 Scores
+                        st.markdown("---")
+                        st.markdown("### 📊 Summary of Best F1 Scores")
+                        summary_final = []
+                        for name, results in eval_results.items():
+                            summary_final.append({
+                                'Model': name,
+                                'F1-Score (Weighted)': f"{results['f1_score']:.4f}",
+                                'Accuracy': f"{results['accuracy']:.4f}"
+                            })
+                        st.dataframe(pd.DataFrame(summary_final), use_container_width=True, hide_index=True)
+                        
+                        st.success(f"🏆 **Conclusion:** The **{best_model_name}** performed best with F1-Score = **{best_f1:.4f}** (weighted average)")
+                        
                 else:
                     st.error("❌ No models were successfully trained. Please check your data and try again.")
             except Exception as e:
@@ -853,14 +923,12 @@ def main():
         st.markdown("### 🔄 Cross Validation Analysis")
         st.info("Evaluate model stability using stratified k-fold cross-validation.")
         
-        # Target selection
         target_col = st.selectbox(
             "Select Target Variable for CV",
             df.columns.tolist(),
             index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0
         )
         
-        # Feature selection
         feature_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
         if target_col in feature_cols:
             feature_cols.remove(target_col)
@@ -870,7 +938,6 @@ def main():
         if st.button("🔄 Run Cross Validation", type="primary", use_container_width=True):
             with st.spinner('Running cross-validation...'):
                 
-                # Prepare data
                 X = df[feature_cols].copy()
                 y = df[target_col].copy()
                 
@@ -883,7 +950,6 @@ def main():
                 
                 X = X.fillna(X.median())
                 
-                # Models to evaluate
                 cv_models = {
                     'Logistic Regression': LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1),
                     'Random Forest': RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1),
@@ -897,9 +963,7 @@ def main():
                 
                 for name, model in cv_models.items():
                     try:
-                        # Accuracy
                         acc_scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy', n_jobs=-1)
-                        # F1 Score
                         f1_scores = cross_val_score(model, X, y, cv=cv, scoring='f1_weighted', n_jobs=-1)
                         
                         all_scores[name] = f1_scores
@@ -922,7 +986,6 @@ def main():
                     st.markdown("#### 📊 Cross Validation Results")
                     st.dataframe(cv_df, use_container_width=True, hide_index=True)
                     
-                    # Best model by CV
                     best_cv = cv_df.loc[cv_df['Mean F1 Score'].idxmax()]
                     st.success(f"""
                     🏆 **Best CV Model:** {best_cv['Model']}
@@ -930,7 +993,6 @@ def main():
                     - Mean Accuracy: **{best_cv['Mean Accuracy']:.4f}** (±{best_cv['Std Accuracy']:.4f})
                     """)
                     
-                    # CV Box Plot
                     st.markdown("#### 📈 Cross Validation F1 Scores Distribution")
                     fig_cv = go.Figure()
                     for name, scores in all_scores.items():
