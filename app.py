@@ -191,25 +191,8 @@ def cap_outliers_iqr(df, columns):
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
             df_capped[col] = df_capped[col].clip(lower=lower_bound, upper=upper_bound)
-            log_messages.append(f"Capped outliers in '{col}' (bounds: {lower_bound:.2f} - {upper_bound:.2f})")
+            log_messages.append(f"Capped outliers in '{col}'")
     return df_capped, log_messages
-
-def encode_categorical(df):
-    """Encode categorical variables using LabelEncoder."""
-    try:
-        df_encoded = df.copy()
-        encoders = {}
-        categorical_cols = df_encoded.select_dtypes(include=['object']).columns
-        for col in categorical_cols:
-            if col not in ['Sample_ID']:
-                le = LabelEncoder()
-                df_encoded[f'{col}_Encoded'] = le.fit_transform(df_encoded[col].astype(str))
-                encoders[col] = le
-        st.session_state.encoders = encoders
-        return df_encoded
-    except Exception as e:
-        st.error(f"Error encoding categorical variables: {str(e)}")
-        return df
 
 def one_hot_encode(df):
     """Apply one-hot encoding to categorical columns."""
@@ -225,74 +208,6 @@ def one_hot_encode(df):
     except Exception as e:
         st.error(f"Error in one-hot encoding: {str(e)}")
         return df, [], [], df.shape
-
-def scale_features(df, feature_cols):
-    """Scale numerical features."""
-    try:
-        df_scaled = df.copy()
-        scaler = StandardScaler()
-        numeric_cols = df_scaled[feature_cols].select_dtypes(include=['float64', 'int64']).columns
-        if len(numeric_cols) > 0:
-            df_scaled[numeric_cols] = scaler.fit_transform(df_scaled[numeric_cols])
-            st.session_state.scaler = scaler
-        return df_scaled
-    except Exception as e:
-        st.error(f"Error scaling features: {str(e)}")
-        return df
-
-def detect_outliers(df, columns):
-    """Detect outliers using IQR method."""
-    try:
-        outlier_info = {}
-        for col in columns:
-            if df[col].dtype in ['float64', 'int64']:
-                Q1 = df[col].quantile(0.25)
-                Q3 = df[col].quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
-                outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
-                outlier_info[col] = {
-                    'count': len(outliers),
-                    'percentage': (len(outliers) / len(df)) * 100 if len(df) > 0 else 0,
-                    'lower_bound': lower_bound,
-                    'upper_bound': upper_bound
-                }
-        return outlier_info
-    except Exception as e:
-        st.error(f"Error detecting outliers: {str(e)}")
-        return {}
-
-def analyze_skewness(df, columns):
-    """Analyze skewness of numerical columns."""
-    skew_info = []
-    for col in columns:
-        if df[col].dtype in ['float64', 'int64']:
-            skew_val = df[col].skew()
-            skew_info.append({
-                'Column': col,
-                'Skewness': round(skew_val, 4),
-                'Abs Skewness': round(abs(skew_val), 4),
-                'Skewed (>0.5)': 'Yes' if abs(skew_val) > 0.5 else 'No'
-            })
-    return pd.DataFrame(skew_info)
-
-def apply_log_transform(df, columns):
-    """Apply log transformation to skewed columns."""
-    df_transformed = df.copy()
-    log_messages = []
-    for col in columns:
-        if df_transformed[col].dtype in ['float64', 'int64']:
-            skew_before = df_transformed[col].skew()
-            if abs(skew_before) > 0.5:
-                min_val = df_transformed[col].min()
-                shift = 0
-                if min_val <= 0:
-                    shift = abs(min_val) + 1
-                df_transformed[col] = np.log1p(df_transformed[col] + shift)
-                skew_after = df_transformed[col].skew()
-                log_messages.append(f"Log transformed '{col}': Skewness {skew_before:.4f} → {skew_after:.4f}")
-    return df_transformed, log_messages
 
 def calculate_mutual_info(X, y):
     """Calculate Mutual Information scores for features."""
@@ -347,12 +262,6 @@ def train_and_evaluate_for_target(df, target_col):
     except: pass
     
     try:
-        dt = DecisionTreeClassifier(random_state=42, max_depth=8, class_weight='balanced')
-        dt.fit(X_train, y_train)
-        models['Decision Tree'] = dt
-    except: pass
-    
-    try:
         gb = GradientBoostingClassifier(n_estimators=50, random_state=42)
         gb.fit(X_train, y_train)
         models['GradientBoostingClassifier'] = gb
@@ -386,24 +295,6 @@ def plot_distribution(data, column, title):
         st.error(f"Error creating distribution plot: {str(e)}")
         return go.Figure()
 
-def plot_correlation_heatmap(df, columns):
-    """Create correlation heatmap."""
-    try:
-        numeric_df = df[columns].select_dtypes(include=['float64', 'int64', 'int32'])
-        if numeric_df.shape[1] < 2: return go.Figure(), None
-        numeric_df = numeric_df.loc[:, numeric_df.std() > 0]
-        corr_matrix = numeric_df.corr()
-        fig = go.Figure(data=go.Heatmap(
-            z=corr_matrix.values, x=corr_matrix.columns.tolist(), y=corr_matrix.index.tolist(),
-            colorscale='RdBu', zmin=-1, zmax=1, text=np.round(corr_matrix.values, 2),
-            texttemplate='%{text}', textfont={"size": 10}, showscale=True
-        ))
-        fig.update_layout(title='Feature Correlation Heatmap', height=600)
-        return fig, corr_matrix
-    except Exception as e:
-        st.error(f"Error creating correlation heatmap: {str(e)}")
-        return go.Figure(), None
-
 def main():
     """Main application function."""
     
@@ -412,8 +303,7 @@ def main():
     st.sidebar.markdown("## 📊 Navigation")
     section = st.sidebar.radio("Select Section", [
         "🏠 Home", "🔧 Preprocessing", "🛠️ Feature Selection & Relevance", 
-        "🤖 Modeling", "📊 Evaluate Models for Risk Type", "📊 Compare Model Performance", 
-        "📊 Cross Validation"
+        "🤖 Modeling", "📊 Cross Validation & Evaluation"
     ])
     
     st.sidebar.markdown("---")
@@ -422,7 +312,7 @@ def main():
     st.sidebar.markdown("### 📌 Status")
     if st.session_state.data is not None: st.sidebar.success("✅ Data Loaded")
     else: st.sidebar.warning("⚠️ No Data")
-    if st.session_state.trained: st.sidebar.success(f"✅ Models Trained ({len(st.session_state.models)})")
+    if st.session_state.trained: st.sidebar.success(f"✅ Models Trained")
     else: st.sidebar.warning("⚠️ Models Not Trained")
     
     # ==================== HOME ====================
@@ -536,66 +426,35 @@ def main():
                         scaled_data = scaler.fit_transform(df[cols_to_scale].fillna(df[cols_to_scale].median()))
                         scaled_df = pd.DataFrame(scaled_data, columns=cols_to_scale)
                         st.session_state.scaler = scaler
-                        st.session_state.scaled_data = scaled_df
-                        st.success(f"✅ Numerical columns scaled successfully!")
+                        st.success(f"✅ {len(cols_to_scale)} columns scaled!")
                         st.dataframe(scaled_df.head(), column_config={col: st.column_config.NumberColumn(col, format="%.6f") for col in cols_to_scale}, use_container_width=True)
         
         with prep_tab2:
             st.markdown("### 🔄 Encode Categorical Variables")
-            st.markdown("*Identify categorical columns and apply one-hot encoding*")
-            
             categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
             cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
-            
             if len(cols_to_encode) > 0:
-                st.markdown(f"**Categorical columns identified ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
+                st.markdown(f"**Categorical columns ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
             
             if st.button("🔄 Apply One-Hot Encoding", type="primary", key="encode_tab"):
-                with st.spinner('Applying One-Hot Encoding...'):
+                with st.spinner('Applying...'):
                     if len(cols_to_encode) > 0:
-                        encoded_df, new_cols, original_cols, encoded_shape = one_hot_encode(df)
+                        encoded_df, new_cols, _, encoded_shape = one_hot_encode(df)
                         st.session_state.encoded_data = encoded_df
                         st.session_state.encoded_shape = encoded_shape
-                        
-                        st.success(f"✅ One-Hot Encoding applied! Created {len(new_cols)} new columns.")
-                        st.markdown(f"**Original shape:** {df.shape}")
-                        st.markdown(f"**Shape of the DataFrame after one-hot encoding:** {encoded_shape}")
-                        st.markdown("**First 5 rows of the DataFrame after one-hot encoding:**")
+                        st.success(f"✅ Created {len(new_cols)} new columns! Shape: {encoded_shape}")
                         st.dataframe(encoded_df.head(), use_container_width=True)
         
         with prep_tab3:
             st.markdown("### 🎯 Address Outliers")
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_outliers = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
-            if len(cols_for_outliers) > 0:
-                outlier_info = detect_outliers(df, cols_for_outliers)
-                outlier_summary = [{'Column':col,'Outliers':info['count'],'Percentage':f"{info['percentage']:.1f}%"} 
-                                  for col,info in outlier_info.items()]
-                st.dataframe(pd.DataFrame(outlier_summary), use_container_width=True, hide_index=True)
-            
             if st.button("🎯 Cap Outliers (IQR Method)", type="primary", key="outlier_tab"):
-                with st.spinner('Capping outliers...'):
-                    if len(cols_for_outliers) > 0:
-                        df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
-                        st.session_state.processed_data = df_capped
-                        st.success(f"✅ Outliers capped!")
-                        for log in cap_logs: st.write(f"- {log}")
-        
-        with prep_tab4:
-            st.markdown("### 📊 Skewness Analysis & Log Transformation")
-            numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            cols_for_skew = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
-            if len(cols_for_skew) > 0:
-                skew_df = analyze_skewness(df, cols_for_skew)
-                st.dataframe(skew_df, use_container_width=True, hide_index=True)
-            
-            if st.button("📊 Apply Log Transformation", type="primary", key="skew_tab"):
-                with st.spinner('Applying log transformation...'):
-                    if len(cols_for_skew) > 0:
-                        df_transformed, transform_logs = apply_log_transform(df, cols_for_skew)
-                        st.session_state.processed_data = df_transformed
-                        st.success(f"✅ Log transformation applied!")
-                        for log in transform_logs: st.write(f"- {log}")
+                if len(cols_for_outliers) > 0:
+                    df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
+                    st.session_state.processed_data = df_capped
+                    st.success(f"✅ Outliers capped!")
+                    for log in cap_logs: st.write(f"- {log}")
         
         with prep_tab5:
             st.markdown("### 📋 Summary & Next Steps")
@@ -614,7 +473,7 @@ def main():
                 for action in actions: st.markdown(action)
                 st.markdown("---")
                 st.markdown("### 🚀 Next Steps")
-                st.markdown("Proceed to **📊 Evaluate Models for Risk Type** or **📊 Compare Model Performance**.")
+                st.markdown("Proceed to **📊 Cross Validation & Evaluation** for model training and comparison.")
     
     # ==================== FEATURE SELECTION & RELEVANCE ====================
     elif section == "🛠️ Feature Selection & Relevance":
@@ -631,19 +490,6 @@ def main():
             clean = df['Risk_Score'].dropna()
             if len(clean) > 0:
                 st.plotly_chart(plot_distribution(df, 'Risk_Score', 'Risk Score Distribution'), use_container_width=True)
-                c1,c2 = st.columns(2)
-                with c1:
-                    q1,q3 = clean.quantile(0.25), clean.quantile(0.75)
-                    stats = [('Count',f'{len(clean):,}'),('Mean',f'{clean.mean():.4f}'),('Median',f'{clean.median():.4f}'),
-                             ('Std Dev',f'{clean.std():.4f}'),('Min',f'{clean.min():.4f}'),('Q1',f'{q1:.4f}'),
-                             ('Q3',f'{q3:.4f}'),('IQR',f'{q3-q1:.4f}'),('Max',f'{clean.max():.4f}')]
-                    st.dataframe(pd.DataFrame(stats,columns=['Statistic','Value']), use_container_width=True, hide_index=True)
-                with c2:
-                    cats = [('🟢 Low','0-25',(clean<25).sum()),('🟡 Medium','25-50',((clean>=25)&(clean<50)).sum()),
-                            ('🟠 High','50-75',((clean>=50)&(clean<75)).sum()),('🔴 Critical','75-100',(clean>=75).sum())]
-                    for cat,rng,cnt in cats:
-                        st.markdown(f"**{cat}** ({rng}): {cnt:,} ({(cnt/len(clean))*100:.1f}%)")
-                        st.progress(int((cnt/len(clean))*100))
         
         if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
             st.markdown("---")
@@ -657,9 +503,7 @@ def main():
                                     color='Risk_Level' if 'Risk_Level' in clean.columns else None,
                                     trendline='ols', title='MP Count vs Risk Score')
                 except:
-                    fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score',
-                                    color='Risk_Level' if 'Risk_Level' in clean.columns else None,
-                                    title='MP Count vs Risk Score')
+                    fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score', title='MP Count vs Risk Score')
                 st.plotly_chart(fig, use_container_width=True)
         
         if 'Risk_Level' in df.columns and 'Risk_Score' in df.columns:
@@ -669,11 +513,10 @@ def main():
             clean = df.dropna(subset=['Risk_Score'])
             clean['Risk_Level'] = clean['Risk_Level'].astype(str)
             if len(clean) > 0:
-                fig = px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level',
-                            title='Risk Score by Risk Level')
+                fig = px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level', title='Risk Score by Risk Level')
                 st.plotly_chart(fig, use_container_width=True)
         
-        # Feature Selection Methods
+        # Feature Selection
         st.markdown("---")
         st.markdown("### 🎯 Feature Selection Methods")
         
@@ -682,11 +525,6 @@ def main():
         
         numeric_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
         if target_col in numeric_cols: numeric_cols.remove(target_col)
-        
-        if len(numeric_cols) > 1:
-            with st.spinner('Computing...'):
-                fig_corr, _ = plot_correlation_heatmap(df, numeric_cols)
-                st.plotly_chart(fig_corr, use_container_width=True)
         
         if st.button("Calculate All Feature Importance Metrics", type="primary", use_container_width=True):
             with st.spinner('Calculating...'):
@@ -706,32 +544,29 @@ def main():
                 
                 X_selected = X[mi_df.head(20)['Feature'].tolist()]
                 st.session_state.X_selected = X_selected
+                st.session_state.selected_features = rf_df.head(10)['Feature'].tolist()
                 
                 ft1, ft2, ft3 = st.tabs(["🌲 Random Forest", "📊 Mutual Information", "🔢 Chi-squared"])
                 
                 with ft1:
-                    st.markdown("**Top 20 features - RandomForest Feature Importances:**")
                     fig = px.bar(rf_df.head(20), x='Importance', y='Feature', orientation='h',
                                title='Random Forest Importance', color='Importance', 
                                color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with ft2:
-                    st.markdown("**Top 20 features - Mutual Information:**")
                     fig = px.bar(mi_df.head(20), x='Mutual_Info', y='Feature', orientation='h',
                                title='Mutual Information', color='Mutual_Info',
                                color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with ft3:
-                    st.markdown("**Top 20 features - Chi-squared Test:**")
                     fig = px.bar(chi2_df.head(20), x='Chi2_Score', y='Feature', orientation='h',
                                title='Chi-squared Test', color='Chi2_Score',
                                color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 st.success(f"✅ Feature selection completed!")
-                st.session_state.selected_features = rf_df.head(10)['Feature'].tolist()
     
     # ==================== MODELING ====================
     elif section == "🤖 Modeling":
@@ -759,16 +594,12 @@ def main():
             X = X.fillna(X.median())
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=ts, random_state=42)
-            
             if use_smote:
                 tc = pd.Series(y_train).value_counts()
                 if tc.min() >= 2:
-                    try:
-                        X_train, y_train = SMOTE(random_state=42, k_neighbors=min(5,tc.min()-1)).fit_resample(X_train, y_train)
-                        st.success("✅ SMOTE applied!")
+                    try: X_train, y_train = SMOTE(random_state=42, k_neighbors=min(5,tc.min()-1)).fit_resample(X_train, y_train)
                     except: pass
             
-            t0 = time.time()
             models = {}
             try:
                 lr = LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1)
@@ -787,248 +618,192 @@ def main():
                 st.session_state.models = models
                 st.session_state.X_test = X_test; st.session_state.y_test = y_test
                 st.session_state.trained = True
-                st.success(f"✅ {len(models)} models trained in {time.time()-t0:.2f}s!")
+                st.success(f"✅ {len(models)} models trained!")
                 st.balloons()
                 
-                eval_results = {}
                 for name, model in models.items():
                     y_pred = model.predict(X_test)
-                    eval_results[name] = {
-                        'accuracy': accuracy_score(y_test, y_pred),
-                        'f1_score': f1_score(y_test, y_pred, average='weighted')
-                    }
-                
-                all_acc = [r['accuracy'] for r in eval_results.values()]
-                all_f1 = [r['f1_score'] for r in eval_results.values()]
-                
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1f77b4, #2c3e50); 
-                            padding: 25px; border-radius: 15px; margin: 20px 0; text-align: center;">
-                    <h2 style="color: white; margin: 0;">📊 Average Model Performance</h2>
-                    <div style="display: flex; justify-content: center; gap: 40px; margin-top: 15px;">
-                        <div><p style="color: #ffd700; margin: 0;">Avg Accuracy</p>
-                            <p style="color: white; font-size: 2rem; font-weight: bold;">{np.mean(all_acc):.4f}</p></div>
-                        <div style="border-left: 2px solid rgba(255,255,255,0.3); padding-left: 40px;">
-                            <p style="color: #ffd700; margin: 0;">Avg F1 Score</p>
-                            <p style="color: white; font-size: 2rem; font-weight: bold;">{np.mean(all_f1):.4f}</p></div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                for name, r in eval_results.items():
-                    st.markdown(f"**{name}:** F1-Score = **{r['f1_score']:.4f}** | Accuracy = **{r['accuracy']:.4f}**")
+                    st.markdown(f"**{name}:** Acc={accuracy_score(y_test, y_pred):.4f} | F1={f1_score(y_test, y_pred, average='weighted'):.4f}")
     
-    # ==================== EVALUATE MODELS FOR RISK TYPE ====================
-    elif section == "📊 Evaluate Models for Risk Type":
-        st.markdown('<p class="section-header">📊 Evaluate Models for Risk Type</p>', unsafe_allow_html=True)
-        st.markdown("*Evaluate the performance of the trained models for 'Risk_Type' using appropriate metrics*")
+    # ==================== CROSS VALIDATION & EVALUATION (COMBINED) ====================
+    elif section == "📊 Cross Validation & Evaluation":
+        st.markdown('<p class="section-header">📊 Cross Validation & Model Evaluation</p>', unsafe_allow_html=True)
         
         data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
         if data is None: st.warning("⚠️ Load data first!"); return
         df = data.copy()
         
-        target_col = 'Risk_Type'
-        if target_col not in df.columns:
-            st.error(f"❌ '{target_col}' column not found in dataset!")
-            return
+        # Tabs for different evaluations
+        eval_tab1, eval_tab2, eval_tab3 = st.tabs([
+            "📊 Evaluate Models for Risk Type", 
+            "📊 Compare Model Performance",
+            "🔄 Cross Validation"
+        ])
         
-        if st.button("🚀 Train & Evaluate Models for Risk_Type", type="primary", use_container_width=True):
-            with st.spinner('Training and evaluating models for Risk_Type...'):
-                results = train_and_evaluate_for_target(df, target_col)
-                st.session_state.comparison_results = {target_col: results}
+        # ===== TAB 1: EVALUATE MODELS FOR RISK TYPE =====
+        with eval_tab1:
+            st.markdown("### 📊 Evaluate Models for Risk Type")
+            st.markdown("*Evaluate the performance of the trained models for 'Risk_Type' using appropriate metrics*")
             
-            if results:
-                st.markdown("---")
-                st.markdown(f"## 📊 Model Evaluation for **'{target_col}'**")
-                st.markdown("*Import necessary metrics, make predictions on the testing data for each trained model, calculate the evaluation metrics using 'weighted' averaging for multi-class*")
-                st.markdown("---")
-                
-                for name, res in results.items():
-                    st.markdown(f"### --- {name} Model Evaluation for '{target_col}' ---")
-                    st.markdown(f"**Accuracy:** {res['accuracy']:.4f}")
-                    st.markdown(f"**Precision:** {res['precision']:.4f}")
-                    st.markdown(f"**Recall:** {res['recall']:.4f}")
-                    st.markdown(f"**F1-Score:** {res['f1_score']:.4f}")
-                    st.markdown("---")
-                    st.markdown("")
-                
-                # Summary table
-                st.markdown("### 📊 Performance Comparison Table")
-                metrics_data = []
-                for name, res in results.items():
-                    metrics_data.append({
-                        'Model': name,
-                        'Accuracy': res['accuracy'],
-                        'Precision': res['precision'],
-                        'Recall': res['recall'],
-                        'F1-Score': res['f1_score']
-                    })
-                metrics_df = pd.DataFrame(metrics_data)
-                
-                st.dataframe(
-                    metrics_df,
-                    column_config={
-                        "Model": st.column_config.TextColumn("Model"),
-                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
-                        "Precision": st.column_config.NumberColumn("Precision", format="%.4f"),
-                        "Recall": st.column_config.NumberColumn("Recall", format="%.4f"),
-                        "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                )
-                
-                # Bar chart comparison
-                fig = px.bar(metrics_df, x='Model', y=['Accuracy', 'Precision', 'Recall', 'F1-Score'],
-                            barmode='group', title=f'Model Performance Metrics - {target_col}',
-                            color_discrete_sequence=['#3498db', '#e74c3c', '#2ecc71', '#f39c12'])
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Best models
-                best_acc = metrics_df.loc[metrics_df['Accuracy'].idxmax()]
-                best_f1 = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
-                
-                st.markdown(f"""
-                <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                    <p style="font-size: 1.1rem; margin: 5px 0; color: #155724;">
-                        Based on <b>Accuracy</b>, the best performing model is: <b>{best_acc['Model']}</b> with Accuracy: <b>{best_acc['Accuracy']:.4f}</b>
-                    </p>
-                    <p style="font-size: 1.1rem; margin: 5px 0; color: #155724;">
-                        Based on <b>F1-Score</b>, the best performing model is: <b>{best_f1['Model']}</b> with F1-Score: <b>{best_f1['F1-Score']:.4f}</b>
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Classification Reports
-                with st.expander("📋 Detailed Classification Reports"):
-                    for name, res in results.items():
-                        st.markdown(f"**{name}**")
-                        st.code(res['classification_report'])
-                        st.markdown("---")
-    
-    # ==================== COMPARE MODEL PERFORMANCE ====================
-    elif section == "📊 Compare Model Performance":
-        st.markdown('<p class="section-header">📊 Compare Model Performance</p>', unsafe_allow_html=True)
-        st.markdown("*Compare the performance of the models for both 'Risk_Type' and 'Risk_Level'*")
-        
-        data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
-        if data is None: st.warning("⚠️ Load data first!"); return
-        df = data.copy()
-        
-        if st.button("🚀 Train & Compare Models for Both Targets", type="primary", use_container_width=True):
-            all_comparisons = {}
-            
-            for target_col in ['Risk_Type', 'Risk_Level']:
-                if target_col not in df.columns:
-                    st.warning(f"⚠️ '{target_col}' column not found!")
-                    continue
-                
-                with st.spinner(f'Training models for {target_col}...'):
-                    results = train_and_evaluate_for_target(df, target_col)
-                    all_comparisons[target_col] = results
-            
-            st.session_state.comparison_results = all_comparisons
-            
-            for target_col, results in all_comparisons.items():
-                st.markdown("---")
-                st.markdown(f"## 📊 Analysis of Model Performance for **'{target_col}'**")
-                
-                if results:
-                    metrics_data = []
-                    for name, res in results.items():
-                        metrics_data.append({'Model': name, 'Accuracy': res['accuracy'], 'F1-Score': res['f1_score']})
-                    metrics_df = pd.DataFrame(metrics_data)
+            target_col = 'Risk_Type'
+            if target_col not in df.columns:
+                st.error(f"❌ '{target_col}' column not found!")
+            else:
+                if st.button("🚀 Train & Evaluate for Risk_Type", type="primary", key="eval_risk_type"):
+                    with st.spinner('Training and evaluating models for Risk_Type...'):
+                        results = train_and_evaluate_for_target(df, target_col)
                     
-                    best_acc = metrics_df.loc[metrics_df['Accuracy'].idxmax()]
-                    best_f1 = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
-                    
-                    st.markdown(f"""
-                    <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                        <p style="margin: 5px 0; color: #155724;">
-                            Based on <b>Accuracy</b>, best: <b>{best_acc['Model']}</b> ({best_acc['Accuracy']:.4f})
-                        </p>
-                        <p style="margin: 5px 0; color: #155724;">
-                            Based on <b>F1-Score</b>, best: <b>{best_f1['Model']}</b> ({best_f1['F1-Score']:.4f})
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.dataframe(metrics_df, column_config={
-                        "Model": "Model",
-                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
-                        "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
-                    }, use_container_width=True, hide_index=True)
-                    
-                    fig = px.bar(metrics_df, x='Model', y=['Accuracy', 'F1-Score'], barmode='group',
-                                title=f'Model Performance - {target_col}',
-                                color_discrete_sequence=['#3498db', '#e74c3c'], height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            if len(all_comparisons) > 1:
-                st.markdown("---")
-                st.markdown("## 📊 Overall Summary")
-                summary_data = []
-                for target_col, results in all_comparisons.items():
                     if results:
-                        best_f1 = max(results.items(), key=lambda x: x[1]['f1_score'])
-                        best_acc = max(results.items(), key=lambda x: x[1]['accuracy'])
-                        summary_data.append({
-                            'Target Variable': target_col,
-                            'Best (Accuracy)': f"{best_acc[0]} ({best_acc[1]['accuracy']:.4f})",
-                            'Best (F1-Score)': f"{best_f1[0]} ({best_f1[1]['f1_score']:.4f})"
-                        })
-                if summary_data:
-                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
-    
-    # ==================== CROSS VALIDATION ====================
-    elif section == "📊 Cross Validation":
-        st.markdown('<p class="section-header">📊 Cross Validation</p>', unsafe_allow_html=True)
+                        st.markdown("---")
+                        for name, res in results.items():
+                            st.markdown(f"### --- {name} Model Evaluation for '{target_col}' ---")
+                            st.markdown(f"**Accuracy:** {res['accuracy']:.4f}")
+                            st.markdown(f"**Precision:** {res['precision']:.4f}")
+                            st.markdown(f"**Recall:** {res['recall']:.4f}")
+                            st.markdown(f"**F1-Score:** {res['f1_score']:.4f}")
+                            st.markdown("---")
+                            st.markdown("")
+                        
+                        # Comparison table
+                        st.markdown("### 📊 Performance Comparison Table")
+                        metrics_data = []
+                        for name, res in results.items():
+                            metrics_data.append({
+                                'Model': name, 'Accuracy': res['accuracy'],
+                                'Precision': res['precision'], 'Recall': res['recall'], 'F1-Score': res['f1_score']
+                            })
+                        metrics_df = pd.DataFrame(metrics_data)
+                        st.dataframe(metrics_df, column_config={
+                            "Model": "Model",
+                            "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
+                            "Precision": st.column_config.NumberColumn("Precision", format="%.4f"),
+                            "Recall": st.column_config.NumberColumn("Recall", format="%.4f"),
+                            "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
+                        }, use_container_width=True, hide_index=True)
+                        
+                        # Bar chart
+                        fig = px.bar(metrics_df, x='Model', y=['Accuracy','Precision','Recall','F1-Score'],
+                                    barmode='group', title='Model Performance - Risk_Type',
+                                    color_discrete_sequence=['#3498db','#e74c3c','#2ecc71','#f39c12'], height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        best_acc = metrics_df.loc[metrics_df['Accuracy'].idxmax()]
+                        best_f1 = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
+                        st.markdown(f"""
+                        <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                            <p style="margin: 5px 0; color: #155724;">Based on <b>Accuracy</b>, best: <b>{best_acc['Model']}</b> ({best_acc['Accuracy']:.4f})</p>
+                            <p style="margin: 5px 0; color: #155724;">Based on <b>F1-Score</b>, best: <b>{best_f1['Model']}</b> ({best_f1['F1-Score']:.4f})</p>
+                        </div>
+                        """, unsafe_allow_html=True)
         
-        data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
-        if data is None: st.warning("⚠️ Load data first!"); return
-        df = data
-        
-        target = st.selectbox("Target Variable for CV", df.columns.tolist(),
-                             index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
-        nums = df.select_dtypes(include=['float64','int64','int32']).columns.tolist()
-        if target in nums: nums.remove(target)
-        folds = st.slider("CV Folds", 3, 10, 5)
-        
-        if st.button("🔄 Run Cross Validation", type="primary", use_container_width=True):
-            X = df[nums].copy(); y = df[target].copy()
-            mask = y.notna(); X = X[mask]; y = y[mask]
-            if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
-            X = X.fillna(X.median())
+        # ===== TAB 2: COMPARE MODEL PERFORMANCE =====
+        with eval_tab2:
+            st.markdown("### 📊 Compare Model Performance")
+            st.markdown("*Compare the performance of the models for both 'Risk_Type' and 'Risk_Level'*")
             
-            cv_models = {
-                'Logistic Regression': LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1),
-                'Random Forest': RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1),
-                'GradientBoosting': GradientBoostingClassifier(n_estimators=50, random_state=42)
-            }
-            cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=42)
-            
-            cv_results = []; all_scores = {}
-            for name, model in cv_models.items():
-                try:
-                    acc = cross_val_score(model, X, y, cv=cv, scoring='accuracy', n_jobs=-1)
-                    f1 = cross_val_score(model, X, y, cv=cv, scoring='f1_weighted', n_jobs=-1)
-                    all_scores[name] = f1
-                    cv_results.append({'Model':name,'Mean Accuracy':round(acc.mean(),4),'Std Accuracy':round(acc.std(),4),
-                                      'Mean F1':round(f1.mean(),4),'Std F1':round(f1.std(),4)})
-                except: pass
-            
-            if cv_results:
-                cv_df = pd.DataFrame(cv_results)
-                st.dataframe(cv_df, use_container_width=True, hide_index=True)
-                best_cv = cv_df.loc[cv_df['Mean F1'].idxmax()]
-                st.success(f"🏆 Best CV Model: **{best_cv['Model']}** (Mean F1: {best_cv['Mean F1']:.4f})")
+            if st.button("🚀 Train & Compare for Both Targets", type="primary", key="compare_both"):
+                all_comparisons = {}
                 
-                fig_cv = go.Figure()
-                for name, scores in all_scores.items():
-                    fig_cv.add_trace(go.Box(y=scores, name=name, boxmean='sd'))
-                fig_cv.update_layout(title=f'CV F1 Scores ({folds}-Fold)', yaxis_title='F1 Score', height=400)
-                st.plotly_chart(fig_cv, use_container_width=True)
+                for target_col in ['Risk_Type', 'Risk_Level']:
+                    if target_col not in df.columns: continue
+                    
+                    with st.spinner(f'Training models for {target_col}...'):
+                        results = train_and_evaluate_for_target(df, target_col)
+                        all_comparisons[target_col] = results
+                
+                for target_col, results in all_comparisons.items():
+                    st.markdown("---")
+                    st.markdown(f"## 📊 Analysis for **'{target_col}'**")
+                    
+                    if results:
+                        metrics_data = []
+                        for name, res in results.items():
+                            metrics_data.append({'Model': name, 'Accuracy': res['accuracy'], 'F1-Score': res['f1_score']})
+                        metrics_df = pd.DataFrame(metrics_data)
+                        
+                        best_acc = metrics_df.loc[metrics_df['Accuracy'].idxmax()]
+                        best_f1 = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
+                        
+                        st.markdown(f"""
+                        <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                            <p style="margin: 5px 0; color: #155724;">Based on <b>Accuracy</b>, best: <b>{best_acc['Model']}</b> ({best_acc['Accuracy']:.4f})</p>
+                            <p style="margin: 5px 0; color: #155724;">Based on <b>F1-Score</b>, best: <b>{best_f1['Model']}</b> ({best_f1['F1-Score']:.4f})</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.dataframe(metrics_df, column_config={
+                            "Model": "Model",
+                            "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
+                            "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
+                        }, use_container_width=True, hide_index=True)
+                        
+                        fig = px.bar(metrics_df, x='Model', y=['Accuracy','F1-Score'], barmode='group',
+                                    title=f'Model Performance - {target_col}',
+                                    color_discrete_sequence=['#3498db','#e74c3c'], height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                # Overall summary
+                if len(all_comparisons) > 1:
+                    st.markdown("---")
+                    st.markdown("## 📊 Overall Summary")
+                    summary_data = []
+                    for target_col, results in all_comparisons.items():
+                        if results:
+                            best_f1 = max(results.items(), key=lambda x: x[1]['f1_score'])
+                            best_acc = max(results.items(), key=lambda x: x[1]['accuracy'])
+                            summary_data.append({
+                                'Target Variable': target_col,
+                                'Best (Accuracy)': f"{best_acc[0]} ({best_acc[1]['accuracy']:.4f})",
+                                'Best (F1-Score)': f"{best_f1[0]} ({best_f1[1]['f1_score']:.4f})"
+                            })
+                    if summary_data:
+                        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+        
+        # ===== TAB 3: CROSS VALIDATION =====
+        with eval_tab3:
+            st.markdown("### 🔄 Cross Validation Analysis")
+            st.info("Evaluate model stability using stratified k-fold cross-validation.")
+            
+            target = st.selectbox("Target Variable for CV", df.columns.tolist(),
+                                 index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
+            nums = df.select_dtypes(include=['float64','int64','int32']).columns.tolist()
+            if target in nums: nums.remove(target)
+            folds = st.slider("CV Folds", 3, 10, 5)
+            
+            if st.button("🔄 Run Cross Validation", type="primary", key="cv_run"):
+                X = df[nums].copy(); y = df[target].copy()
+                mask = y.notna(); X = X[mask]; y = y[mask]
+                if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
+                X = X.fillna(X.median())
+                
+                cv_models = {
+                    'Logistic Regression': LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1),
+                    'Random Forest': RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1),
+                    'GradientBoosting': GradientBoostingClassifier(n_estimators=50, random_state=42)
+                }
+                cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=42)
+                
+                cv_results = []; all_scores = {}
+                for name, model in cv_models.items():
+                    try:
+                        acc = cross_val_score(model, X, y, cv=cv, scoring='accuracy', n_jobs=-1)
+                        f1 = cross_val_score(model, X, y, cv=cv, scoring='f1_weighted', n_jobs=-1)
+                        all_scores[name] = f1
+                        cv_results.append({'Model':name,'Mean Accuracy':round(acc.mean(),4),'Std Accuracy':round(acc.std(),4),
+                                          'Mean F1':round(f1.mean(),4),'Std F1':round(f1.std(),4)})
+                    except: pass
+                
+                if cv_results:
+                    cv_df = pd.DataFrame(cv_results)
+                    st.dataframe(cv_df, use_container_width=True, hide_index=True)
+                    best_cv = cv_df.loc[cv_df['Mean F1'].idxmax()]
+                    st.success(f"🏆 Best CV Model: **{best_cv['Model']}** (Mean F1: {best_cv['Mean F1']:.4f})")
+                    
+                    fig_cv = go.Figure()
+                    for name, scores in all_scores.items():
+                        fig_cv.add_trace(go.Box(y=scores, name=name, boxmean='sd'))
+                    fig_cv.update_layout(title=f'CV F1 Scores ({folds}-Fold)', yaxis_title='F1 Score', height=400)
+                    st.plotly_chart(fig_cv, use_container_width=True)
 
 
 if __name__ == "__main__":
