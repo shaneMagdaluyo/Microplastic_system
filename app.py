@@ -54,18 +54,6 @@ st.markdown("""
         color: #34495e;
         margin-top: 0.8rem;
     }
-    .success-message {
-        color: #27ae60;
-        font-weight: 600;
-    }
-    .warning-message {
-        color: #e67e22;
-        font-weight: 600;
-    }
-    .error-message {
-        color: #e74c3c;
-        font-weight: 600;
-    }
     .stButton > button {
         width: 100%;
         background-color: #1f77b4;
@@ -527,27 +515,20 @@ def main():
             
             if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary"):
                 with st.spinner('Applying StandardScaler to numerical columns...'):
-                    
-                    # Select numerical columns
                     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-                    
-                    # Remove ID columns if present
                     cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
                     
                     if len(cols_to_scale) > 0:
-                        # Apply StandardScaler
                         scaler = StandardScaler()
                         scaled_data = scaler.fit_transform(df[cols_to_scale].fillna(df[cols_to_scale].median()))
                         scaled_df = pd.DataFrame(scaled_data, columns=cols_to_scale)
                         
-                        # Store in session state
                         st.session_state.scaler = scaler
                         st.session_state.scaled_columns = cols_to_scale
                         st.session_state.scaled_data = scaled_df
                         
                         st.success(f"✅ Feature scaling applied to {len(cols_to_scale)} numerical columns!")
                         
-                        # Display first 5 rows
                         st.markdown("**First 5 rows of scaled numerical data:**")
                         st.dataframe(
                             scaled_df.head(),
@@ -558,10 +539,9 @@ def main():
                             use_container_width=True,
                         )
                         
-                        # Show scaling statistics
                         with st.expander("📊 Scaling Statistics (Before vs After)"):
                             stats_list = []
-                            for col in cols_to_scale[:10]:  # Limit to 10 columns
+                            for col in cols_to_scale[:10]:
                                 stats_list.append({
                                     'Column': col,
                                     'Mean (Before)': f"{df[col].mean():.4f}",
@@ -572,6 +552,121 @@ def main():
                             st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
                     else:
                         st.warning("⚠️ No numerical columns found to scale.")
+            
+            # ===== RISK SCORE BY RISK LEVEL ANALYSIS =====
+            if 'Risk_Score' in df.columns and 'Risk_Level' in df.columns:
+                st.markdown("---")
+                st.markdown("### 📊 Investigate Difference in Risk Score by Risk Level")
+                st.markdown("*Use box plots to visualize the distribution of Risk_Score for each Risk_Level category*")
+                
+                df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
+                clean_df = df.dropna(subset=['Risk_Score'])
+                
+                if len(clean_df) > 0:
+                    tab1, tab2, tab3 = st.tabs(["📦 Box Plot", "🎻 Violin Plot", "📊 Statistics"])
+                    
+                    with tab1:
+                        st.markdown("#### 📦 Box Plot - Risk Score by Risk Level")
+                        fig_box = px.box(
+                            clean_df, 
+                            x='Risk_Level', 
+                            y='Risk_Score', 
+                            color='Risk_Level',
+                            title='Risk Score Distribution by Risk Level (Box Plot)',
+                            color_discrete_sequence=px.colors.qualitative.Set2,
+                            points='outliers'
+                        )
+                        fig_box.update_layout(height=500, showlegend=True)
+                        st.plotly_chart(fig_box, use_container_width=True)
+                        
+                        st.markdown("""
+                        **📖 How to interpret the Box Plot:**
+                        - **Box**: Shows the middle 50% of scores (Q1 to Q3)
+                        - **Line in box**: Median score
+                        - **Whiskers**: Range of typical scores (1.5 × IQR)
+                        - **Dots beyond whiskers**: Outliers (unusual scores)
+                        - **Wider box**: More variation in that risk level
+                        """)
+                    
+                    with tab2:
+                        st.markdown("#### 🎻 Violin Plot - Risk Score by Risk Level")
+                        fig_violin = go.Figure()
+                        
+                        risk_levels = clean_df['Risk_Level'].unique()
+                        colors = px.colors.qualitative.Set2[:len(risk_levels)]
+                        
+                        for i, level in enumerate(sorted(risk_levels)):
+                            level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
+                            fig_violin.add_trace(go.Violin(
+                                y=level_data,
+                                name=str(level),
+                                box_visible=True,
+                                meanline_visible=True,
+                                line_color=colors[i % len(colors)],
+                                fillcolor=colors[i % len(colors)],
+                                opacity=0.7
+                            ))
+                        
+                        fig_violin.update_layout(
+                            title='Risk Score Distribution by Risk Level (Violin Plot)',
+                            yaxis_title='Risk Score',
+                            height=500
+                        )
+                        st.plotly_chart(fig_violin, use_container_width=True)
+                        
+                        st.markdown("""
+                        **📖 How to interpret the Violin Plot:**
+                        - **Width**: Shows how many samples have that score (wider = more samples)
+                        - **White dot**: Median score
+                        - **Thick bar**: Middle 50% of scores
+                        - **Shape**: Shows the distribution pattern (peaks, gaps, symmetry)
+                        """)
+                    
+                    with tab3:
+                        st.markdown("#### 📊 Risk Score Statistics by Risk Level")
+                        
+                        risk_level_stats = clean_df.groupby('Risk_Level')['Risk_Score'].agg([
+                            ('Count', 'count'),
+                            ('Mean', 'mean'),
+                            ('Median', 'median'),
+                            ('Std Dev', 'std'),
+                            ('Min', 'min'),
+                            ('Q1', lambda x: x.quantile(0.25)),
+                            ('Q3', lambda x: x.quantile(0.75)),
+                            ('Max', 'max'),
+                            ('Range', lambda x: x.max() - x.min()),
+                            ('IQR', lambda x: x.quantile(0.75) - x.quantile(0.25)),
+                        ]).round(2)
+                        
+                        st.dataframe(
+                            risk_level_stats,
+                            column_config={
+                                "Count": st.column_config.NumberColumn("Count", format="%d"),
+                                "Mean": st.column_config.NumberColumn("Mean", format="%.2f"),
+                                "Median": st.column_config.NumberColumn("Median", format="%.2f"),
+                                "Std Dev": st.column_config.NumberColumn("Std Dev", format="%.2f"),
+                                "Min": st.column_config.NumberColumn("Min", format="%.2f"),
+                                "Q1": st.column_config.NumberColumn("Q1", format="%.2f"),
+                                "Q3": st.column_config.NumberColumn("Q3", format="%.2f"),
+                                "Max": st.column_config.NumberColumn("Max", format="%.2f"),
+                                "Range": st.column_config.NumberColumn("Range", format="%.2f"),
+                                "IQR": st.column_config.NumberColumn("IQR", format="%.2f"),
+                            },
+                            use_container_width=True,
+                        )
+                        
+                        st.markdown("---")
+                        st.markdown("#### 🔍 Key Findings")
+                        
+                        for level in sorted(risk_levels):
+                            level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
+                            st.markdown(f"""
+                            **{level} Risk Level:**
+                            - Count: **{len(level_data):,}** samples
+                            - Mean Score: **{level_data.mean():.2f}** | Median: **{level_data.median():.2f}**
+                            - Range: **{level_data.min():.2f}** to **{level_data.max():.2f}**
+                            - Standard Deviation: **{level_data.std():.2f}**
+                            """)
             
             # ===== DATASET INFORMATION =====
             st.markdown("---")
@@ -689,7 +784,6 @@ def main():
                 fig_dist = plot_distribution(df, 'Risk_Score', 'Risk Score Distribution')
                 st.plotly_chart(fig_dist, use_container_width=True)
                 
-                # Enhanced Statistics
                 q1 = clean_risk.quantile(0.25)
                 q3 = clean_risk.quantile(0.75)
                 iqr = q3 - q1
@@ -762,7 +856,6 @@ def main():
                 fig_box.update_layout(height=500)
                 st.plotly_chart(fig_box, use_container_width=True)
                 
-                # Risk Score by Risk Level table
                 st.markdown("**📊 Risk Score Statistics by Risk Level**")
                 risk_level_stats = df.groupby('Risk_Level')['Risk_Score'].agg([
                     'count', 'mean', 'median', 'std', 'min', 'max'
@@ -923,13 +1016,11 @@ def main():
                     eval_results = evaluate_models(models, X_test, y_test)
                     
                     if eval_results:
-                        # Calculate averages
                         all_acc = [r['accuracy'] for r in eval_results.values()]
                         all_f1 = [r['f1_score'] for r in eval_results.values()]
                         avg_acc = np.mean(all_acc)
                         avg_f1 = np.mean(all_f1)
                         
-                        # Average Score Banner
                         st.markdown(f"""
                         <div style="background: linear-gradient(135deg, #1f77b4, #2c3e50); 
                                     padding: 25px; border-radius: 15px; margin: 20px 0; text-align: center;">
@@ -972,7 +1063,6 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Performance Comparison Table with Average
                         st.markdown("### 📊 Performance Comparison Table")
                         summary_data = []
                         for name, results in eval_results.items():
@@ -989,7 +1079,6 @@ def main():
                                         "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
                                     }, use_container_width=True, hide_index=True)
                         
-                        # Performance Chart
                         st.markdown("### 📈 Performance Metrics Comparison")
                         metrics_dict = {}
                         for name, results in eval_results.items():
@@ -1015,7 +1104,6 @@ def main():
                         fig_metrics.update_layout(height=400)
                         st.plotly_chart(fig_metrics, use_container_width=True)
                         
-                        # Confusion Matrix
                         st.markdown("---")
                         st.markdown("### 🧩 Confusion Matrix")
                         selected_model = st.selectbox("Select model to view Confusion Matrix", 
@@ -1038,7 +1126,6 @@ def main():
                                 fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
                                 st.plotly_chart(fig_cm, use_container_width=True)
                         
-                        # Classification Report
                         st.markdown("---")
                         st.markdown("### 📋 Classification Report")
                         report_model = st.selectbox("Select model for detailed report", 
@@ -1046,7 +1133,6 @@ def main():
                         if report_model:
                             st.code(eval_results[report_model]['classification_report'])
                         
-                        # Final Summary
                         st.success(f"🏆 Best: **{best_model_name}** | 📊 Avg Acc: **{avg_acc:.4f}** | 📊 Avg F1: **{avg_f1:.4f}**")
                         
                 else:
