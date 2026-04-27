@@ -96,6 +96,7 @@ def init_session_state():
     if 'scaled_columns' not in st.session_state: st.session_state.scaled_columns = None
     if 'scaled_data' not in st.session_state: st.session_state.scaled_data = None
     if 'encoded_data' not in st.session_state: st.session_state.encoded_data = None
+    if 'encoded_shape' not in st.session_state: st.session_state.encoded_shape = None
 
 init_session_state()
 
@@ -131,7 +132,11 @@ def generate_sample_data():
     
     data = {
         'Sample_ID': [f'MP_{i:04d}' for i in range(n_samples)],
+        'Latitude': np.random.uniform(12.8, 13.0, n_samples),
+        'Longitude': np.random.uniform(123.9, 124.1, n_samples),
         'MP_Count_per_L': np.random.poisson(lam=50, size=n_samples),
+        'Microplastic_Size_mm': np.random.choice(['0.1-5.0', '5.0-10.0', '0.1-1.0'], n_samples),
+        'Density': np.random.choice(['1.3-1.4', '1.2-1.3', '1.0-1.2'], n_samples),
         'Particle_Size_um': np.random.normal(100, 30, n_samples),
         'Polymer_Type': np.random.choice(['PE', 'PP', 'PS', 'PET', 'PVC', 'Nylon'], n_samples),
         'Water_Source': np.random.choice(['River', 'Lake', 'Ocean', 'Groundwater', 'Tap'], n_samples),
@@ -146,7 +151,9 @@ def generate_sample_data():
         'Risk_Type': np.random.choice(['Type_A', 'Type_B', 'Type_C'], n_samples, 
                                      p=[0.5, 0.3, 0.2]),
         'Location': np.random.choice(['Urban', 'Rural', 'Industrial', 'Coastal'], n_samples),
-        'Season': np.random.choice(['Winter', 'Spring', 'Summer', 'Fall'], n_samples)
+        'Season': np.random.choice(['Winter', 'Spring', 'Summer', 'Fall'], n_samples),
+        'Author': np.random.choice(['Author_A', 'Author_B', 'Author_C'], n_samples),
+        'Source': np.random.choice(['Source_1', 'Source_2', 'Source_3'], n_samples)
     }
     
     df = pd.DataFrame(data)
@@ -211,18 +218,31 @@ def encode_categorical(df):
         return df
 
 def one_hot_encode(df):
-    """Apply one-hot encoding to categorical columns."""
+    """Apply one-hot encoding to categorical columns.
+    Identify categorical columns and apply one-hot encoding,
+    then concatenate encoded columns with original dataframe.
+    """
     try:
+        # Identify categorical columns
         categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
         cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
+        
         if len(cols_to_encode) == 0:
-            return df, [], []
+            return df, [], [], df.shape
+        
+        # Apply one-hot encoding
         df_encoded = pd.get_dummies(df, columns=cols_to_encode, drop_first=False)
+        
+        # Get new column names
         new_cols = [col for col in df_encoded.columns if col not in df.columns]
-        return df_encoded, new_cols, cols_to_encode
+        
+        original_shape = df.shape
+        encoded_shape = df_encoded.shape
+        
+        return df_encoded, new_cols, cols_to_encode, encoded_shape
     except Exception as e:
         st.error(f"Error in one-hot encoding: {str(e)}")
-        return df, [], []
+        return df, [], [], df.shape
 
 def scale_features(df, feature_cols):
     """Scale numerical features."""
@@ -317,54 +337,45 @@ def calculate_rf_importance(X, y):
 
 def train_and_evaluate_for_target(df, target_col):
     """Train models for a specific target and return results."""
-    # Prepare features
     feature_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
     if target_col in feature_cols: feature_cols.remove(target_col)
     
     X = df[feature_cols].copy()
     y = df[target_col].copy()
     
-    # Handle missing
     mask = y.notna()
     X = X[mask]; y = y[mask]
     if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
     X = X.fillna(X.median())
     
-    # Split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    # Train models
     models = {}
     
-    # Logistic Regression
     try:
         lr = LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1)
         lr.fit(X_train, y_train)
         models['Logistic Regression'] = lr
     except: pass
     
-    # Random Forest
     try:
         rf = RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1)
         rf.fit(X_train, y_train)
         models['Random Forest'] = rf
     except: pass
     
-    # Decision Tree
     try:
         dt = DecisionTreeClassifier(random_state=42, max_depth=8, class_weight='balanced')
         dt.fit(X_train, y_train)
         models['Decision Tree'] = dt
     except: pass
     
-    # Gradient Boosting
     try:
         gb = GradientBoostingClassifier(n_estimators=50, random_state=42)
         gb.fit(X_train, y_train)
         models['GradientBoostingClassifier'] = gb
     except: pass
     
-    # Evaluate
     results = {}
     for name, model in models.items():
         y_pred = model.predict(X_test)
@@ -492,7 +503,6 @@ def main():
             if 'Risk_Score' in df.columns and 'Risk_Level' in df.columns:
                 st.markdown("---")
                 st.markdown("### 📊 Risk Score by Risk Level")
-                df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
                 clean = df.dropna(subset=['Risk_Score'])
                 clean['Risk_Level'] = clean['Risk_Level'].astype(str)
                 if len(clean) > 0:
@@ -505,12 +515,6 @@ def main():
                         stats = clean.groupby('Risk_Level')['Risk_Score'].agg(['count','mean','median','std','min','max']).round(2)
                         stats.columns = ['Count','Mean','Median','Std Dev','Min','Max']
                         st.dataframe(stats, use_container_width=True)
-            
-            # Dataset Info
-            st.markdown("---")
-            c1,c2 = st.columns(2)
-            with c1: st.write("**Data Types:**", df.dtypes)
-            with c2: st.write("**Statistics:**", df.describe())
             
             # Quality Check
             st.markdown("---")
@@ -553,20 +557,35 @@ def main():
         
         with prep_tab2:
             st.markdown("### 🔄 Encode Categorical Variables")
+            st.markdown("*Identify the categorical columns and apply one-hot encoding to them, then concatenate the encoded columns with the original dataframe*")
+            
             categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
             cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
+            
             if len(cols_to_encode) > 0:
-                st.markdown(f"**Categorical columns ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
+                st.markdown(f"**Categorical columns identified ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
+            else:
+                st.info("No categorical columns found to encode.")
             
             if st.button("🔄 Apply One-Hot Encoding", type="primary", key="encode_tab"):
                 with st.spinner('Applying One-Hot Encoding...'):
                     if len(cols_to_encode) > 0:
-                        encoded_df, new_cols, _ = one_hot_encode(df)
+                        encoded_df, new_cols, original_cols, encoded_shape = one_hot_encode(df)
                         st.session_state.encoded_data = encoded_df
+                        st.session_state.encoded_shape = encoded_shape
+                        
                         st.success(f"✅ One-Hot Encoding applied! Created {len(new_cols)} new columns.")
-                        display_cols = list(df.columns[:3]) + new_cols[:8]
-                        display_cols = [c for c in display_cols if c in encoded_df.columns]
-                        st.dataframe(encoded_df[display_cols].head(), use_container_width=True)
+                        st.markdown(f"**Original shape:** {df.shape}")
+                        st.markdown(f"**Shape of the DataFrame after one-hot encoding:** {encoded_shape}")
+                        
+                        st.markdown("---")
+                        st.markdown("**First 5 rows of the DataFrame after one-hot encoding:**")
+                        st.dataframe(encoded_df.head(), use_container_width=True)
+                        
+                        with st.expander(f"📋 View all {len(new_cols)} new encoded columns"):
+                            st.write(new_cols)
+                    else:
+                        st.warning("⚠️ No categorical columns found to encode.")
         
         with prep_tab3:
             st.markdown("### 🎯 Address Outliers")
@@ -612,7 +631,8 @@ def main():
             if st.session_state.get('scaled_data') is not None:
                 actions.append("✅ **Feature Scaling**: Numerical columns scaled using StandardScaler.")
             if st.session_state.get('encoded_data') is not None:
-                actions.append("✅ **Categorical Encoding**: One-hot encoding applied.")
+                shape = st.session_state.get('encoded_shape', 'N/A')
+                actions.append(f"✅ **Categorical Encoding**: One-hot encoding applied. Shape: {shape}")
             if st.session_state.get('processed_data') is not None:
                 actions.append("✅ **Outlier Capping**: Outliers addressed using IQR method.")
             
@@ -891,7 +911,7 @@ def main():
             
             for target_col in ['Risk_Type', 'Risk_Level']:
                 if target_col not in df.columns:
-                    st.warning(f"⚠️ '{target_col}' column not found in dataset!")
+                    st.warning(f"⚠️ '{target_col}' column not found!")
                     continue
                 
                 with st.spinner(f'Training models for {target_col}...'):
@@ -900,27 +920,19 @@ def main():
             
             st.session_state.comparison_results = all_comparisons
             
-            # Display results for each target
             for target_col, results in all_comparisons.items():
                 st.markdown("---")
                 st.markdown(f"## 📊 Analysis of Model Performance for **'{target_col}'**")
                 
                 if results:
-                    # Build metrics dataframe
                     metrics_data = []
                     for name, res in results.items():
-                        metrics_data.append({
-                            'Model': name,
-                            'Accuracy': res['accuracy'],
-                            'F1-Score': res['f1_score']
-                        })
+                        metrics_data.append({'Model': name, 'Accuracy': res['accuracy'], 'F1-Score': res['f1_score']})
                     metrics_df = pd.DataFrame(metrics_data)
                     
-                    # Best models
                     best_acc_model = metrics_df.loc[metrics_df['Accuracy'].idxmax()]
                     best_f1_model = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
                     
-                    # Display conclusions
                     st.markdown(f"""
                     <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
                         <p style="font-size: 1.1rem; margin: 5px 0; color: #155724;">
@@ -932,42 +944,29 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Performance Table
                     st.markdown("**Performance Comparison Table:**")
-                    st.dataframe(
-                        metrics_df,
-                        column_config={
-                            "Model": st.column_config.TextColumn("Model"),
-                            "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
-                            "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
-                        },
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    st.dataframe(metrics_df, column_config={
+                        "Model": "Model",
+                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
+                        "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
+                    }, use_container_width=True, hide_index=True)
                     
-                    # Bar Chart
                     fig = px.bar(metrics_df, x='Model', y=['Accuracy', 'F1-Score'], barmode='group',
-                                title=f'Model Performance Comparison - {target_col}',
-                                color_discrete_sequence=['#3498db', '#e74c3c'])
-                    fig.update_layout(height=400)
+                                title=f'Model Performance - {target_col}',
+                                color_discrete_sequence=['#3498db', '#e74c3c'], height=400)
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Individual model details
                     with st.expander(f"📋 Detailed Results for {target_col}"):
                         for name, res in results.items():
                             st.markdown(f"**{name}**")
                             st.markdown(f"- Accuracy: {res['accuracy']:.4f}")
-                            st.markdown(f"- F1-Score (Weighted): {res['f1_score']:.4f}")
+                            st.markdown(f"- F1-Score: {res['f1_score']:.4f}")
                             st.code(res['classification_report'])
                             st.markdown("---")
-                else:
-                    st.warning(f"No models were successfully trained for {target_col}")
             
-            # Final Summary
             if len(all_comparisons) > 1:
                 st.markdown("---")
                 st.markdown("## 📊 Overall Summary")
-                
                 summary_data = []
                 for target_col, results in all_comparisons.items():
                     if results:
@@ -978,7 +977,6 @@ def main():
                             'Best Model (Accuracy)': f"{best_acc[0]} ({best_acc[1]['accuracy']:.4f})",
                             'Best Model (F1-Score)': f"{best_f1[0]} ({best_f1[1]['f1_score']:.4f})"
                         })
-                
                 if summary_data:
                     st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
     
