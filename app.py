@@ -588,15 +588,17 @@ def main():
                         - **Wider box**: More variation in that risk level
                         """)
                     
-                    with tab2:
+                                        with tab2:
                         st.markdown("#### 🎻 Violin Plot - Risk Score by Risk Level")
                         fig_violin = go.Figure()
                         
-                        risk_levels = clean_df['Risk_Level'].unique()
+                        risk_levels = clean_df['Risk_Level'].dropna().unique()
+                        # Convert to strings for safe sorting
+                        risk_levels = sorted([str(level) for level in risk_levels])
                         colors = px.colors.qualitative.Set2[:len(risk_levels)]
                         
-                        for i, level in enumerate(sorted(risk_levels)):
-                            level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
+                        for i, level in enumerate(risk_levels):
+                            level_data = clean_df[clean_df['Risk_Level'].astype(str) == level]['Risk_Score']
                             fig_violin.add_trace(go.Violin(
                                 y=level_data,
                                 name=str(level),
@@ -658,8 +660,8 @@ def main():
                         st.markdown("---")
                         st.markdown("#### 🔍 Key Findings")
                         
-                        for level in sorted(risk_levels):
-                            level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
+                            for level in risk_levels:
+                            level_data = clean_df[clean_df['Risk_Level'].astype(str) == level]['Risk_Score']
                             st.markdown(f"""
                             **{level} Risk Level:**
                             - Count: **{len(level_data):,}** samples
