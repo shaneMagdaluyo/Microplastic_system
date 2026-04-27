@@ -680,7 +680,7 @@ def main():
                 st.markdown("### 🚀 Next Steps")
                 st.markdown("The dataset is now ready. Proceed to **🛠️ Feature Selection & Relevance** or **🤖 Modeling**.")
     
-    # ==================== FEATURE SELECTION & RELEVANCE (WITH SUMMARY) ====================
+    # ==================== FEATURE SELECTION & RELEVANCE (WITH EXACT SUMMARY) ====================
     elif section == "🛠️ Feature Selection & Relevance":
         st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
         
@@ -826,19 +826,22 @@ def main():
                     
                     st.success(f"✅ Feature selection completed! Top 20 features selected.")
         
-        # ===== FEATURE SELECTION SUMMARY =====
+        # ===== FEATURE SELECTION SUMMARY (EXACT TEXT) =====
         st.markdown("---")
-        st.markdown("### 📋 Feature Selection Summary")
+        st.markdown("### 📋 Summary")
         
         if st.session_state.get('X_selected') is not None:
-            st.markdown(f"""
+            st.markdown("""
             <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                <h3 style="color: #155724; margin: 0 0 15px 0;">📊 Data Analysis Key Findings</h3>
+                <h3 style="color: #155724; margin: 0 0 15px 0;">Data Analysis Key Findings</h3>
                 <ul style="color: #155724; line-height: 1.8;">
-                    <li><b>{target_col}</b> was identified as the probable target variable for classification models.</li>
-                    <li>Feature selection methods suitable for the mixed data types and classification objective were applied, including <b>filter methods</b> (Mutual Information, Chi-squared test) and <b>embedded methods</b> (Tree-based Feature Importance).</li>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                    <li><b>Risk_Level</b> was identified as the probable target variable for classification models.</li>
+                    <li>Feature selection methods suitable for the mixed data types and classification objective were discussed, including <b>filter methods</b> (Mutual Information, Chi-squared test) and <b>embedded methods</b> (Tree-based Feature Importance).</li>
                     <li>Implementing feature selection required careful handling of the one-hot encoded features, ensuring only the generated binary columns were used for methods like the Chi-squared test, which requires non-negative input.</li>
-                    <li><b>Mutual Information, Chi-squared Test, and RandomForest Feature Importances</b> methods were successfully applied, identifying various features as important for prediction.</li>
+                    <li><b>Mutual Information, Chi-squared Test, and RandomForest Feature Importances</b> methods were successfully applied, identifying various one-hot encoded features related to <b>Risk_Level, Population_Density, Industrial_Activity, Location, Polymer_Type, Shape, pH, Salinity, Author, and Source</b> as important.</li>
                     <li>A new dataset <b>(X_selected)</b> containing the <b>top 20 features</b> based on Mutual Information scores was successfully created, with a shape of <b>({st.session_state.X_selected.shape[0]}, {st.session_state.X_selected.shape[1]})</b>.</li>
                 </ul>
             </div>
@@ -846,11 +849,10 @@ def main():
             
             st.markdown("""
             <div style="background: #e8f4fd; border: 2px solid #1f77b4; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                <h3 style="color: #1f77b4; margin: 0 0 15px 0;">🚀 Insights & Next Steps</h3>
+                <h3 style="color: #1f77b4; margin: 0 0 15px 0;">Insights or Next Steps</h3>
                 <ul style="color: #2c3e50; line-height: 1.8;">
-                    <li>The selected features can now be used to <b>train and evaluate various classification models</b> for prediction.</li>
+                    <li>The selected features can now be used to <b>train and evaluate various classification models</b> for predicting <b>Risk_Level</b>.</li>
                     <li>Further analysis could involve <b>comparing model performance</b> using different numbers of top features selected by each method (Mutual Information, Chi-squared, RandomForest) to determine the optimal feature set.</li>
-                    <li>Proceed to <b>🤖 Modeling</b> to train classification models using the selected features.</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
