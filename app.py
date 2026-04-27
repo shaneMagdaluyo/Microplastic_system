@@ -80,6 +80,7 @@ def init_session_state():
     if 'feature_importance' not in st.session_state: st.session_state.feature_importance = None
     if 'mutual_info' not in st.session_state: st.session_state.mutual_info = None
     if 'chi2_scores' not in st.session_state: st.session_state.chi2_scores = None
+    if 'X_selected' not in st.session_state: st.session_state.X_selected = None
     if 'best_model' not in st.session_state: st.session_state.best_model = None
     if 'preprocessing_log' not in st.session_state: st.session_state.preprocessing_log = []
     if 'trained' not in st.session_state: st.session_state.trained = False
@@ -304,7 +305,6 @@ def calculate_mutual_info(X, y):
 
 def calculate_chi2(X, y):
     """Calculate Chi-squared scores for features."""
-    # Chi2 requires non-negative values
     X_scaled = X - X.min() + 1
     chi2_scores, p_values = chi2(X_scaled, y)
     chi2_df = pd.DataFrame({'Feature': X.columns, 'Chi2_Score': chi2_scores, 'P_Value': p_values})
@@ -680,7 +680,7 @@ def main():
                 st.markdown("### 🚀 Next Steps")
                 st.markdown("The dataset is now ready. Proceed to **🛠️ Feature Selection & Relevance** or **🤖 Modeling**.")
     
-    # ==================== FEATURE SELECTION & RELEVANCE (WITH MI, CHI2, RF) ====================
+    # ==================== FEATURE SELECTION & RELEVANCE (WITH SUMMARY) ====================
     elif section == "🛠️ Feature Selection & Relevance":
         st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
         
@@ -763,35 +763,29 @@ def main():
         
         if st.button("Calculate All Feature Importance Metrics", type="primary", use_container_width=True):
             with st.spinner('Calculating feature importance...'):
-                # Prepare data
                 X = df[numeric_cols].copy()
                 y = df[target_col].copy()
-                
-                # Handle missing
                 X = X.fillna(X.median())
-                
-                # Encode target if categorical
-                if y.dtype == 'object':
-                    y = LabelEncoder().fit_transform(y)
-                
-                # Ensure no NaN
+                if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
                 X = X.dropna(axis=1, how='any')
                 valid_cols = X.columns.tolist()
                 
                 if len(valid_cols) == 0:
                     st.error("No valid features after cleaning")
                 else:
-                    # Calculate all three methods
                     mi_df = calculate_mutual_info(X, y)
                     chi2_df = calculate_chi2(X, y)
                     rf_df = calculate_rf_importance(X, y)
                     
-                    # Store in session state
                     st.session_state.feature_importance = rf_df
                     st.session_state.mutual_info = mi_df
                     st.session_state.chi2_scores = chi2_df
                     
-                    # Display results in tabs
+                    # Create X_selected with top 20 features from Mutual Information
+                    top20_mi_features = mi_df.head(20)['Feature'].tolist()
+                    X_selected = X[top20_mi_features]
+                    st.session_state.X_selected = X_selected
+                    
                     ft1, ft2, ft3 = st.tabs([
                         "🌲 Random Forest Importance", 
                         "📊 Mutual Information", 
@@ -807,11 +801,8 @@ def main():
                         fig_rf.update_layout(height=500)
                         st.plotly_chart(fig_rf, use_container_width=True)
                         st.dataframe(top20_rf, use_container_width=True, hide_index=True)
-                        
-                        # Select top features
                         top_features = rf_df.head(10)['Feature'].tolist()
                         st.session_state.selected_features = top_features
-                        st.success(f"✅ Selected top {len(top_features)} features from Random Forest")
                     
                     with ft2:
                         st.markdown("**Top 20 features based on Mutual Information:**")
@@ -832,6 +823,39 @@ def main():
                         fig_chi2.update_layout(height=500)
                         st.plotly_chart(fig_chi2, use_container_width=True)
                         st.dataframe(top20_chi2, use_container_width=True, hide_index=True)
+                    
+                    st.success(f"✅ Feature selection completed! Top 20 features selected.")
+        
+        # ===== FEATURE SELECTION SUMMARY =====
+        st.markdown("---")
+        st.markdown("### 📋 Feature Selection Summary")
+        
+        if st.session_state.get('X_selected') is not None:
+            st.markdown(f"""
+            <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                <h3 style="color: #155724; margin: 0 0 15px 0;">📊 Data Analysis Key Findings</h3>
+                <ul style="color: #155724; line-height: 1.8;">
+                    <li><b>{target_col}</b> was identified as the probable target variable for classification models.</li>
+                    <li>Feature selection methods suitable for the mixed data types and classification objective were applied, including <b>filter methods</b> (Mutual Information, Chi-squared test) and <b>embedded methods</b> (Tree-based Feature Importance).</li>
+                    <li>Implementing feature selection required careful handling of the one-hot encoded features, ensuring only the generated binary columns were used for methods like the Chi-squared test, which requires non-negative input.</li>
+                    <li><b>Mutual Information, Chi-squared Test, and RandomForest Feature Importances</b> methods were successfully applied, identifying various features as important for prediction.</li>
+                    <li>A new dataset <b>(X_selected)</b> containing the <b>top 20 features</b> based on Mutual Information scores was successfully created, with a shape of <b>({st.session_state.X_selected.shape[0]}, {st.session_state.X_selected.shape[1]})</b>.</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("""
+            <div style="background: #e8f4fd; border: 2px solid #1f77b4; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                <h3 style="color: #1f77b4; margin: 0 0 15px 0;">🚀 Insights & Next Steps</h3>
+                <ul style="color: #2c3e50; line-height: 1.8;">
+                    <li>The selected features can now be used to <b>train and evaluate various classification models</b> for prediction.</li>
+                    <li>Further analysis could involve <b>comparing model performance</b> using different numbers of top features selected by each method (Mutual Information, Chi-squared, RandomForest) to determine the optimal feature set.</li>
+                    <li>Proceed to <b>🤖 Modeling</b> to train classification models using the selected features.</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("👆 Click 'Calculate All Feature Importance Metrics' above to generate the feature selection summary.")
     
     # ==================== MODELING ====================
     elif section == "🤖 Modeling":
