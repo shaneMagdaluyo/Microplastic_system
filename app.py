@@ -1,7 +1,7 @@
 """
 Microplastic Risk Analysis Dashboard
 A comprehensive Streamlit application for analyzing microplastic risk data,
-featuring data preprocessing, EDA, model training, and evaluation.
+featuring data preprocessing, EDA, model training, cross validation, and evaluation.
 Includes Auto Multi-Target Evaluation for Risk_Type and Risk_Level.
 """
 
@@ -11,7 +11,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -131,18 +131,14 @@ def load_dataset(uploaded_file):
                 except UnicodeDecodeError:
                     uploaded_file.seek(0)
                     data = pd.read_csv(uploaded_file, encoding='cp1252')
-
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             data = pd.read_excel(uploaded_file)
-
         else:
             st.error("Unsupported file format. Please upload CSV or Excel file.")
             return None
-
         st.session_state.data = data
         st.success(f"✅ Dataset loaded successfully! Shape: {data.shape}")
         return data
-
     except Exception as e:
         st.error(f"❌ Error loading file: {str(e)}")
         return None
@@ -177,7 +173,6 @@ def generate_sample_data():
         if col != 'Sample_ID' and df[col].dtype in ['float64', 'int64']:
             mask = np.random.random(n_samples) < 0.05
             df.loc[mask, col] = np.nan
-    
     return df
 
 def handle_missing_values(df):
@@ -185,9 +180,7 @@ def handle_missing_values(df):
     try:
         df_clean = df.copy()
         log_messages = []
-        
         missing_before = df_clean.isnull().sum().sum()
-        
         if missing_before > 0:
             for col in df_clean.columns:
                 if df_clean[col].isnull().sum() > 0:
@@ -202,11 +195,9 @@ def handle_missing_values(df):
                         mode_val = mode_series[0] if not mode_series.empty else 'Unknown'
                         df_clean[col].fillna(mode_val, inplace=True)
                         log_messages.append(f"Filled missing values in '{col}' with mode ({mode_val})")
-        
         log_messages.append(f"Total missing values handled: {missing_before}")
         st.session_state.preprocessing_log = log_messages
         return df_clean
-        
     except Exception as e:
         st.error(f"Error handling missing values: {str(e)}")
         return df
@@ -216,18 +207,14 @@ def encode_categorical(df):
     try:
         df_encoded = df.copy()
         encoders = {}
-        
         categorical_cols = df_encoded.select_dtypes(include=['object']).columns
-        
         for col in categorical_cols:
             if col not in ['Sample_ID']:
                 le = LabelEncoder()
                 df_encoded[f'{col}_Encoded'] = le.fit_transform(df_encoded[col].astype(str))
                 encoders[col] = le
-        
         st.session_state.encoders = encoders
         return df_encoded
-        
     except Exception as e:
         st.error(f"Error encoding categorical variables: {str(e)}")
         return df
@@ -237,14 +224,11 @@ def scale_features(df, feature_cols):
     try:
         df_scaled = df.copy()
         scaler = StandardScaler()
-        
         numeric_cols = df_scaled[feature_cols].select_dtypes(include=['float64', 'int64']).columns
         if len(numeric_cols) > 0:
             df_scaled[numeric_cols] = scaler.fit_transform(df_scaled[numeric_cols])
             st.session_state.scaler = scaler
-        
         return df_scaled
-        
     except Exception as e:
         st.error(f"Error scaling features: {str(e)}")
         return df
@@ -253,7 +237,6 @@ def detect_outliers(df, columns):
     """Detect outliers using IQR method."""
     try:
         outlier_info = {}
-        
         for col in columns:
             if df[col].dtype in ['float64', 'int64']:
                 Q1 = df[col].quantile(0.25)
@@ -261,7 +244,6 @@ def detect_outliers(df, columns):
                 IQR = Q3 - Q1
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
-                
                 outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
                 outlier_info[col] = {
                     'count': len(outliers),
@@ -269,9 +251,7 @@ def detect_outliers(df, columns):
                     'lower_bound': lower_bound,
                     'upper_bound': upper_bound
                 }
-        
         return outlier_info
-        
     except Exception as e:
         st.error(f"Error detecting outliers: {str(e)}")
         return {}
@@ -282,23 +262,11 @@ def plot_distribution(data, column, title):
         clean_data = data[column].dropna()
         if clean_data.empty:
             return go.Figure()
-        
         fig = make_subplots(rows=1, cols=2, subplot_titles=('Histogram', 'Box Plot'))
-        
-        fig.add_trace(
-            go.Histogram(x=clean_data, name='Distribution', nbinsx=30,
-                        marker_color='#3498db'),
-            row=1, col=1
-        )
-        
-        fig.add_trace(
-            go.Box(y=clean_data, name='Box Plot', marker_color='#e74c3c'),
-            row=1, col=2
-        )
-        
+        fig.add_trace(go.Histogram(x=clean_data, name='Distribution', nbinsx=30, marker_color='#3498db'), row=1, col=1)
+        fig.add_trace(go.Box(y=clean_data, name='Box Plot', marker_color='#e74c3c'), row=1, col=2)
         fig.update_layout(title_text=title, showlegend=False, height=500)
         return fig
-        
     except Exception as e:
         st.error(f"Error creating distribution plot: {str(e)}")
         return go.Figure()
@@ -309,27 +277,21 @@ def plot_correlation_heatmap(df, columns):
         numeric_df = df[columns].select_dtypes(include=['float64', 'int64', 'int32'])
         if numeric_df.shape[1] < 2:
             return go.Figure(), None
-        
         numeric_df = numeric_df.loc[:, numeric_df.std() > 0]
-        
         corr_matrix = numeric_df.corr()
-        
         fig = go.Figure(data=go.Heatmap(
             z=corr_matrix.values,
             x=corr_matrix.columns.tolist(),
             y=corr_matrix.index.tolist(),
             colorscale='RdBu',
-            zmin=-1,
-            zmax=1,
+            zmin=-1, zmax=1,
             text=np.round(corr_matrix.values, 2),
             texttemplate='%{text}',
             textfont={"size": 10},
             showscale=True
         ))
-        
         fig.update_layout(title='Feature Correlation Heatmap', height=600)
         return fig, corr_matrix
-        
     except Exception as e:
         st.error(f"Error creating correlation heatmap: {str(e)}")
         return go.Figure(), None
@@ -338,39 +300,29 @@ def prepare_modeling_data(df, feature_cols, target_col):
     """Prepare data for modeling with enhanced error handling."""
     try:
         X = df[feature_cols].select_dtypes(include=['float64', 'int64', 'int32'])
-        
         if X.shape[1] == 0:
             st.error("❌ No numeric features selected. Please select at least one numeric feature.")
             return None, None
-        
         y = df[target_col]
-        
         valid_mask = y.notna()
         X = X[valid_mask]
         y = y[valid_mask]
-        
         if len(y) == 0:
             st.error("❌ No valid target values found.")
             return None, None
-        
         if y.dtype == 'object':
             le = LabelEncoder()
             y = pd.Series(le.fit_transform(y), index=y.index)
             st.session_state.target_encoder = le
-            
             class_mapping = dict(zip(le.classes_, le.transform(le.classes_)))
             st.info(f"📋 Target Encoding Mapping: {class_mapping}")
-        
         if X.isnull().sum().sum() > 0:
             st.warning(f"⚠️ Found {X.isnull().sum().sum()} missing values in features. Filling with median...")
             X = X.fillna(X.median())
-        
         if len(X) < 10:
             st.error(f"❌ Only {len(X)} samples available. At least 10 samples are recommended for training.")
             return None, None
-        
         return X, y
-        
     except Exception as e:
         st.error(f"Error preparing modeling data: {str(e)}")
         return None, None
@@ -379,91 +331,57 @@ def train_models_fast(X_train, X_test, y_train, y_test):
     """Train classification models with optimized fast performance."""
     models = {}
     training_times = {}
-    
     try:
         n_samples = X_train.shape[0]
-        
-        # Logistic Regression - Fast
+        # Logistic Regression
         start_time = time.time()
         try:
-            lr_model = LogisticRegression(
-                random_state=42, 
-                max_iter=500,
-                class_weight='balanced',
-                solver='lbfgs',
-                n_jobs=-1
-            )
+            lr_model = LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', solver='lbfgs', n_jobs=-1)
             lr_model.fit(X_train, y_train)
             models['Logistic Regression'] = lr_model
             training_times['Logistic Regression'] = time.time() - start_time
-        except Exception as e:
+        except:
             try:
-                lr_model = LogisticRegression(
-                    random_state=42, 
-                    max_iter=500,
-                    class_weight='balanced',
-                    solver='saga',
-                    n_jobs=-1
-                )
+                lr_model = LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', solver='saga', n_jobs=-1)
                 lr_model.fit(X_train, y_train)
                 models['Logistic Regression'] = lr_model
                 training_times['Logistic Regression'] = time.time() - start_time
-            except Exception as e2:
-                st.error(f"❌ Logistic Regression failed: {str(e2)}")
-        
-        # Random Forest - Optimized
+            except:
+                pass
+        # Random Forest
         start_time = time.time()
         try:
             n_estimators = min(80, max(30, n_samples // 5))
-            rf_model = RandomForestClassifier(
-                n_estimators=n_estimators,
-                random_state=42,
-                class_weight='balanced',
-                max_depth=min(12, n_samples // 30),
-                min_samples_split=max(2, n_samples // 100),
-                n_jobs=-1,
-                verbose=0
-            )
+            rf_model = RandomForestClassifier(n_estimators=n_estimators, random_state=42,
+                                              class_weight='balanced', max_depth=min(12, n_samples // 30), n_jobs=-1)
             rf_model.fit(X_train, y_train)
             models['Random Forest'] = rf_model
             training_times['Random Forest'] = time.time() - start_time
-        except Exception as e:
+        except:
             try:
-                rf_model = RandomForestClassifier(
-                    n_estimators=30, 
-                    random_state=42,
-                    max_depth=8,
-                    n_jobs=-1
-                )
+                rf_model = RandomForestClassifier(n_estimators=30, random_state=42, max_depth=8, n_jobs=-1)
                 rf_model.fit(X_train, y_train)
                 models['Random Forest'] = rf_model
                 training_times['Random Forest'] = time.time() - start_time
-            except Exception as e2:
-                st.error(f"❌ Random Forest failed: {str(e2)}")
-        
-        # Decision Tree - Very Fast
+            except:
+                pass
+        # Decision Tree
         start_time = time.time()
         try:
-            dt_model = DecisionTreeClassifier(
-                random_state=42,
-                max_depth=min(10, max(3, n_samples // 30)),
-                min_samples_split=max(2, n_samples // 50),
-                class_weight='balanced'
-            )
+            dt_model = DecisionTreeClassifier(random_state=42, max_depth=min(10, max(3, n_samples // 30)),
+                                              min_samples_split=max(2, n_samples // 50), class_weight='balanced')
             dt_model.fit(X_train, y_train)
             models['Decision Tree'] = dt_model
             training_times['Decision Tree'] = time.time() - start_time
-        except Exception as e:
+        except:
             try:
                 dt_model = DecisionTreeClassifier(random_state=42, max_depth=5)
                 dt_model.fit(X_train, y_train)
                 models['Decision Tree'] = dt_model
                 training_times['Decision Tree'] = time.time() - start_time
-            except Exception as e2:
-                st.error(f"❌ Decision Tree failed: {str(e2)}")
-        
+            except:
+                pass
         return models, training_times
-        
     except Exception as e:
         st.error(f"Error in model training pipeline: {str(e)}")
         return {}, {}
@@ -472,60 +390,37 @@ def train_models_quality(X_train, X_test, y_train, y_test):
     """Train classification models with GridSearch for better quality."""
     models = {}
     training_times = {}
-    
     try:
-        n_samples = X_train.shape[0]
-        
         # Logistic Regression with GridSearch
         start_time = time.time()
         try:
             lr_params = {'C': [0.1, 1, 10], 'max_iter': [1000]}
-            lr_grid = GridSearchCV(
-                LogisticRegression(random_state=42, class_weight='balanced', n_jobs=-1),
-                lr_params, 
-                cv=3, 
-                scoring='f1_weighted'
-            )
+            lr_grid = GridSearchCV(LogisticRegression(random_state=42, class_weight='balanced', n_jobs=-1),
+                                   lr_params, cv=3, scoring='f1_weighted')
             lr_grid.fit(X_train, y_train)
             models['Logistic Regression'] = lr_grid.best_estimator_
             training_times['Logistic Regression'] = time.time() - start_time
-        except Exception as e:
-            st.error(f"❌ Logistic Regression failed: {str(e)}")
-            training_times['Logistic Regression'] = 0
-        
+        except:
+            pass
         # Random Forest
         start_time = time.time()
         try:
-            rf_model = RandomForestClassifier(
-                n_estimators=100, 
-                random_state=42,
-                class_weight='balanced',
-                n_jobs=-1
-            )
+            rf_model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced', n_jobs=-1)
             rf_model.fit(X_train, y_train)
             models['Random Forest'] = rf_model
             training_times['Random Forest'] = time.time() - start_time
-        except Exception as e:
-            st.error(f"❌ Random Forest failed: {str(e)}")
-            training_times['Random Forest'] = 0
-        
+        except:
+            pass
         # Decision Tree
         start_time = time.time()
         try:
-            dt_model = DecisionTreeClassifier(
-                random_state=42, 
-                max_depth=10,
-                class_weight='balanced'
-            )
+            dt_model = DecisionTreeClassifier(random_state=42, max_depth=10, class_weight='balanced')
             dt_model.fit(X_train, y_train)
             models['Decision Tree'] = dt_model
             training_times['Decision Tree'] = time.time() - start_time
-        except Exception as e:
-            st.error(f"❌ Decision Tree failed: {str(e)}")
-            training_times['Decision Tree'] = 0
-        
+        except:
+            pass
         return models, training_times
-        
     except Exception as e:
         st.error(f"Error in model training pipeline: {str(e)}")
         return {}, {}
@@ -533,12 +428,10 @@ def train_models_quality(X_train, X_test, y_train, y_test):
 def evaluate_models(models, X_test, y_test):
     """Evaluate trained models."""
     evaluation_results = {}
-    
     try:
         for name, model in models.items():
             try:
                 y_pred = model.predict(X_test)
-                
                 evaluation_results[name] = {
                     'accuracy': accuracy_score(y_test, y_pred),
                     'f1_score': f1_score(y_test, y_pred, average='weighted'),
@@ -547,9 +440,7 @@ def evaluate_models(models, X_test, y_test):
                 }
             except Exception as e:
                 st.error(f"Error evaluating {name}: {str(e)}")
-        
         return evaluation_results
-        
     except Exception as e:
         st.error(f"Error evaluating models: {str(e)}")
         return {}
@@ -561,13 +452,14 @@ def main():
     st.markdown('<p class="main-header">🔬 Microplastic Risk Analysis Dashboard</p>', 
                 unsafe_allow_html=True)
     
-    # Sidebar navigation
+    # Sidebar navigation - UPDATED
     st.sidebar.markdown("## 📊 Navigation")
     section = st.sidebar.radio(
         "Select Section",
-        ["📁 Upload Dataset", "🔧 Data Preprocessing", "📈 EDA (Risk Analysis)",
-         "🛠️ Feature Engineering", "🤖 Model Training", "📊 Model Evaluation",
-         "📊 Auto Multi-Target Evaluation", "🎯 Feature Importance", "🧬 Polymer Analysis"]
+        ["🏠 Home", "🔧 Preprocessing", "🛠️ Feature Selection & Relevance", 
+         "🤖 Modeling", "📊 Cross Validation", "📊 Model Evaluation",
+         "📊 Auto Multi-Target Evaluation", "🎯 Feature Importance", 
+         "🧬 Polymer Analysis"]
     )
     
     st.sidebar.markdown("---")
@@ -590,9 +482,9 @@ def main():
     else:
         st.sidebar.warning("⚠️ Models Not Trained")
     
-    # Section: Upload Dataset
-    if section == "📁 Upload Dataset":
-        st.markdown('<p class="section-header">📁 Upload Dataset</p>', unsafe_allow_html=True)
+    # ==================== HOME ====================
+    if section == "🏠 Home":
+        st.markdown('<p class="section-header">🏠 Home - Upload Dataset</p>', unsafe_allow_html=True)
         
         col1, col2 = st.columns([2, 1])
         
@@ -601,9 +493,8 @@ def main():
                 "Upload your microplastic dataset (CSV or Excel)",
                 type=['csv', 'xlsx', 'xls']
             )
-            
             if uploaded_file is not None:
-                data = load_dataset(uploaded_file)
+                load_dataset(uploaded_file)
         
         with col2:
             st.markdown("#### Quick Start")
@@ -639,8 +530,8 @@ def main():
                 st.write("**Basic Statistics:**")
                 st.write(df.describe())
     
-    # Section: Data Preprocessing
-    elif section == "🔧 Data Preprocessing":
+    # ==================== PREPROCESSING ====================
+    elif section == "🔧 Preprocessing":
         st.markdown('<p class="section-header">🔧 Data Preprocessing</p>', unsafe_allow_html=True)
         
         if st.session_state.data is None:
@@ -663,34 +554,27 @@ def main():
                 st.markdown("### 🔍 Missing Value Analysis")
                 with st.spinner('Handling missing values...'):
                     missing_before = processed_df.isnull().sum()
-                    
                     col1, col2 = st.columns(2)
                     with col1:
                         st.write("**Missing values before:**")
                         st.write(missing_before[missing_before > 0])
-                    
                     processed_df = handle_missing_values(processed_df)
-                    
                     with col2:
                         st.write("**Missing values after:**")
                         st.write(processed_df.isnull().sum())
-                    
                     st.success("✅ Missing values handled")
             
             if "Encode Categorical Variables" in preprocessing_options:
                 st.markdown("### 🔄 Categorical Encoding")
                 with st.spinner('Encoding categorical variables...'):
                     processed_df = encode_categorical(processed_df)
-                    
-                    st.write("**Encoded columns added:**")
                     encoded_cols = [col for col in processed_df.columns if col.endswith('_Encoded')]
-                    st.write(encoded_cols)
+                    st.write("**Encoded columns added:**", encoded_cols)
             
             if "Detect Outliers" in preprocessing_options:
                 st.markdown("### 🎯 Outlier Detection")
                 numeric_cols = processed_df.select_dtypes(include=['float64', 'int64']).columns
                 outlier_info = detect_outliers(processed_df, numeric_cols)
-                
                 for col, info in outlier_info.items():
                     if info['count'] > 0:
                         st.write(f"**{col}**: {info['count']} outliers ({info['percentage']:.1f}%)")
@@ -709,9 +593,9 @@ def main():
             st.markdown("### 📋 Processed Data Preview")
             st.dataframe(st.session_state.processed_data.head(10), use_container_width=True)
     
-    # Section: EDA
-    elif section == "📈 EDA (Risk Analysis)":
-        st.markdown('<p class="section-header">📈 Exploratory Data Analysis</p>', unsafe_allow_html=True)
+    # ==================== FEATURE SELECTION & RELEVANCE ====================
+    elif section == "🛠️ Feature Selection & Relevance":
+        st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
         
         data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
         
@@ -721,131 +605,62 @@ def main():
         
         df = data_to_use.copy()
         
-        st.markdown("### 📊 Risk Score Distribution")
+        # EDA Section
+        st.markdown("### 📈 Exploratory Data Analysis")
         
+        st.markdown("#### 📊 Risk Score Distribution")
         if 'Risk_Score' in df.columns:
             df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
             clean_risk = df['Risk_Score'].dropna()
-            
             if len(clean_risk) > 0:
                 fig_dist = plot_distribution(df, 'Risk_Score', 'Risk Score Distribution')
                 st.plotly_chart(fig_dist, use_container_width=True)
-                
                 col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Mean Risk Score", f"{clean_risk.mean():.2f}")
-                with col2:
-                    st.metric("Median Risk Score", f"{clean_risk.median():.2f}")
-                with col3:
-                    st.metric("Max Risk Score", f"{clean_risk.max():.2f}")
-                with col4:
-                    st.metric("Min Risk Score", f"{clean_risk.min():.2f}")
-            else:
-                st.warning("⚠️ No valid Risk Score data")
-        else:
-            st.warning("⚠️ 'Risk_Score' column not found in dataset")
+                with col1: st.metric("Mean Risk Score", f"{clean_risk.mean():.2f}")
+                with col2: st.metric("Median Risk Score", f"{clean_risk.median():.2f}")
+                with col3: st.metric("Max Risk Score", f"{clean_risk.max():.2f}")
+                with col4: st.metric("Min Risk Score", f"{clean_risk.min():.2f}")
         
         st.markdown("---")
-        st.markdown("### 🔬 MP Count vs Risk Score")
-        
+        st.markdown("#### 🔬 MP Count vs Risk Score")
         if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
             df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
             df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
-            
             clean_df = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
-            
-            if clean_df.empty:
-                st.warning("⚠️ No valid numeric data for plotting.")
-            else:
+            if not clean_df.empty:
                 try:
-                    fig_scatter = px.scatter(
-                        clean_df,
-                        x='MP_Count_per_L',
-                        y='Risk_Score',
-                        color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-                        trendline='ols',
-                        title='Microplastic Count vs Risk Score'
-                    )
+                    fig_scatter = px.scatter(clean_df, x='MP_Count_per_L', y='Risk_Score',
+                                            color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                                            trendline='ols', title='Microplastic Count vs Risk Score')
                 except:
-                    fig_scatter = px.scatter(
-                        clean_df,
-                        x='MP_Count_per_L',
-                        y='Risk_Score',
-                        color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-                        title='Microplastic Count vs Risk Score'
-                    )
-                    st.warning("⚠️ Trendline could not be generated. Showing scatter only.")
-                
+                    fig_scatter = px.scatter(clean_df, x='MP_Count_per_L', y='Risk_Score',
+                                            color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                                            title='Microplastic Count vs Risk Score')
                 st.plotly_chart(fig_scatter, use_container_width=True)
-        else:
-            st.warning("⚠️ Required columns not found")
         
         st.markdown("---")
-        st.markdown("### 📊 Risk Score by Risk Level")
-        
+        st.markdown("#### 📊 Risk Score by Risk Level")
         if 'Risk_Level' in df.columns and 'Risk_Score' in df.columns:
             df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
             clean_df = df.dropna(subset=['Risk_Score'])
-            
             if len(clean_df) > 0:
-                fig_box = px.box(
-                    clean_df, x='Risk_Level', y='Risk_Score',
-                    color='Risk_Level',
-                    title='Risk Score Distribution by Risk Level'
-                )
+                fig_box = px.box(clean_df, x='Risk_Level', y='Risk_Score', color='Risk_Level',
+                                title='Risk Score Distribution by Risk Level')
                 fig_box.update_layout(height=500)
                 st.plotly_chart(fig_box, use_container_width=True)
-            else:
-                st.warning("⚠️ No valid data for box plot")
-        else:
-            st.warning("⚠️ Required columns not found")
         
+        # Feature Engineering Section
         st.markdown("---")
-        st.markdown("### 📈 Additional Analysis")
+        st.markdown("### 🎯 Feature Engineering")
         
-        eda_options = st.multiselect(
-            "Select variables to analyze",
-            df.columns.tolist(),
-            default=['Risk_Score'] if 'Risk_Score' in df.columns else []
-        )
-        
-        if eda_options:
-            for col in eda_options:
-                if df[col].dtype in ['float64', 'int64']:
-                    clean_col = df[col].dropna()
-                    if len(clean_col) > 0:
-                        fig = px.histogram(df, x=col, title=f'Distribution of {col}')
-                        st.plotly_chart(fig, use_container_width=True)
-    
-    # Section: Feature Engineering
-    elif section == "🛠️ Feature Engineering":
-        st.markdown('<p class="section-header">🛠️ Feature Engineering & Selection</p>', 
-                   unsafe_allow_html=True)
-        
-        data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
-        
-        if data_to_use is None:
-            st.warning("⚠️ Please load and preprocess data first!")
-            return
-        
-        df = data_to_use
-        
-        st.markdown("### 🎯 Target Variable Selection")
-        
-        target_col = st.selectbox(
-            "Select Target Variable",
-            df.columns.tolist(),
-            index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0
-        )
-        
-        st.markdown("### 🔍 Feature Selection")
+        target_col = st.selectbox("Select Target Variable", df.columns.tolist(),
+                                  index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
         
         numeric_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
         if target_col in numeric_cols:
             numeric_cols.remove(target_col)
         
         st.markdown("#### 📊 Correlation Analysis")
-        
         if len(numeric_cols) > 1:
             with st.spinner('Computing correlation matrix...'):
                 fig_corr, corr_matrix = plot_correlation_heatmap(df, numeric_cols)
@@ -854,55 +669,36 @@ def main():
             st.warning("⚠️ Not enough numeric features for correlation analysis")
         
         st.markdown("#### 🌲 Random Forest Feature Importance")
-        
         if st.button("Calculate Feature Importance", type="primary"):
             try:
                 X = df[numeric_cols].copy()
                 y = df[target_col].copy()
-                
                 if y.dtype == 'object':
-                    le = LabelEncoder()
-                    y = le.fit_transform(y)
-                
-                X = X.fillna(X.median())
-                X = X.dropna(axis=1, how='any')
-                
+                    y = LabelEncoder().fit_transform(y)
+                X = X.fillna(X.median()).dropna(axis=1, how='any')
                 if X.shape[1] == 0:
                     st.error("No valid features after cleaning")
                     return
-                
                 rf = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
                 rf.fit(X, y)
-                
                 importance_df = pd.DataFrame({
                     'feature': X.columns,
                     'importance': rf.feature_importances_
                 }).sort_values('importance', ascending=True)
-                
                 st.session_state.feature_importance = importance_df
-                
-                fig_imp = px.bar(
-                    importance_df.tail(15),
-                    x='importance',
-                    y='feature',
-                    orientation='h',
-                    title='Top 15 Feature Importance (Random Forest)'
-                )
+                fig_imp = px.bar(importance_df.tail(15), x='importance', y='feature',
+                                orientation='h', title='Top 15 Feature Importance (Random Forest)')
                 fig_imp.update_layout(height=500)
                 st.plotly_chart(fig_imp, use_container_width=True)
-                
                 top_features = importance_df.nlargest(10, 'importance')['feature'].tolist()
                 st.session_state.selected_features = top_features
-                
                 st.success(f"✅ Selected top {len(top_features)} features")
-                st.write("**Selected Features:**")
-                st.write(top_features)
-                
+                st.write("**Selected Features:**", top_features)
             except Exception as e:
                 st.error(f"Error calculating feature importance: {str(e)}")
     
-    # Section: Model Training
-    elif section == "🤖 Model Training":
+    # ==================== MODELING ====================
+    elif section == "🤖 Modeling":
         st.markdown('<p class="section-header">🤖 Model Training</p>', unsafe_allow_html=True)
         
         if st.session_state.get('trained', False) and len(st.session_state.get('models', {})) > 0:
@@ -918,34 +714,18 @@ def main():
         df = data_to_use
         
         st.markdown("### 🎯 Model Configuration")
-        
-        target_col = st.selectbox(
-            "Select Target Variable",
-            df.columns.tolist(),
-            key='train_target'
-        )
-        
+        target_col = st.selectbox("Select Target Variable", df.columns.tolist(), key='train_target')
         all_features = [col for col in df.columns if col != target_col]
         default_features = st.session_state.get('selected_features', 
-                   df.select_dtypes(include=['float64', 'int64']).columns.tolist()[:5]
-                   if len(df.select_dtypes(include=['float64', 'int64']).columns) > 5 
-                   else df.select_dtypes(include=['float64', 'int64']).columns.tolist())
-        
+                          df.select_dtypes(include=['float64', 'int64']).columns.tolist()[:5])
         default_features = [f for f in default_features if f in all_features]
-        
-        feature_cols = st.multiselect(
-            "Select Features",
-            all_features,
-            default=default_features
-        )
+        feature_cols = st.multiselect("Select Features", all_features, default=default_features)
         
         st.markdown("### ⚙️ Model Parameters")
-        
         col1, col2 = st.columns(2)
         with col1:
             test_size = st.slider("Test Size", 0.1, 0.5, 0.2, 0.05)
             random_state = st.number_input("Random State", 0, 100, 42)
-        
         with col2:
             use_smote = st.checkbox("Use SMOTE for class imbalance", value=True)
             fast_mode = st.checkbox("⚡ Fast Training Mode", value=True, 
@@ -962,7 +742,6 @@ def main():
             
             try:
                 X, y = prepare_modeling_data(df, feature_cols, target_col)
-                
                 if X is None or y is None:
                     return
                 
@@ -970,77 +749,39 @@ def main():
                 st.info("### 📊 Class Distribution")
                 st.write(class_counts)
                 
-                use_stratify = False
-                if len(class_counts) > 1:
-                    min_class_count = class_counts.min()
-                    if min_class_count >= 2:
-                        use_stratify = True
-                        st.success("✅ Stratification is possible")
-                    else:
-                        st.warning(f"⚠️ Some classes have only {min_class_count} sample(s). Stratification disabled.")
-                else:
-                    st.warning("⚠️ Only one class present. Stratification disabled.")
-                
+                use_stratify = len(class_counts) > 1 and class_counts.min() >= 2
                 try:
                     if use_stratify:
                         X_train, X_test, y_train, y_test = train_test_split(
-                            X, y, test_size=test_size, random_state=random_state, stratify=y
-                        )
+                            X, y, test_size=test_size, random_state=random_state, stratify=y)
                         st.success("✅ Data split with stratification")
                     else:
                         X_train, X_test, y_train, y_test = train_test_split(
-                            X, y, test_size=test_size, random_state=random_state
-                        )
+                            X, y, test_size=test_size, random_state=random_state)
                         st.info("ℹ️ Data split without stratification")
-                except Exception as split_error:
-                    st.warning(f"⚠️ Split failed. Trying without stratification...")
+                except:
                     X_train, X_test, y_train, y_test = train_test_split(
-                        X, y, test_size=test_size, random_state=random_state
-                    )
+                        X, y, test_size=test_size, random_state=random_state)
                 
                 st.info(f"📊 Training set: {X_train.shape[0]} samples, Test set: {X_test.shape[0]} samples")
                 
-                smote_applied = False
                 if use_smote:
                     train_class_counts = pd.Series(y_train).value_counts()
-                    min_train_class = train_class_counts.min()
-                    
-                    if min_train_class >= 2:
-                        k_neighbors = min(5, min_train_class - 1)
-                        
-                        if k_neighbors >= 1:
-                            try:
-                                with st.spinner('Applying SMOTE...'):
-                                    smote = SMOTE(random_state=random_state, k_neighbors=k_neighbors)
-                                    X_train, y_train = smote.fit_resample(X_train, y_train)
-                                    smote_applied = True
-                                    st.success(f"✅ SMOTE applied successfully!")
-                                    st.write("New class distribution after SMOTE:")
-                                    st.write(pd.Series(y_train).value_counts())
-                            except Exception as smote_error:
-                                st.warning(f"⚠️ SMOTE failed. Training without SMOTE...")
-                        else:
-                            st.warning(f"⚠️ Not enough samples for SMOTE. Training without SMOTE...")
-                    else:
-                        st.warning(f"⚠️ Classes have insufficient samples for SMOTE. Training without SMOTE...")
+                    if train_class_counts.min() >= 2:
+                        try:
+                            smote = SMOTE(random_state=random_state, k_neighbors=min(5, train_class_counts.min()-1))
+                            X_train, y_train = smote.fit_resample(X_train, y_train)
+                            st.success("✅ SMOTE applied successfully!")
+                        except:
+                            st.warning("⚠️ SMOTE failed. Training without SMOTE...")
                 
-                if not smote_applied and use_smote:
-                    st.info("ℹ️ Proceeding without SMOTE")
-                
-                if X_train.shape[0] < 5:
-                    st.error(f"❌ Not enough training samples ({X_train.shape[0]}). Need at least 5 samples.")
-                    return
-                
-                # Train models based on selected mode
                 total_start = time.time()
-                
                 if fast_mode:
                     with st.spinner('⚡ Training models in FAST mode...'):
                         models, training_times = train_models_fast(X_train, X_test, y_train, y_test)
                 else:
-                    with st.spinner('🔬 Training models in QUALITY mode (this may take longer)...'):
+                    with st.spinner('🔬 Training models in QUALITY mode...'):
                         models, training_times = train_models_quality(X_train, X_test, y_train, y_test)
-                
                 total_time = time.time() - total_start
                 
                 if models and len(models) > 0:
@@ -1055,43 +796,137 @@ def main():
                     if fast_mode:
                         st.balloons()
                     
-                    # Show training times
-                    if training_times:
-                        with st.expander("⏱️ Training Time Details"):
-                            for name, t in training_times.items():
-                                st.write(f"**{name}**: {t:.2f} seconds")
-                    
                     st.markdown("### 📊 Quick Performance Overview")
-                    
-                    # Display results in columns
                     cols = st.columns(len(models))
                     for idx, (name, model) in enumerate(models.items()):
                         try:
                             train_score = model.score(X_train, y_train)
                             test_score = model.score(X_test, y_test)
-                            
                             with cols[idx]:
                                 st.markdown(f"**{name}**")
                                 st.metric("Train Score", f"{train_score:.3f}")
                                 st.metric("Test Score", f"{test_score:.3f}")
-                        except Exception as score_error:
-                            st.warning(f"⚠️ Could not calculate scores for {name}")
+                        except:
+                            pass
                     
                     st.info("👉 Go to **'📊 Model Evaluation'** in the sidebar to see detailed results!")
                 else:
                     st.error("❌ No models were successfully trained. Please check your data and try again.")
-            
             except Exception as e:
                 st.error(f"Error during model training: {str(e)}")
                 st.info("💡 Tip: Try reducing the number of features or use a different target variable.")
     
-    # ==================== MODEL EVALUATION (WITH FORMATTED INSIGHTS) ====================
+    # ==================== CROSS VALIDATION ====================
+    elif section == "📊 Cross Validation":
+        st.markdown('<p class="section-header">📊 Cross Validation</p>', unsafe_allow_html=True)
+        
+        data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
+        
+        if data_to_use is None:
+            st.warning("⚠️ Please load and preprocess data first!")
+            return
+        
+        df = data_to_use
+        
+        st.markdown("### 🔄 Cross Validation Analysis")
+        st.info("Evaluate model stability using stratified k-fold cross-validation.")
+        
+        # Target selection
+        target_col = st.selectbox(
+            "Select Target Variable for CV",
+            df.columns.tolist(),
+            index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0
+        )
+        
+        # Feature selection
+        feature_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
+        if target_col in feature_cols:
+            feature_cols.remove(target_col)
+        
+        cv_folds = st.slider("Number of CV Folds", 3, 10, 5)
+        
+        if st.button("🔄 Run Cross Validation", type="primary", use_container_width=True):
+            with st.spinner('Running cross-validation...'):
+                
+                # Prepare data
+                X = df[feature_cols].copy()
+                y = df[target_col].copy()
+                
+                mask = y.notna()
+                X = X[mask]
+                y = y[mask]
+                
+                if y.dtype == 'object':
+                    y = LabelEncoder().fit_transform(y)
+                
+                X = X.fillna(X.median())
+                
+                # Models to evaluate
+                cv_models = {
+                    'Logistic Regression': LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1),
+                    'Random Forest': RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1),
+                    'Decision Tree': DecisionTreeClassifier(random_state=42, max_depth=8, class_weight='balanced')
+                }
+                
+                cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+                
+                cv_results = []
+                all_scores = {}
+                
+                for name, model in cv_models.items():
+                    try:
+                        # Accuracy
+                        acc_scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy', n_jobs=-1)
+                        # F1 Score
+                        f1_scores = cross_val_score(model, X, y, cv=cv, scoring='f1_weighted', n_jobs=-1)
+                        
+                        all_scores[name] = f1_scores
+                        
+                        cv_results.append({
+                            'Model': name,
+                            'Mean Accuracy': round(acc_scores.mean(), 4),
+                            'Std Accuracy': round(acc_scores.std(), 4),
+                            'Mean F1 Score': round(f1_scores.mean(), 4),
+                            'Std F1 Score': round(f1_scores.std(), 4),
+                            'Min F1': round(f1_scores.min(), 4),
+                            'Max F1': round(f1_scores.max(), 4)
+                        })
+                    except Exception as e:
+                        st.error(f"Error with {name}: {str(e)}")
+                
+                if cv_results:
+                    cv_df = pd.DataFrame(cv_results)
+                    
+                    st.markdown("#### 📊 Cross Validation Results")
+                    st.dataframe(cv_df, use_container_width=True, hide_index=True)
+                    
+                    # Best model by CV
+                    best_cv = cv_df.loc[cv_df['Mean F1 Score'].idxmax()]
+                    st.success(f"""
+                    🏆 **Best CV Model:** {best_cv['Model']}
+                    - Mean F1 Score: **{best_cv['Mean F1 Score']:.4f}** (±{best_cv['Std F1 Score']:.4f})
+                    - Mean Accuracy: **{best_cv['Mean Accuracy']:.4f}** (±{best_cv['Std Accuracy']:.4f})
+                    """)
+                    
+                    # CV Box Plot
+                    st.markdown("#### 📈 Cross Validation F1 Scores Distribution")
+                    fig_cv = go.Figure()
+                    for name, scores in all_scores.items():
+                        fig_cv.add_trace(go.Box(y=scores, name=name, boxmean='sd'))
+                    fig_cv.update_layout(
+                        title=f'Cross Validation F1 Scores ({cv_folds}-Fold Stratified)',
+                        yaxis_title='F1 Score (Weighted)',
+                        height=450
+                    )
+                    st.plotly_chart(fig_cv, use_container_width=True)
+    
+    # ==================== MODEL EVALUATION ====================
     elif section == "📊 Model Evaluation":
         st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
         
         if not st.session_state.get('trained', False) or len(st.session_state.get('models', {})) == 0:
             st.warning("⚠️ No trained models found!")
-            st.info("👉 Please go to **'🤖 Model Training'** section to train your models first.")
+            st.info("👉 Please go to **'🤖 Modeling'** section to train your models first.")
             return
         
         models = st.session_state.models
@@ -1123,7 +958,7 @@ def main():
             target_name = "Target"
             if st.session_state.get('target_encoder') is not None:
                 try:
-                    target_name = "Risk_Type"
+                    target_name = "Target Variable"
                 except:
                     pass
             
@@ -1409,7 +1244,7 @@ def main():
                 - **{row['Target Variable']}**: Best model is **{row['Best Model']}** with F1-Score = **{row['F1-Score']}**
                 """)
     
-    # Section: Feature Importance
+    # ==================== FEATURE IMPORTANCE ====================
     elif section == "🎯 Feature Importance":
         st.markdown('<p class="section-header">🎯 Feature Importance Analysis</p>', 
                    unsafe_allow_html=True)
@@ -1514,7 +1349,7 @@ def main():
             4. Return here to view results
             """)
     
-    # Section: Polymer Analysis
+    # ==================== POLYMER ANALYSIS ====================
     elif section == "🧬 Polymer Analysis":
         st.markdown('<p class="section-header">🧬 Polymer Type Analysis</p>', unsafe_allow_html=True)
         
