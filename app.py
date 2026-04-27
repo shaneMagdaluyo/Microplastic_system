@@ -181,7 +181,6 @@ def handle_missing_values(df):
 
 def cap_outliers_iqr(df, columns):
     """Cap outliers using IQR method."""
-    log_messages = []
     df_capped = df.copy()
     for col in columns:
         if df_capped[col].dtype in ['float64', 'int64']:
@@ -191,8 +190,7 @@ def cap_outliers_iqr(df, columns):
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
             df_capped[col] = df_capped[col].clip(lower=lower_bound, upper=upper_bound)
-            log_messages.append(f"Capped outliers in '{col}'")
-    return df_capped, log_messages
+    return df_capped
 
 def one_hot_encode(df):
     """Apply one-hot encoding to categorical columns."""
@@ -213,27 +211,24 @@ def calculate_mutual_info(X, y):
     """Calculate Mutual Information scores for features."""
     mi_scores = mutual_info_classif(X, y, random_state=42)
     mi_df = pd.DataFrame({'Feature': X.columns, 'Mutual_Info': mi_scores})
-    mi_df = mi_df.sort_values('Mutual_Info', ascending=False)
-    return mi_df
+    return mi_df.sort_values('Mutual_Info', ascending=False)
 
 def calculate_chi2(X, y):
     """Calculate Chi-squared scores for features."""
     X_scaled = X - X.min() + 1
     chi2_scores, p_values = chi2(X_scaled, y)
     chi2_df = pd.DataFrame({'Feature': X.columns, 'Chi2_Score': chi2_scores, 'P_Value': p_values})
-    chi2_df = chi2_df.sort_values('Chi2_Score', ascending=False)
-    return chi2_df
+    return chi2_df.sort_values('Chi2_Score', ascending=False)
 
 def calculate_rf_importance(X, y):
     """Calculate Random Forest feature importance."""
     rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
     rf.fit(X, y)
     rf_df = pd.DataFrame({'Feature': X.columns, 'Importance': rf.feature_importances_})
-    rf_df = rf_df.sort_values('Importance', ascending=False)
-    return rf_df
+    return rf_df.sort_values('Importance', ascending=False)
 
 def train_and_evaluate_for_target(df, target_col):
-    """Train models for a specific target and return results."""
+    """Train models for a specific target and return results with data split info."""
     feature_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
     if target_col in feature_cols: feature_cols.remove(target_col)
     
@@ -245,7 +240,16 @@ def train_and_evaluate_for_target(df, target_col):
     if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
     X = X.fillna(X.median())
     
+    # Split data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    data_split_info = {
+        'X_train_shape': X_train.shape,
+        'X_test_shape': X_test.shape,
+        'y_train_shape': y_train.shape,
+        'y_test_shape': y_test.shape,
+        'target_col': target_col
+    }
     
     models = {}
     
@@ -279,7 +283,7 @@ def train_and_evaluate_for_target(df, target_col):
             'classification_report': classification_report(y_test, y_pred, zero_division=0)
         }
     
-    return results
+    return results, data_split_info
 
 def plot_distribution(data, column, title):
     """Create distribution plot."""
@@ -356,23 +360,15 @@ def main():
             if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
                 st.markdown("---")
                 st.markdown("### 🔬 Risk Score vs MP Count per L")
-                df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
-                df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
                 clean = df.dropna(subset=['MP_Count_per_L','Risk_Score'])
                 if len(clean) > 0:
-                    tab1, tab2 = st.tabs(["📊 Scatter", "📈 Trendline"])
-                    with tab1:
+                    try:
                         fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score',
                                         color='Risk_Level' if 'Risk_Level' in clean.columns else None,
-                                        title='MP Count vs Risk Score', opacity=0.7)
-                        st.plotly_chart(fig, use_container_width=True)
-                    with tab2:
-                        try:
-                            fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score',
-                                            color='Risk_Level' if 'Risk_Level' in clean.columns else None,
-                                            trendline='ols', title='MP Count vs Risk Score', opacity=0.7)
-                            st.plotly_chart(fig, use_container_width=True)
-                        except: st.warning("⚠️ Trendline not available")
+                                        trendline='ols', title='MP Count vs Risk Score', opacity=0.7)
+                    except:
+                        fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score', title='MP Count vs Risk Score', opacity=0.7)
+                    st.plotly_chart(fig, use_container_width=True)
             
             # Risk Score by Risk Level
             if 'Risk_Score' in df.columns and 'Risk_Level' in df.columns:
@@ -381,15 +377,9 @@ def main():
                 clean = df.dropna(subset=['Risk_Score'])
                 clean['Risk_Level'] = clean['Risk_Level'].astype(str)
                 if len(clean) > 0:
-                    tab1, tab2 = st.tabs(["📦 Box Plot", "📊 Stats"])
-                    with tab1:
-                        fig = px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level',
-                                    title='Risk Score by Risk Level', points='outliers')
-                        st.plotly_chart(fig, use_container_width=True)
-                    with tab2:
-                        stats = clean.groupby('Risk_Level')['Risk_Score'].agg(['count','mean','median','std','min','max']).round(2)
-                        stats.columns = ['Count','Mean','Median','Std Dev','Min','Max']
-                        st.dataframe(stats, use_container_width=True)
+                    fig = px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level',
+                                title='Risk Score by Risk Level', points='outliers')
+                    st.plotly_chart(fig, use_container_width=True)
             
             # Quality Check
             st.markdown("---")
@@ -409,9 +399,8 @@ def main():
         
         df = st.session_state.data.copy()
         
-        prep_tab1, prep_tab2, prep_tab3, prep_tab4, prep_tab5 = st.tabs([
-            "📏 Feature Scaling", "🔄 Categorical Encoding", "🎯 Outlier Capping", 
-            "📊 Skewness & Transform", "📋 Summary & Next Steps"
+        prep_tab1, prep_tab2, prep_tab3, prep_tab4 = st.tabs([
+            "📏 Feature Scaling", "🔄 Categorical Encoding", "🎯 Outlier Capping", "📋 Summary"
         ])
         
         with prep_tab1:
@@ -420,7 +409,7 @@ def main():
             cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
             
             if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary", key="scale_tab"):
-                with st.spinner('Applying StandardScaler...'):
+                with st.spinner('Applying...'):
                     if len(cols_to_scale) > 0:
                         scaler = StandardScaler()
                         scaled_data = scaler.fit_transform(df[cols_to_scale].fillna(df[cols_to_scale].median()))
@@ -441,7 +430,6 @@ def main():
                     if len(cols_to_encode) > 0:
                         encoded_df, new_cols, _, encoded_shape = one_hot_encode(df)
                         st.session_state.encoded_data = encoded_df
-                        st.session_state.encoded_shape = encoded_shape
                         st.success(f"✅ Created {len(new_cols)} new columns! Shape: {encoded_shape}")
                         st.dataframe(encoded_df.head(), use_container_width=True)
         
@@ -451,29 +439,19 @@ def main():
             cols_for_outliers = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
             if st.button("🎯 Cap Outliers (IQR Method)", type="primary", key="outlier_tab"):
                 if len(cols_for_outliers) > 0:
-                    df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
+                    df_capped = cap_outliers_iqr(df, cols_for_outliers)
                     st.session_state.processed_data = df_capped
                     st.success(f"✅ Outliers capped!")
-                    for log in cap_logs: st.write(f"- {log}")
         
-        with prep_tab5:
+        with prep_tab4:
             st.markdown("### 📋 Summary & Next Steps")
             actions = []
-            if st.session_state.get('scaled_data') is not None:
-                actions.append("✅ **Feature Scaling**: Numerical columns scaled using StandardScaler.")
-            if st.session_state.get('encoded_data') is not None:
-                shape = st.session_state.get('encoded_shape', 'N/A')
-                actions.append(f"✅ **Categorical Encoding**: One-hot encoding applied. Shape: {shape}")
-            if st.session_state.get('processed_data') is not None:
-                actions.append("✅ **Outlier Capping**: Outliers addressed using IQR method.")
-            
-            if len(actions) == 0:
-                st.info("Run preprocessing steps to see the summary.")
-            else:
-                for action in actions: st.markdown(action)
-                st.markdown("---")
-                st.markdown("### 🚀 Next Steps")
-                st.markdown("Proceed to **📊 Cross Validation & Evaluation** for model training and comparison.")
+            if st.session_state.get('scaled_data') is not None: actions.append("✅ Feature Scaling applied")
+            if st.session_state.get('encoded_data') is not None: actions.append("✅ Categorical Encoding applied")
+            if st.session_state.get('processed_data') is not None: actions.append("✅ Outliers capped")
+            if actions:
+                for a in actions: st.markdown(a)
+                st.markdown("---\n### 🚀 Next Steps\nProceed to **📊 Cross Validation & Evaluation**.")
     
     # ==================== FEATURE SELECTION & RELEVANCE ====================
     elif section == "🛠️ Feature Selection & Relevance":
@@ -486,16 +464,12 @@ def main():
         st.markdown("### 📈 Exploratory Data Analysis")
         
         if 'Risk_Score' in df.columns:
-            df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
             clean = df['Risk_Score'].dropna()
             if len(clean) > 0:
                 st.plotly_chart(plot_distribution(df, 'Risk_Score', 'Risk Score Distribution'), use_container_width=True)
         
         if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
             st.markdown("---")
-            st.markdown("#### 🔬 MP Count vs Risk Score")
-            df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
-            df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
             clean = df.dropna(subset=['MP_Count_per_L','Risk_Score'])
             if not clean.empty:
                 try:
@@ -508,15 +482,12 @@ def main():
         
         if 'Risk_Level' in df.columns and 'Risk_Score' in df.columns:
             st.markdown("---")
-            st.markdown("#### 📊 Risk Score by Risk Level")
-            df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
             clean = df.dropna(subset=['Risk_Score'])
             clean['Risk_Level'] = clean['Risk_Level'].astype(str)
             if len(clean) > 0:
                 fig = px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level', title='Risk Score by Risk Level')
                 st.plotly_chart(fig, use_container_width=True)
         
-        # Feature Selection
         st.markdown("---")
         st.markdown("### 🎯 Feature Selection Methods")
         
@@ -541,31 +512,25 @@ def main():
                 st.session_state.feature_importance = rf_df
                 st.session_state.mutual_info = mi_df
                 st.session_state.chi2_scores = chi2_df
-                
-                X_selected = X[mi_df.head(20)['Feature'].tolist()]
-                st.session_state.X_selected = X_selected
+                st.session_state.X_selected = X[mi_df.head(20)['Feature'].tolist()]
                 st.session_state.selected_features = rf_df.head(10)['Feature'].tolist()
                 
                 ft1, ft2, ft3 = st.tabs(["🌲 Random Forest", "📊 Mutual Information", "🔢 Chi-squared"])
-                
                 with ft1:
                     fig = px.bar(rf_df.head(20), x='Importance', y='Feature', orientation='h',
                                title='Random Forest Importance', color='Importance', 
                                color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
-                
                 with ft2:
                     fig = px.bar(mi_df.head(20), x='Mutual_Info', y='Feature', orientation='h',
                                title='Mutual Information', color='Mutual_Info',
                                color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
-                
                 with ft3:
                     fig = px.bar(chi2_df.head(20), x='Chi2_Score', y='Feature', orientation='h',
                                title='Chi-squared Test', color='Chi2_Score',
                                color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
-                
                 st.success(f"✅ Feature selection completed!")
     
     # ==================== MODELING ====================
@@ -607,7 +572,7 @@ def main():
             except: pass
             try:
                 rf = RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1)
-                rf.fit(X_train, y_train); models['Random Forest'] = rf
+                rf.fit(X_train, y_train); models['RandomForestClassifier'] = rf
             except: pass
             try:
                 gb = GradientBoostingClassifier(n_estimators=50, random_state=42)
@@ -616,11 +581,8 @@ def main():
             
             if models:
                 st.session_state.models = models
-                st.session_state.X_test = X_test; st.session_state.y_test = y_test
                 st.session_state.trained = True
                 st.success(f"✅ {len(models)} models trained!")
-                st.balloons()
-                
                 for name, model in models.items():
                     y_pred = model.predict(X_test)
                     st.markdown(f"**{name}:** Acc={accuracy_score(y_test, y_pred):.4f} | F1={f1_score(y_test, y_pred, average='weighted'):.4f}")
@@ -643,7 +605,7 @@ def main():
         # ===== TAB 1: EVALUATE MODELS FOR RISK TYPE =====
         with eval_tab1:
             st.markdown("### 📊 Evaluate Models for Risk Type")
-            st.markdown("*Evaluate the performance of the trained models for 'Risk_Type' using appropriate metrics*")
+            st.markdown("*Define 'Risk_Type' as the target variable and split the selected features and 'Risk_Type' into training and testing sets*")
             
             target_col = 'Risk_Type'
             if target_col not in df.columns:
@@ -651,9 +613,22 @@ def main():
             else:
                 if st.button("🚀 Train & Evaluate for Risk_Type", type="primary", key="eval_risk_type"):
                     with st.spinner('Training and evaluating models for Risk_Type...'):
-                        results = train_and_evaluate_for_target(df, target_col)
+                        results, split_info = train_and_evaluate_for_target(df, target_col)
                     
                     if results:
+                        # Show data split information
+                        st.markdown("---")
+                        st.markdown("### 📊 Data Split Information")
+                        st.markdown(f"""
+                        <div style="background: #e8f4fd; border: 2px solid #1f77b4; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                            <p style="margin: 5px 0;"><b>Target Variable:</b> {split_info['target_col']}</p>
+                            <p style="margin: 5px 0;"><b>X_train shape:</b> {split_info['X_train_shape']}</p>
+                            <p style="margin: 5px 0;"><b>X_test shape:</b> {split_info['X_test_shape']}</p>
+                            <p style="margin: 5px 0;"><b>y_train shape:</b> {split_info['y_train_shape']}</p>
+                            <p style="margin: 5px 0;"><b>y_test shape:</b> {split_info['y_test_shape']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
                         st.markdown("---")
                         for name, res in results.items():
                             st.markdown(f"### --- {name} Model Evaluation for '{target_col}' ---")
@@ -664,22 +639,27 @@ def main():
                             st.markdown("---")
                             st.markdown("")
                         
-                        # Comparison table
-                        st.markdown("### 📊 Performance Comparison Table")
+                        # Model Performance Comparison Table (like your example)
+                        st.markdown("### 📊 Model Performance Comparison")
                         metrics_data = []
                         for name, res in results.items():
                             metrics_data.append({
-                                'Model': name, 'Accuracy': res['accuracy'],
-                                'Precision': res['precision'], 'Recall': res['recall'], 'F1-Score': res['f1_score']
+                                'Model': name,
+                                'Accuracy': res['accuracy'],
+                                'Precision': res['precision'],
+                                'Recall': res['recall'],
+                                'F1-Score': res['f1_score']
                             })
                         metrics_df = pd.DataFrame(metrics_data)
+                        
+                        st.markdown("Model Performance Comparison ---")
                         st.dataframe(metrics_df, column_config={
-                            "Model": "Model",
-                            "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
-                            "Precision": st.column_config.NumberColumn("Precision", format="%.4f"),
-                            "Recall": st.column_config.NumberColumn("Recall", format="%.4f"),
-                            "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
-                        }, use_container_width=True, hide_index=True)
+                            "Model": st.column_config.TextColumn("Model"),
+                            "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.6f"),
+                            "Precision": st.column_config.NumberColumn("Precision", format="%.6f"),
+                            "Recall": st.column_config.NumberColumn("Recall", format="%.6f"),
+                            "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.6f"),
+                        }, use_container_width=True)
                         
                         # Bar chart
                         fig = px.bar(metrics_df, x='Model', y=['Accuracy','Precision','Recall','F1-Score'],
@@ -708,7 +688,7 @@ def main():
                     if target_col not in df.columns: continue
                     
                     with st.spinner(f'Training models for {target_col}...'):
-                        results = train_and_evaluate_for_target(df, target_col)
+                        results, split_info = train_and_evaluate_for_target(df, target_col)
                         all_comparisons[target_col] = results
                 
                 for target_col, results in all_comparisons.items():
