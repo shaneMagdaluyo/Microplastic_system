@@ -1,8 +1,7 @@
 """
 Microplastic Risk Analysis Dashboard
 A comprehensive Streamlit application for analyzing microplastic risk data,
-featuring data preprocessing, EDA, model training, cross validation, and evaluation.
-Includes Auto Multi-Target Evaluation for Risk_Type and Risk_Level.
+featuring data preprocessing, EDA, model training, and cross validation.
 """
 
 import streamlit as st
@@ -452,14 +451,12 @@ def main():
     st.markdown('<p class="main-header">🔬 Microplastic Risk Analysis Dashboard</p>', 
                 unsafe_allow_html=True)
     
-    # Sidebar navigation - UPDATED
+    # Sidebar navigation - 5 SECTIONS ONLY
     st.sidebar.markdown("## 📊 Navigation")
     section = st.sidebar.radio(
         "Select Section",
         ["🏠 Home", "🔧 Preprocessing", "🛠️ Feature Selection & Relevance", 
-         "🤖 Modeling", "📊 Cross Validation", "📊 Model Evaluation",
-         "📊 Auto Multi-Target Evaluation", "🎯 Feature Importance", 
-         "🧬 Polymer Analysis"]
+         "🤖 Modeling", "📊 Cross Validation"]
     )
     
     st.sidebar.markdown("---")
@@ -703,7 +700,6 @@ def main():
         
         if st.session_state.get('trained', False) and len(st.session_state.get('models', {})) > 0:
             st.success(f"✅ Models are already trained! ({len(st.session_state.models)} models available)")
-            st.info("👉 Go to '📊 Model Evaluation' to see results, or configure and retrain below.")
         
         data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
         
@@ -796,20 +792,46 @@ def main():
                     if fast_mode:
                         st.balloons()
                     
-                    st.markdown("### 📊 Quick Performance Overview")
-                    cols = st.columns(len(models))
-                    for idx, (name, model) in enumerate(models.items()):
-                        try:
-                            train_score = model.score(X_train, y_train)
-                            test_score = model.score(X_test, y_test)
-                            with cols[idx]:
-                                st.markdown(f"**{name}**")
-                                st.metric("Train Score", f"{train_score:.3f}")
-                                st.metric("Test Score", f"{test_score:.3f}")
-                        except:
-                            pass
+                    st.markdown("### 📊 Model Performance Summary")
                     
-                    st.info("👉 Go to **'📊 Model Evaluation'** in the sidebar to see detailed results!")
+                    # Evaluate and display results
+                    eval_results = evaluate_models(models, X_test, y_test)
+                    
+                    if eval_results:
+                        # Display each model's F1 score
+                        target_name = target_col
+                        st.markdown(f"**From your evaluation for {target_name} prediction:**")
+                        st.markdown("")
+                        
+                        for name, results in eval_results.items():
+                            f1 = results['f1_score']
+                            st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average)")
+                            st.markdown("")
+                        
+                        # Best model
+                        best_model_name = max(eval_results.items(), key=lambda x: x[1]['f1_score'])[0]
+                        best_f1 = max(eval_results.items(), key=lambda x: x[1]['f1_score'])[1]['f1_score']
+                        
+                        st.markdown("---")
+                        st.markdown(f"""
+                        <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                            <p style="font-size: 1.1rem; margin: 0; color: #155724;">
+                                ✅ The <b>{best_model_name}</b> performed best for <b>{target_name}</b> prediction 
+                                with an F1-Score of <b>{best_f1:.4f}</b> (weighted average).
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Performance table
+                        st.markdown("**Performance Summary:**")
+                        summary_data = []
+                        for name, results in eval_results.items():
+                            summary_data.append({
+                                'Model': name,
+                                'Accuracy': f"{results['accuracy']:.4f}",
+                                'F1-Score': f"{results['f1_score']:.4f}"
+                            })
+                        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
                 else:
                     st.error("❌ No models were successfully trained. Please check your data and try again.")
             except Exception as e:
@@ -919,502 +941,6 @@ def main():
                         height=450
                     )
                     st.plotly_chart(fig_cv, use_container_width=True)
-    
-    # ==================== MODEL EVALUATION ====================
-    elif section == "📊 Model Evaluation":
-        st.markdown('<p class="section-header">📊 Model Evaluation</p>', unsafe_allow_html=True)
-        
-        if not st.session_state.get('trained', False) or len(st.session_state.get('models', {})) == 0:
-            st.warning("⚠️ No trained models found!")
-            st.info("👉 Please go to **'🤖 Modeling'** section to train your models first.")
-            return
-        
-        models = st.session_state.models
-        X_test = st.session_state.X_test
-        y_test = st.session_state.y_test
-        
-        if X_test is None or y_test is None:
-            st.error("❌ Test data is missing. Please re-run the Model Training step.")
-            return
-        
-        st.success(f"✅ Found {len(models)} trained model(s)")
-        
-        with st.spinner('Evaluating models...'):
-            evaluation_results = evaluate_models(models, X_test, y_test)
-        
-        if evaluation_results and len(evaluation_results) > 0:
-            metrics_data = {}
-            for name, results in evaluation_results.items():
-                metrics_data[name] = {
-                    'Accuracy': results['accuracy'],
-                    'F1 Score': results['f1_score']
-                }
-            metrics_df = pd.DataFrame(metrics_data).T
-            
-            # ==================== FORMATTED EVALUATION SUMMARY ====================
-            st.markdown("---")
-            st.markdown("#### 📋 Model Evaluation Results")
-            
-            target_name = "Target"
-            if st.session_state.get('target_encoder') is not None:
-                try:
-                    target_name = "Target Variable"
-                except:
-                    pass
-            
-            st.markdown(f"**From your evaluation for {target_name} prediction:**")
-            st.markdown("")
-            
-            for name, results in evaluation_results.items():
-                f1 = results['f1_score']
-                st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average)")
-                st.markdown("")
-            
-            best_model_name = metrics_df['F1 Score'].idxmax()
-            best_f1 = metrics_df['F1 Score'].max()
-            
-            st.markdown("---")
-            st.markdown(f"""
-            <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                <p style="font-size: 1.1rem; margin: 0; color: #155724;">
-                    ✅ The <b>{best_model_name}</b> performed best for <b>{target_name}</b> prediction 
-                    with an F1-Score of <b>{best_f1:.4f}</b> (weighted average).
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # ==================== PERFORMANCE CHART ====================
-            st.markdown("#### 📈 Performance Metrics Comparison")
-            fig_metrics = px.bar(
-                metrics_df.reset_index(),
-                x='index',
-                y=['Accuracy', 'F1 Score'],
-                barmode='group',
-                title='Model Performance Comparison',
-                labels={'index': 'Model', 'value': 'Score'},
-                color_discrete_sequence=['#3498db', '#e74c3c']
-            )
-            fig_metrics.update_layout(height=400)
-            st.plotly_chart(fig_metrics, use_container_width=True)
-            
-            # ==================== COMPARISON TABLE ====================
-            st.markdown("#### 📊 Detailed Metrics Table")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.dataframe(metrics_df.round(3), use_container_width=True)
-            with col2:
-                st.markdown("**Best Scores:**")
-                st.metric("Accuracy", f"{metrics_df['Accuracy'].max():.3f}")
-                st.metric("F1 Score", f"{metrics_df['F1 Score'].max():.3f}")
-            
-            # ==================== CONFUSION MATRIX ====================
-            st.markdown("---")
-            st.markdown("#### 📊 Confusion Matrices")
-            
-            selected_model = st.selectbox("Select model to view Confusion Matrix", list(evaluation_results.keys()))
-            
-            if selected_model:
-                cm = evaluation_results[selected_model].get('confusion_matrix')
-                if cm is not None and cm.size > 0:
-                    n_classes = cm.shape[0]
-                    try:
-                        fig_cm = go.Figure(data=go.Heatmap(
-                            z=cm,
-                            x=[f'Predicted {i}' for i in range(n_classes)],
-                            y=[f'Actual {i}' for i in range(n_classes)],
-                            colorscale='Blues',
-                            text=[[str(int(val)) for val in row] for row in cm],
-                            texttemplate="%{text}",
-                            textfont={"size": 14},
-                            showscale=True
-                        ))
-                        fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
-                        st.plotly_chart(fig_cm, use_container_width=True)
-                    except:
-                        st.dataframe(pd.DataFrame(cm))
-                    
-                    with st.expander("📋 Per-Class Metrics"):
-                        cm_df = pd.DataFrame(cm, columns=[f'Predicted {i}' for i in range(n_classes)],
-                                            index=[f'Actual {i}' for i in range(n_classes)])
-                        st.dataframe(cm_df)
-                        metrics_list = []
-                        for i in range(n_classes):
-                            tp = int(cm[i, i])
-                            fp = int(cm[:, i].sum()) - tp
-                            fn = int(cm[i, :].sum()) - tp
-                            prec = tp/(tp+fp) if (tp+fp) > 0 else 0
-                            rec = tp/(tp+fn) if (tp+fn) > 0 else 0
-                            f1_val = 2*prec*rec/(prec+rec) if (prec+rec) > 0 else 0
-                            metrics_list.append({
-                                'Class': f'Class {i}',
-                                'Precision': round(prec, 3),
-                                'Recall': round(rec, 3),
-                                'F1-Score': round(f1_val, 3),
-                                'Support': int(cm[i, :].sum())
-                            })
-                        st.dataframe(pd.DataFrame(metrics_list))
-            
-            # ==================== CLASSIFICATION REPORT ====================
-            st.markdown("---")
-            st.markdown("#### 📋 Detailed Classification Reports")
-            
-            model_for_report = st.selectbox("Select model for detailed report", 
-                                           list(evaluation_results.keys()), key='report_select')
-            
-            if model_for_report in evaluation_results:
-                col1, col2 = st.columns([3, 2])
-                with col1:
-                    st.code(evaluation_results[model_for_report]['classification_report'])
-                with col2:
-                    st.metric("Accuracy", f"{evaluation_results[model_for_report]['accuracy']:.3f}")
-                    st.metric("F1 Score", f"{evaluation_results[model_for_report]['f1_score']:.3f}")
-            
-            # ==================== FINAL SUMMARY TABLE ====================
-            st.markdown("---")
-            st.markdown("#### 📊 Summary of Best F1 Scores")
-            
-            summary_data = []
-            for name, results in evaluation_results.items():
-                summary_data.append({
-                    'Model': name,
-                    'F1-Score (Weighted)': f"{results['f1_score']:.4f}",
-                    'Accuracy': f"{results['accuracy']:.4f}"
-                })
-            
-            summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
-            
-            st.success(f"🏆 **Conclusion:** The **{best_model_name}** performed best with F1-Score = **{best_f1:.4f}** (weighted average)")
-        
-        else:
-            st.warning("⚠️ No evaluation results available.")
-    
-    # ==================== AUTO MULTI-TARGET EVALUATION ====================
-    elif section == "📊 Auto Multi-Target Evaluation":
-        st.markdown('<p class="section-header">📊 Auto Multi-Target Evaluation</p>', unsafe_allow_html=True)
-        
-        data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
-        
-        if data_to_use is None:
-            st.warning("⚠️ Please load and preprocess data first!")
-            return
-        
-        df = data_to_use
-        
-        st.markdown("### 🎯 Automatic Multi-Target Model Evaluation")
-        st.info("This section automatically trains models on BOTH Risk_Type and Risk_Level and compares results.")
-        
-        # Define targets to evaluate
-        target_columns = []
-        if 'Risk_Type' in df.columns:
-            target_columns.append('Risk_Type')
-        if 'Risk_Level' in df.columns:
-            target_columns.append('Risk_Level')
-        
-        if len(target_columns) == 0:
-            st.error("❌ Neither 'Risk_Type' nor 'Risk_Level' columns found in dataset!")
-            return
-        
-        if st.button("🚀 Run Auto Multi-Target Evaluation", type="primary", use_container_width=True):
-            
-            all_results = {}
-            
-            for target_col in target_columns:
-                st.markdown("---")
-                st.markdown(f"## 🎯 Target: **{target_col}**")
-                
-                with st.spinner(f'Training models for {target_col}...'):
-                    
-                    # Prepare features (all numeric columns except target)
-                    feature_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
-                    if target_col in feature_cols:
-                        feature_cols.remove(target_col)
-                    
-                    # Prepare data
-                    X = df[feature_cols].select_dtypes(include=['float64', 'int64', 'int32'])
-                    y = df[target_col]
-                    
-                    # Handle missing
-                    mask = y.notna()
-                    X = X[mask]
-                    y = y[mask]
-                    
-                    if y.dtype == 'object':
-                        le = LabelEncoder()
-                        y = pd.Series(le.fit_transform(y), index=y.index)
-                    
-                    X = X.fillna(X.median())
-                    
-                    # Split
-                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-                    
-                    # Train models
-                    models = {}
-                    
-                    # Logistic Regression
-                    try:
-                        lr = LogisticRegression(random_state=42, max_iter=500, class_weight='balanced', n_jobs=-1)
-                        lr.fit(X_train, y_train)
-                        models['Logistic Regression'] = lr
-                    except:
-                        pass
-                    
-                    # Random Forest
-                    try:
-                        rf = RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced', n_jobs=-1)
-                        rf.fit(X_train, y_train)
-                        models['Random Forest'] = rf
-                    except:
-                        pass
-                    
-                    # Decision Tree
-                    try:
-                        dt = DecisionTreeClassifier(random_state=42, max_depth=8, class_weight='balanced')
-                        dt.fit(X_train, y_train)
-                        models['Decision Tree'] = dt
-                    except:
-                        pass
-                    
-                    # Evaluate each model
-                    results_for_target = {}
-                    for name, model in models.items():
-                        y_pred = model.predict(X_test)
-                        results_for_target[name] = {
-                            'accuracy': accuracy_score(y_test, y_pred),
-                            'f1_score': f1_score(y_test, y_pred, average='weighted'),
-                            'confusion_matrix': confusion_matrix(y_test, y_pred),
-                            'classification_report': classification_report(y_test, y_pred)
-                        }
-                    
-                    all_results[target_col] = results_for_target
-                    
-                    # Display results for this target
-                    st.markdown(f"**From your evaluation for {target_col} prediction:**")
-                    st.markdown("")
-                    
-                    for name, res in results_for_target.items():
-                        f1 = res['f1_score']
-                        st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average)")
-                        st.markdown("")
-                    
-                    # Best model for this target
-                    best_model = max(results_for_target.items(), key=lambda x: x[1]['f1_score'])
-                    st.markdown(f"""
-                    <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 15px; margin: 10px 0;">
-                        <p style="margin: 0; color: #155724;">
-                            ✅ The <b>{best_model[0]}</b> performed best for <b>{target_col}</b> prediction 
-                            with an F1-Score of <b>{best_model[1]['f1_score']:.4f}</b>.
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Comparison table
-                    st.markdown("**Performance Comparison:**")
-                    comp_data = []
-                    for name, res in results_for_target.items():
-                        comp_data.append({
-                            'Model': name,
-                            'Accuracy': f"{res['accuracy']:.4f}",
-                            'F1-Score': f"{res['f1_score']:.4f}"
-                        })
-                    st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
-            
-            # ==================== FINAL SUMMARY TABLE ====================
-            st.markdown("---")
-            st.markdown("## 📊 Summary of Best F1 Scores Across All Targets")
-            
-            final_summary = []
-            for target, results in all_results.items():
-                best = max(results.items(), key=lambda x: x[1]['f1_score'])
-                final_summary.append({
-                    'Target Variable': target,
-                    'Best Model': best[0],
-                    'F1-Score': f"{best[1]['f1_score']:.4f}",
-                    'Accuracy': f"{best[1]['accuracy']:.4f}"
-                })
-            
-            final_df = pd.DataFrame(final_summary)
-            st.dataframe(final_df, use_container_width=True, hide_index=True)
-            
-            # Overall conclusion
-            st.markdown("---")
-            st.markdown("### 💡 Overall Conclusion")
-            for row in final_summary:
-                st.markdown(f"""
-                - **{row['Target Variable']}**: Best model is **{row['Best Model']}** with F1-Score = **{row['F1-Score']}**
-                """)
-    
-    # ==================== FEATURE IMPORTANCE ====================
-    elif section == "🎯 Feature Importance":
-        st.markdown('<p class="section-header">🎯 Feature Importance Analysis</p>', 
-                   unsafe_allow_html=True)
-        
-        if st.session_state.feature_importance is not None:
-            importance_df = st.session_state.feature_importance
-            
-            st.markdown("### 🌲 Feature Importance from Random Forest")
-            
-            fig = px.bar(
-                importance_df.nlargest(20, 'importance'),
-                x='importance',
-                y='feature',
-                orientation='h',
-                title='Top 20 Most Important Features',
-                color='importance',
-                color_continuous_scale='Viridis'
-            )
-            fig.update_layout(height=600)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("### 📊 Feature Importance Table")
-            
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                display_df = importance_df.copy()
-                display_df['importance'] = display_df['importance'].round(4)
-                display_df['percentage'] = (display_df['importance'] / display_df['importance'].sum() * 100).round(2)
-                display_df = display_df.sort_values('importance', ascending=False)
-                
-                st.dataframe(
-                    display_df,
-                    column_config={
-                        "feature": st.column_config.TextColumn("Feature"),
-                        "importance": st.column_config.NumberColumn("Importance", format="%.4f"),
-                        "percentage": st.column_config.NumberColumn("Percentage %", format="%.2f%%"),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                )
-            
-            with col2:
-                st.markdown("**Top 5 Features**")
-                top5 = importance_df.nlargest(5, 'importance')
-                for idx, (_, row) in enumerate(top5.iterrows(), 1):
-                    st.metric(f"#{idx} {row['feature'][:20]}", f"{row['importance']:.3f}")
-            
-            st.markdown("---")
-            st.markdown("### 📈 Feature Importance Details")
-            
-            top_features = importance_df.nlargest(15, 'importance')
-            
-            fig_table = px.bar(
-                top_features,
-                x='importance',
-                y='feature',
-                orientation='h',
-                text=top_features['importance'].apply(lambda x: f'{x:.4f}'),
-                title='Feature Importance Scores',
-                color='importance',
-                color_continuous_scale='Blues'
-            )
-            fig_table.update_traces(textposition='outside')
-            fig_table.update_layout(height=500)
-            st.plotly_chart(fig_table, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("### 💡 Feature Importance Interpretation")
-            
-            top_3 = importance_df.nlargest(3, 'importance')
-            
-            for idx, (index, row) in enumerate(top_3.iterrows()):
-                col1, col2 = st.columns([1, 3])
-                with col1:
-                    st.markdown(f"### #{idx+1}")
-                with col2:
-                    st.markdown(f"**{row['feature']}**")
-                    st.markdown(f"Importance Score: **{row['importance']:.4f}**")
-                    st.progress(
-                        float(row['importance'] / importance_df['importance'].max()),
-                        text=f"{row['importance']/importance_df['importance'].max()*100:.1f}% of max"
-                    )
-            
-            st.markdown("---")
-            csv = importance_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Feature Importance (CSV)",
-                data=csv,
-                file_name="feature_importance.csv",
-                mime="text/csv",
-            )
-            
-        else:
-            st.warning("⚠️ Please calculate feature importance in the Feature Engineering section first!")
-            
-            st.info("""
-            **How to get feature importance:**
-            1. Go to **Feature Engineering** section
-            2. Select a target variable
-            3. Click "Calculate Feature Importance"
-            4. Return here to view results
-            """)
-    
-    # ==================== POLYMER ANALYSIS ====================
-    elif section == "🧬 Polymer Analysis":
-        st.markdown('<p class="section-header">🧬 Polymer Type Analysis</p>', unsafe_allow_html=True)
-        
-        data_to_use = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
-        
-        if data_to_use is None:
-            st.warning("⚠️ Please load data first!")
-            return
-        
-        df = data_to_use
-        
-        st.markdown("### 🧪 Polymer Type Distribution")
-        
-        if 'Polymer_Type' in df.columns:
-            polymer_counts = df['Polymer_Type'].value_counts()
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("#### 📊 Bar Chart")
-                fig_bar = px.bar(
-                    x=polymer_counts.index,
-                    y=polymer_counts.values,
-                    title='Polymer Type Distribution',
-                    labels={'x': 'Polymer Type', 'y': 'Count'},
-                    color=polymer_counts.values,
-                    color_continuous_scale='Viridis'
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-            
-            with col2:
-                st.markdown("#### 🥧 Pie Chart")
-                fig_pie = px.pie(
-                    values=polymer_counts.values,
-                    names=polymer_counts.index,
-                    title='Polymer Type Distribution'
-                )
-                st.plotly_chart(fig_pie, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("### 📊 Polymer Statistics")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Polymer Types", len(polymer_counts))
-            with col2:
-                st.metric("Most Common", polymer_counts.index[0])
-            with col3:
-                st.metric("Most Common Count", polymer_counts.values[0])
-            
-            st.markdown("---")
-            st.markdown("### 🔬 Polymer Type vs Risk Level")
-            
-            if 'Risk_Level' in df.columns:
-                fig_cross = px.histogram(
-                    df, x='Polymer_Type', color='Risk_Level',
-                    title='Polymer Type Distribution by Risk Level',
-                    barmode='group'
-                )
-                fig_cross.update_layout(height=500)
-                st.plotly_chart(fig_cross, use_container_width=True)
-        else:
-            st.warning("⚠️ 'Polymer_Type' column not found in dataset")
-            st.write("Available columns in dataset:")
-            st.write(df.columns.tolist())
 
 
 if __name__ == "__main__":
