@@ -508,12 +508,12 @@ def main():
             
             st.dataframe(df.head(10), use_container_width=True)
             
-            # ===== FEATURE SCALING PREVIEW =====
+            # ===== FEATURE SCALING PREVIEW (HOME) =====
             st.markdown("---")
             st.markdown("### 📏 Feature Scaling Preview")
             st.markdown("*Apply StandardScaler to numerical columns*")
             
-            if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary"):
+            if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary", key="scale_home"):
                 with st.spinner('Applying StandardScaler to numerical columns...'):
                     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
                     cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
@@ -564,129 +564,53 @@ def main():
                 clean_df = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
                 
                 if len(clean_df) > 0:
-                    # Tabs for different views
                     tab1, tab2, tab3 = st.tabs(["📊 Scatter Plot", "📈 With Trendline", "📋 Correlation Stats"])
                     
                     with tab1:
                         st.markdown("#### 📊 Scatter Plot - MP Count vs Risk Score")
                         fig_scatter = px.scatter(
-                            clean_df,
-                            x='MP_Count_per_L',
-                            y='Risk_Score',
+                            clean_df, x='MP_Count_per_L', y='Risk_Score',
                             color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
                             title='Relationship between MP Count per Liter and Risk Score',
-                            labels={
-                                'MP_Count_per_L': 'MP Count per Liter',
-                                'Risk_Score': 'Risk Score',
-                                'Risk_Level': 'Risk Level'
-                            },
+                            labels={'MP_Count_per_L': 'MP Count per Liter', 'Risk_Score': 'Risk Score'},
                             color_discrete_sequence=px.colors.qualitative.Set2,
-                            opacity=0.7,
-                            size_max=10
+                            opacity=0.7, size_max=10
                         )
                         fig_scatter.update_layout(height=500)
                         st.plotly_chart(fig_scatter, use_container_width=True)
-                        
                         st.markdown("""
-                        **📖 How to interpret the Scatter Plot:**
-                        - Each point represents one sample
-                        - **X-axis**: MP Count per Liter (concentration of microplastics)
-                        - **Y-axis**: Risk Score (overall risk assessment)
-                        - **Color**: Risk Level category (if available)
-                        - Look for patterns: Do higher MP counts correspond to higher risk scores?
+                        **📖 How to interpret:** Each point represents one sample. X-axis: MP Count per Liter, Y-axis: Risk Score.
                         """)
                     
                     with tab2:
                         st.markdown("#### 📈 Scatter Plot with Trendline")
                         try:
                             fig_trend = px.scatter(
-                                clean_df,
-                                x='MP_Count_per_L',
-                                y='Risk_Score',
+                                clean_df, x='MP_Count_per_L', y='Risk_Score',
                                 color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-                                trendline='ols',
-                                title='MP Count vs Risk Score with Trendline',
-                                labels={
-                                    'MP_Count_per_L': 'MP Count per Liter',
-                                    'Risk_Score': 'Risk Score'
-                                },
-                                color_discrete_sequence=px.colors.qualitative.Set2,
-                                opacity=0.7
+                                trendline='ols', title='MP Count vs Risk Score with Trendline',
+                                labels={'MP_Count_per_L': 'MP Count per Liter', 'Risk_Score': 'Risk Score'},
+                                color_discrete_sequence=px.colors.qualitative.Set2, opacity=0.7
                             )
                             fig_trend.update_layout(height=500)
                             st.plotly_chart(fig_trend, use_container_width=True)
-                            
-                            st.markdown("""
-                            **📖 How to interpret the Trendline:**
-                            - **OLS Trendline**: Ordinary Least Squares regression line
-                            - Shows the overall direction of the relationship
-                            - **Upward slope**: Higher MP count → Higher Risk Score (positive correlation)
-                            - **Flat slope**: No clear relationship
-                            - **Downward slope**: Higher MP count → Lower Risk Score (negative correlation)
-                            """)
                         except:
                             st.warning("⚠️ Could not generate trendline. Showing scatter only.")
-                            fig_scatter2 = px.scatter(
-                                clean_df,
-                                x='MP_Count_per_L',
-                                y='Risk_Score',
-                                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
-                                title='MP Count vs Risk Score',
-                                labels={
-                                    'MP_Count_per_L': 'MP Count per Liter',
-                                    'Risk_Score': 'Risk Score'
-                                },
-                                color_discrete_sequence=px.colors.qualitative.Set2,
-                                opacity=0.7
-                            )
-                            fig_scatter2.update_layout(height=500)
-                            st.plotly_chart(fig_scatter2, use_container_width=True)
                     
                     with tab3:
                         st.markdown("#### 📋 Correlation Statistics")
-                        
-                        # Calculate correlation
                         correlation = clean_df['MP_Count_per_L'].corr(clean_df['Risk_Score'])
-                        
-                        # Statistics
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.markdown("**📊 Correlation Analysis**")
                             stats_data = [
-                                ('Correlation Coefficient (r)', f'{correlation:.4f}'),
-                                ('Correlation Strength', 
-                                 'Strong Positive' if correlation > 0.7 else
-                                 'Moderate Positive' if correlation > 0.4 else
-                                 'Weak Positive' if correlation > 0 else
-                                 'Strong Negative' if correlation < -0.7 else
-                                 'Moderate Negative' if correlation < -0.4 else
-                                 'Weak Negative' if correlation < 0 else 'None'),
+                                ('Correlation (r)', f'{correlation:.4f}'),
                                 ('R-squared (r²)', f'{correlation**2:.4f}'),
                                 ('Sample Count', f'{len(clean_df):,}'),
                                 ('Mean MP Count', f'{clean_df["MP_Count_per_L"].mean():.2f}'),
                                 ('Mean Risk Score', f'{clean_df["Risk_Score"].mean():.2f}'),
                             ]
-                            stats_df = pd.DataFrame(stats_data, columns=['Statistic', 'Value'])
-                            st.dataframe(stats_df, use_container_width=True, hide_index=True)
-                        
+                            st.dataframe(pd.DataFrame(stats_data, columns=['Statistic','Value']), use_container_width=True, hide_index=True)
                         with col2:
-                            st.markdown("**📈 Regression Summary**")
-                            # Simple linear regression
-                            from sklearn.linear_model import LinearRegression
-                            X_reg = clean_df[['MP_Count_per_L']].values
-                            y_reg = clean_df['Risk_Score'].values
-                            reg = LinearRegression().fit(X_reg, y_reg)
-                            
-                            reg_stats = [
-                                ('Slope (β₁)', f'{reg.coef_[0]:.4f}'),
-                                ('Intercept (β₀)', f'{reg.intercept_:.4f}'),
-                                ('Interpretation', f'For every 1 unit increase in MP Count, Risk Score changes by {reg.coef_[0]:.4f}'),
-                            ]
-                            reg_df = pd.DataFrame(reg_stats, columns=['Statistic', 'Value'])
-                            st.dataframe(reg_df, use_container_width=True, hide_index=True)
-                            
-                            # Correlation gauge
-                            st.markdown("**📊 Correlation Strength Gauge**")
                             abs_corr = abs(correlation)
                             if correlation > 0:
                                 st.progress(abs_corr, text=f"Positive Correlation: {correlation:.3f}")
@@ -709,139 +633,64 @@ def main():
                     tab1, tab2, tab3 = st.tabs(["📦 Box Plot", "🎻 Violin Plot", "📊 Statistics"])
                     
                     with tab1:
-                        st.markdown("#### 📦 Box Plot - Risk Score by Risk Level")
-                        fig_box = px.box(
-                            clean_df, 
-                            x='Risk_Level', 
-                            y='Risk_Score', 
-                            color='Risk_Level',
-                            title='Risk Score Distribution by Risk Level (Box Plot)',
-                            color_discrete_sequence=px.colors.qualitative.Set2,
-                            points='outliers'
-                        )
-                        fig_box.update_layout(height=500, showlegend=True)
+                        fig_box = px.box(clean_df, x='Risk_Level', y='Risk_Score', color='Risk_Level',
+                                        title='Risk Score Distribution by Risk Level (Box Plot)',
+                                        color_discrete_sequence=px.colors.qualitative.Set2, points='outliers')
+                        fig_box.update_layout(height=500)
                         st.plotly_chart(fig_box, use_container_width=True)
-                        
-                        st.markdown("""
-                        **📖 How to interpret the Box Plot:**
-                        - **Box**: Shows the middle 50% of scores (Q1 to Q3)
-                        - **Line in box**: Median score
-                        - **Whiskers**: Range of typical scores (1.5 × IQR)
-                        - **Dots beyond whiskers**: Outliers (unusual scores)
-                        - **Wider box**: More variation in that risk level
-                        """)
                     
                     with tab2:
-                        st.markdown("#### 🎻 Violin Plot - Risk Score by Risk Level")
                         fig_violin = go.Figure()
-                        
                         risk_levels = sorted(clean_df['Risk_Level'].dropna().unique())
                         colors = px.colors.qualitative.Set2[:len(risk_levels)]
-                        
                         for i, level in enumerate(risk_levels):
                             level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
-                            fig_violin.add_trace(go.Violin(
-                                y=level_data,
-                                name=str(level),
-                                box_visible=True,
-                                meanline_visible=True,
+                            fig_violin.add_trace(go.Violin(y=level_data, name=str(level),
+                                box_visible=True, meanline_visible=True,
                                 line_color=colors[i % len(colors)],
-                                fillcolor=colors[i % len(colors)],
-                                opacity=0.7
-                            ))
-                        
-                        fig_violin.update_layout(
-                            title='Risk Score Distribution by Risk Level (Violin Plot)',
-                            yaxis_title='Risk Score',
-                            height=500
-                        )
+                                fillcolor=colors[i % len(colors)], opacity=0.7))
+                        fig_violin.update_layout(title='Risk Score Distribution by Risk Level (Violin Plot)',
+                                                yaxis_title='Risk Score', height=500)
                         st.plotly_chart(fig_violin, use_container_width=True)
-                        
-                        st.markdown("""
-                        **📖 How to interpret the Violin Plot:**
-                        - **Width**: Shows how many samples have that score (wider = more samples)
-                        - **White dot**: Median score
-                        - **Thick bar**: Middle 50% of scores
-                        - **Shape**: Shows the distribution pattern (peaks, gaps, symmetry)
-                        """)
                     
                     with tab3:
-                        st.markdown("#### 📊 Risk Score Statistics by Risk Level")
-                        
                         risk_level_stats = clean_df.groupby('Risk_Level')['Risk_Score'].agg([
-                            ('Count', 'count'),
-                            ('Mean', 'mean'),
-                            ('Median', 'median'),
-                            ('Std Dev', 'std'),
-                            ('Min', 'min'),
-                            ('Q1', lambda x: x.quantile(0.25)),
-                            ('Q3', lambda x: x.quantile(0.75)),
-                            ('Max', 'max'),
-                            ('Range', lambda x: x.max() - x.min()),
-                            ('IQR', lambda x: x.quantile(0.75) - x.quantile(0.25)),
+                            ('Count','count'),('Mean','mean'),('Median','median'),
+                            ('Std Dev','std'),('Min','min'),('Max','max')
                         ]).round(2)
+                        risk_level_stats.columns = ['Count','Mean','Median','Std Dev','Min','Max']
+                        st.dataframe(risk_level_stats, use_container_width=True)
                         
-                        st.dataframe(
-                            risk_level_stats,
-                            column_config={
-                                "Count": st.column_config.NumberColumn("Count", format="%d"),
-                                "Mean": st.column_config.NumberColumn("Mean", format="%.2f"),
-                                "Median": st.column_config.NumberColumn("Median", format="%.2f"),
-                                "Std Dev": st.column_config.NumberColumn("Std Dev", format="%.2f"),
-                                "Min": st.column_config.NumberColumn("Min", format="%.2f"),
-                                "Q1": st.column_config.NumberColumn("Q1", format="%.2f"),
-                                "Q3": st.column_config.NumberColumn("Q3", format="%.2f"),
-                                "Max": st.column_config.NumberColumn("Max", format="%.2f"),
-                                "Range": st.column_config.NumberColumn("Range", format="%.2f"),
-                                "IQR": st.column_config.NumberColumn("IQR", format="%.2f"),
-                            },
-                            use_container_width=True,
-                        )
-                        
-                        st.markdown("---")
                         st.markdown("#### 🔍 Key Findings")
-                        
                         for level in risk_levels:
                             level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
-                            st.markdown(f"""
-                            **{level} Risk Level:**
-                            - Count: **{len(level_data):,}** samples
-                            - Mean Score: **{level_data.mean():.2f}** | Median: **{level_data.median():.2f}**
-                            - Range: **{level_data.min():.2f}** to **{level_data.max():.2f}**
-                            - Standard Deviation: **{level_data.std():.2f}**
-                            """)
+                            st.markdown(f"**{level}:** Count={len(level_data):,}, Mean={level_data.mean():.2f}, "
+                                       f"Median={level_data.median():.2f}, Range={level_data.min():.2f}-{level_data.max():.2f}")
             
             # ===== DATASET INFORMATION =====
             st.markdown("---")
             st.markdown("#### Dataset Information")
-            
             col1, col2 = st.columns(2)
             with col1:
-                st.write("**Data Types:**")
-                st.write(df.dtypes)
+                st.write("**Data Types:**", df.dtypes)
             with col2:
-                st.write("**Basic Statistics:**")
-                st.write(df.describe())
+                st.write("**Basic Statistics:**", df.describe())
             
             # ===== QUICK DATA QUALITY CHECK =====
             st.markdown("---")
             st.markdown("#### 🔍 Quick Data Quality Check")
-            
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100
                 st.metric("Missing Data %", f"{missing_pct:.2f}%")
             with col2:
-                duplicate_rows = df.duplicated().sum()
-                st.metric("Duplicate Rows", duplicate_rows)
+                st.metric("Duplicate Rows", df.duplicated().sum())
             with col3:
-                num_cols_count = len(df.select_dtypes(include=['float64', 'int64']).columns)
-                st.metric("Numeric Columns", num_cols_count)
+                st.metric("Numeric Columns", len(df.select_dtypes(include=['float64','int64']).columns))
             with col4:
-                cat_cols_count = len(df.select_dtypes(include=['object']).columns)
-                st.metric("Categorical Columns", cat_cols_count)
+                st.metric("Categorical Columns", len(df.select_dtypes(include=['object']).columns))
     
-    # ==================== PREPROCESSING ====================
+    # ==================== PREPROCESSING (WITH FEATURE SCALING) ====================
     elif section == "🔧 Preprocessing":
         st.markdown('<p class="section-header">🔧 Data Preprocessing</p>', unsafe_allow_html=True)
         
@@ -851,10 +700,57 @@ def main():
         
         df = st.session_state.data.copy()
         
+        # ===== FEATURE SCALING PREVIEW (PREPROCESSING) =====
+        st.markdown("### 📏 Perform Feature Scaling")
+        st.markdown("*Apply StandardScaler to the numerical columns*")
+        
+        if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary", key="scale_preprocess"):
+            with st.spinner('Applying StandardScaler to numerical columns...'):
+                numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
+                
+                if len(cols_to_scale) > 0:
+                    scaler = StandardScaler()
+                    scaled_data = scaler.fit_transform(df[cols_to_scale].fillna(df[cols_to_scale].median()))
+                    scaled_df = pd.DataFrame(scaled_data, columns=cols_to_scale)
+                    
+                    st.session_state.scaler = scaler
+                    st.session_state.scaled_columns = cols_to_scale
+                    st.session_state.scaled_data = scaled_df
+                    
+                    st.success(f"✅ Feature scaling applied to {len(cols_to_scale)} numerical columns!")
+                    
+                    st.markdown("**First 5 rows of scaled numerical data:**")
+                    st.dataframe(
+                        scaled_df.head(),
+                        column_config={
+                            col: st.column_config.NumberColumn(col, format="%.6f") 
+                            for col in cols_to_scale
+                        },
+                        use_container_width=True,
+                    )
+                    
+                    with st.expander("📊 Scaling Statistics (Before vs After)"):
+                        stats_list = []
+                        for col in cols_to_scale[:10]:
+                            stats_list.append({
+                                'Column': col,
+                                'Mean (Before)': f"{df[col].mean():.4f}",
+                                'Std (Before)': f"{df[col].std():.4f}",
+                                'Mean (After)': f"{scaled_df[col].mean():.6f}",
+                                'Std (After)': f"{scaled_df[col].std():.6f}",
+                            })
+                        st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
+                else:
+                    st.warning("⚠️ No numerical columns found to scale.")
+        
+        st.markdown("---")
+        st.markdown("### 🔧 Additional Preprocessing Steps")
+        
         preprocessing_options = st.multiselect(
             "Select Preprocessing Steps",
             ["Handle Missing Values", "Encode Categorical Variables",
-             "Detect Outliers", "Scale Features"],
+             "Detect Outliers", "Scale Features (Apply to Full Dataset)"],
             default=["Handle Missing Values", "Encode Categorical Variables"]
         )
         
@@ -890,7 +786,7 @@ def main():
                     if info['count'] > 0:
                         st.write(f"**{col}**: {info['count']} outliers ({info['percentage']:.1f}%)")
             
-            if "Scale Features" in preprocessing_options:
+            if "Scale Features (Apply to Full Dataset)" in preprocessing_options:
                 st.markdown("### 📏 Feature Scaling")
                 numeric_cols = processed_df.select_dtypes(include=['float64', 'int64']).columns
                 processed_df = scale_features(processed_df, numeric_cols)
@@ -1088,9 +984,9 @@ def main():
             fast_mode = st.checkbox("⚡ Fast Training Mode", value=True, 
                                    help="Enable for faster training (recommended)")
             if fast_mode:
-                st.success("⚡ Fast mode enabled: Training will be optimized for speed")
+                st.success("⚡ Fast mode enabled")
             else:
-                st.info("🔬 Quality mode: Training will use GridSearchCV for better results (slower)")
+                st.info("🔬 Quality mode: GridSearchCV")
         
         if st.button("🚀 Train Models", type="primary", use_container_width=True):
             if len(feature_cols) == 0:
@@ -1111,16 +1007,14 @@ def main():
                     if use_stratify:
                         X_train, X_test, y_train, y_test = train_test_split(
                             X, y, test_size=test_size, random_state=random_state, stratify=y)
-                        st.success("✅ Data split with stratification")
                     else:
                         X_train, X_test, y_train, y_test = train_test_split(
                             X, y, test_size=test_size, random_state=random_state)
-                        st.info("ℹ️ Data split without stratification")
                 except:
                     X_train, X_test, y_train, y_test = train_test_split(
                         X, y, test_size=test_size, random_state=random_state)
                 
-                st.info(f"📊 Training set: {X_train.shape[0]} samples, Test set: {X_test.shape[0]} samples")
+                st.info(f"📊 Training: {X_train.shape[0]} | Test: {X_test.shape[0]}")
                 
                 if use_smote:
                     train_class_counts = pd.Series(y_train).value_counts()
@@ -1128,16 +1022,16 @@ def main():
                         try:
                             smote = SMOTE(random_state=random_state, k_neighbors=min(5, train_class_counts.min()-1))
                             X_train, y_train = smote.fit_resample(X_train, y_train)
-                            st.success("✅ SMOTE applied successfully!")
+                            st.success("✅ SMOTE applied!")
                         except:
-                            st.warning("⚠️ SMOTE failed. Training without SMOTE...")
+                            st.warning("⚠️ SMOTE failed")
                 
                 total_start = time.time()
                 if fast_mode:
-                    with st.spinner('⚡ Training models in FAST mode...'):
+                    with st.spinner('⚡ Training models...'):
                         models, training_times = train_models_fast(X_train, X_test, y_train, y_test)
                 else:
-                    with st.spinner('🔬 Training models in QUALITY mode...'):
+                    with st.spinner('🔬 Training models...'):
                         models, training_times = train_models_quality(X_train, X_test, y_train, y_test)
                 total_time = time.time() - total_start
                 
@@ -1149,11 +1043,10 @@ def main():
                     st.session_state.y_train = y_train
                     st.session_state.trained = True
                     
-                    st.success(f"✅ Successfully trained {len(models)} models in {total_time:.2f} seconds!")
-                    if fast_mode:
-                        st.balloons()
+                    st.success(f"✅ {len(models)} models trained in {total_time:.2f}s!")
+                    st.balloons()
                     
-                    # ==================== MODEL PERFORMANCE RESULTS ====================
+                    # Results
                     st.markdown("---")
                     st.markdown("## 📊 Model Performance Results")
                     
@@ -1171,14 +1064,12 @@ def main():
                             <h2 style="color: white; margin: 0;">📊 Average Model Performance</h2>
                             <div style="display: flex; justify-content: center; gap: 40px; margin-top: 15px;">
                                 <div>
-                                    <p style="color: #ffd700; margin: 0; font-size: 1rem;">Average Accuracy</p>
+                                    <p style="color: #ffd700; margin: 0;">Average Accuracy</p>
                                     <p style="color: white; font-size: 2.5rem; font-weight: bold; margin: 5px 0;">{avg_acc:.4f}</p>
-                                    <p style="color: #ccc; font-size: 0.9rem;">({avg_acc*100:.1f}%)</p>
                                 </div>
                                 <div style="border-left: 2px solid rgba(255,255,255,0.3); padding-left: 40px;">
-                                    <p style="color: #ffd700; margin: 0; font-size: 1rem;">Average F1 Score</p>
+                                    <p style="color: #ffd700; margin: 0;">Average F1 Score</p>
                                     <p style="color: white; font-size: 2.5rem; font-weight: bold; margin: 5px 0;">{avg_f1:.4f}</p>
-                                    <p style="color: #ccc; font-size: 0.9rem;">({avg_f1*100:.1f}%)</p>
                                 </div>
                             </div>
                         </div>
@@ -1186,104 +1077,74 @@ def main():
                         
                         target_name = target_col
                         st.markdown(f"**From your evaluation for {target_name} prediction:**")
-                        st.markdown("")
-                        
                         for name, results in eval_results.items():
                             f1 = results['f1_score']
                             acc = results['accuracy']
-                            st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** (weighted average) | Accuracy = **{acc:.4f}**")
-                            st.markdown("")
+                            st.markdown(f"**{name}:** F1-Score = **{f1:.4f}** | Accuracy = **{acc:.4f}**")
                         
                         best_model_name = max(eval_results.items(), key=lambda x: x[1]['f1_score'])[0]
                         best_f1 = max(eval_results.items(), key=lambda x: x[1]['f1_score'])[1]['f1_score']
                         
-                        st.markdown("---")
                         st.markdown(f"""
                         <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
                             <p style="font-size: 1.1rem; margin: 0; color: #155724;">
-                                ✅ The <b>{best_model_name}</b> performed best for <b>{target_name}</b> prediction 
-                                with an F1-Score of <b>{best_f1:.4f}</b> (weighted average).
+                                ✅ The <b>{best_model_name}</b> performed best with F1-Score of <b>{best_f1:.4f}</b>
                             </p>
                         </div>
                         """, unsafe_allow_html=True)
                         
+                        # Comparison Table
                         st.markdown("### 📊 Performance Comparison Table")
                         summary_data = []
                         for name, results in eval_results.items():
-                            summary_data.append({
-                                'Model': name,
-                                'Accuracy': results['accuracy'],
-                                'F1-Score': results['f1_score']
-                            })
+                            summary_data.append({'Model': name, 'Accuracy': results['accuracy'], 'F1-Score': results['f1_score']})
                         summary_data.append({'Model': '📊 AVERAGE', 'Accuracy': avg_acc, 'F1-Score': avg_f1})
-                        st.dataframe(pd.DataFrame(summary_data), 
-                                    column_config={
-                                        "Model": "Model",
-                                        "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.4f"),
-                                        "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.4f"),
-                                    }, use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(summary_data),
+                                    column_config={"Model":"Model","Accuracy":st.column_config.NumberColumn("Accuracy",format="%.4f"),
+                                                   "F1-Score":st.column_config.NumberColumn("F1-Score",format="%.4f")},
+                                    use_container_width=True, hide_index=True)
                         
+                        # Bar Chart
                         st.markdown("### 📈 Performance Metrics Comparison")
                         metrics_dict = {}
                         for name, results in eval_results.items():
-                            metrics_dict[name] = {
-                                'Accuracy': results['accuracy'],
-                                'F1 Score': results['f1_score']
-                            }
+                            metrics_dict[name] = {'Accuracy': results['accuracy'], 'F1 Score': results['f1_score']}
                         metrics_df = pd.DataFrame(metrics_dict).T
-                        
-                        fig_metrics = px.bar(
-                            metrics_df.reset_index(),
-                            x='index',
-                            y=['Accuracy', 'F1 Score'],
-                            barmode='group',
-                            title='Model Performance Comparison',
-                            labels={'index': 'Model', 'value': 'Score'},
-                            color_discrete_sequence=['#3498db', '#e74c3c']
-                        )
-                        fig_metrics.add_hline(y=avg_acc, line_dash="dash", line_color="#3498db", 
-                                             annotation_text=f"Avg Acc: {avg_acc:.3f}")
-                        fig_metrics.add_hline(y=avg_f1, line_dash="dash", line_color="#e74c3c", 
-                                             annotation_text=f"Avg F1: {avg_f1:.3f}")
+                        fig_metrics = px.bar(metrics_df.reset_index(), x='index', y=['Accuracy','F1 Score'],
+                                            barmode='group', title='Model Performance Comparison',
+                                            color_discrete_sequence=['#3498db','#e74c3c'])
+                        fig_metrics.add_hline(y=avg_acc, line_dash="dash", line_color="#3498db", annotation_text=f"Avg Acc: {avg_acc:.3f}")
+                        fig_metrics.add_hline(y=avg_f1, line_dash="dash", line_color="#e74c3c", annotation_text=f"Avg F1: {avg_f1:.3f}")
                         fig_metrics.update_layout(height=400)
                         st.plotly_chart(fig_metrics, use_container_width=True)
                         
+                        # Confusion Matrix
                         st.markdown("---")
                         st.markdown("### 🧩 Confusion Matrix")
-                        selected_model = st.selectbox("Select model to view Confusion Matrix", 
-                                                     list(eval_results.keys()), key='cm_model')
-                        
+                        selected_model = st.selectbox("Select model", list(eval_results.keys()), key='cm_model')
                         if selected_model:
                             cm = eval_results[selected_model].get('confusion_matrix')
                             if cm is not None and cm.size > 0:
                                 n_classes = cm.shape[0]
                                 fig_cm = go.Figure(data=go.Heatmap(
-                                    z=cm,
-                                    x=[f'Predicted {i}' for i in range(n_classes)],
+                                    z=cm, x=[f'Predicted {i}' for i in range(n_classes)],
                                     y=[f'Actual {i}' for i in range(n_classes)],
-                                    colorscale='Blues',
-                                    text=[[str(int(val)) for val in row] for row in cm],
-                                    texttemplate="%{text}",
-                                    textfont={"size": 14},
-                                    showscale=True
-                                ))
+                                    colorscale='Blues', text=[[str(int(val)) for val in row] for row in cm],
+                                    texttemplate="%{text}", textfont={"size":14}, showscale=True))
                                 fig_cm.update_layout(title=f'{selected_model} - Confusion Matrix', height=400)
                                 st.plotly_chart(fig_cm, use_container_width=True)
                         
+                        # Classification Report
                         st.markdown("---")
-                        st.markdown("### 📋 Classification Report")
-                        report_model = st.selectbox("Select model for detailed report", 
-                                                   list(eval_results.keys()), key='report_model')
+                        report_model = st.selectbox("Classification Report", list(eval_results.keys()), key='report_model')
                         if report_model:
                             st.code(eval_results[report_model]['classification_report'])
                         
                         st.success(f"🏆 Best: **{best_model_name}** | 📊 Avg Acc: **{avg_acc:.4f}** | 📊 Avg F1: **{avg_f1:.4f}**")
-                        
                 else:
-                    st.error("❌ No models were successfully trained. Please check your data and try again.")
+                    st.error("❌ No models were successfully trained.")
             except Exception as e:
-                st.error(f"Error during model training: {str(e)}")
-                st.info("💡 Tip: Try reducing the number of features or use a different target variable.")
+                st.error(f"Error: {str(e)}")
     
     # ==================== CROSS VALIDATION ====================
     elif section == "📊 Cross Validation":
