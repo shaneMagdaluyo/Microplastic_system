@@ -251,6 +251,7 @@ def train_and_evaluate_for_target(df, target_col):
         'target_col': target_col
     }
     
+    # Train models
     models = {}
     
     try:
@@ -271,16 +272,21 @@ def train_and_evaluate_for_target(df, target_col):
         models['GradientBoostingClassifier'] = gb
     except: pass
     
+    # Evaluate each model
     results = {}
     for name, model in models.items():
         y_pred = model.predict(X_test)
         results[name] = {
+            'model': model,
             'accuracy': accuracy_score(y_test, y_pred),
             'precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
             'recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
             'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division=0),
             'confusion_matrix': confusion_matrix(y_test, y_pred),
-            'classification_report': classification_report(y_test, y_pred, zero_division=0)
+            'classification_report': classification_report(y_test, y_pred, zero_division=0),
+            'y_test': y_test,
+            'y_pred': y_pred,
+            'X_test': X_test
         }
     
     return results, data_split_info
@@ -581,6 +587,7 @@ def main():
             
             if models:
                 st.session_state.models = models
+                st.session_state.X_test = X_test; st.session_state.y_test = y_test
                 st.session_state.trained = True
                 st.success(f"✅ {len(models)} models trained!")
                 for name, model in models.items():
@@ -596,27 +603,29 @@ def main():
         df = data.copy()
         
         # Tabs for different evaluations
-        eval_tab1, eval_tab2, eval_tab3 = st.tabs([
-            "📊 Evaluate Models for Risk Type", 
-            "📊 Compare Model Performance",
+        eval_tab1, eval_tab2, eval_tab3, eval_tab4 = st.tabs([
+            "📊 Evaluate Models", 
+            "📊 Prepare Data & Model Comparison",
+            "📊 Compare Both Targets",
             "🔄 Cross Validation"
         ])
         
-        # ===== TAB 1: EVALUATE MODELS FOR RISK TYPE =====
+        # ===== TAB 1: EVALUATE MODELS (Individual Evaluation) =====
         with eval_tab1:
-            st.markdown("### 📊 Evaluate Models for Risk Type")
-            st.markdown("*Define 'Risk_Type' as the target variable and split the selected features and 'Risk_Type' into training and testing sets*")
+            st.markdown("### 📊 Evaluate the Models")
+            st.markdown("*Evaluate the performance of each trained model on the testing data using appropriate metrics*")
+            st.markdown("*Import necessary metrics, make predictions on the testing data for each trained model, calculate the evaluation metrics (accuracy, precision, recall, and F1-score) using 'weighted' averaging for multi-class, and print the results for each model.*")
             
             target_col = 'Risk_Type'
             if target_col not in df.columns:
                 st.error(f"❌ '{target_col}' column not found!")
             else:
-                if st.button("🚀 Train & Evaluate for Risk_Type", type="primary", key="eval_risk_type"):
-                    with st.spinner('Training and evaluating models for Risk_Type...'):
+                if st.button("🚀 Evaluate Models", type="primary", key="eval_models"):
+                    with st.spinner('Training and evaluating models...'):
                         results, split_info = train_and_evaluate_for_target(df, target_col)
                     
                     if results:
-                        # Show data split information
+                        # Data split info
                         st.markdown("---")
                         st.markdown("### 📊 Data Split Information")
                         st.markdown(f"""
@@ -629,9 +638,13 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         
+                        # Evaluate each model individually
                         st.markdown("---")
-                        for name, res in results.items():
-                            st.markdown(f"### --- {name} Model Evaluation for '{target_col}' ---")
+                        
+                        # Evaluate Logistic Regression
+                        if 'Logistic Regression' in results:
+                            res = results['Logistic Regression']
+                            st.markdown("### # Evaluate Logistic Regression Model")
                             st.markdown(f"**Accuracy:** {res['accuracy']:.4f}")
                             st.markdown(f"**Precision:** {res['precision']:.4f}")
                             st.markdown(f"**Recall:** {res['recall']:.4f}")
@@ -639,8 +652,30 @@ def main():
                             st.markdown("---")
                             st.markdown("")
                         
-                        # Model Performance Comparison Table (like your example)
-                        st.markdown("### 📊 Model Performance Comparison")
+                        # Evaluate RandomForestClassifier
+                        if 'RandomForestClassifier' in results:
+                            res = results['RandomForestClassifier']
+                            st.markdown("### # Evaluate RandomForestClassifier Model")
+                            st.markdown(f"**Accuracy:** {res['accuracy']:.4f}")
+                            st.markdown(f"**Precision:** {res['precision']:.4f}")
+                            st.markdown(f"**Recall:** {res['recall']:.4f}")
+                            st.markdown(f"**F1-Score:** {res['f1_score']:.4f}")
+                            st.markdown("---")
+                            st.markdown("")
+                        
+                        # Evaluate GradientBoostingClassifier
+                        if 'GradientBoostingClassifier' in results:
+                            res = results['GradientBoostingClassifier']
+                            st.markdown("### # Evaluate GradientBoostingClassifier Model")
+                            st.markdown(f"**Accuracy:** {res['accuracy']:.4f}")
+                            st.markdown(f"**Precision:** {res['precision']:.4f}")
+                            st.markdown(f"**Recall:** {res['recall']:.4f}")
+                            st.markdown(f"**F1-Score:** {res['f1_score']:.4f}")
+                            st.markdown("---")
+                            st.markdown("")
+                        
+                        # Comparison Table
+                        st.markdown("### 📊 Model Performance Comparison ---")
                         metrics_data = []
                         for name, res in results.items():
                             metrics_data.append({
@@ -652,7 +687,6 @@ def main():
                             })
                         metrics_df = pd.DataFrame(metrics_data)
                         
-                        st.markdown("Model Performance Comparison ---")
                         st.dataframe(metrics_df, column_config={
                             "Model": st.column_config.TextColumn("Model"),
                             "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.6f"),
@@ -663,7 +697,7 @@ def main():
                         
                         # Bar chart
                         fig = px.bar(metrics_df, x='Model', y=['Accuracy','Precision','Recall','F1-Score'],
-                                    barmode='group', title='Model Performance - Risk_Type',
+                                    barmode='group', title='Model Performance Metrics',
                                     color_discrete_sequence=['#3498db','#e74c3c','#2ecc71','#f39c12'], height=400)
                         st.plotly_chart(fig, use_container_width=True)
                         
@@ -676,9 +710,59 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
         
-        # ===== TAB 2: COMPARE MODEL PERFORMANCE =====
+        # ===== TAB 2: PREPARE DATA & MODEL COMPARISON =====
         with eval_tab2:
-            st.markdown("### 📊 Compare Model Performance")
+            st.markdown("### 📊 Prepare Data for Risk Type Modeling & Model Comparison")
+            st.markdown("*Define 'Risk_Type' as the target variable and split the selected features and 'Risk_Type' into training and testing sets*")
+            
+            target_col = 'Risk_Type'
+            if target_col not in df.columns:
+                st.error(f"❌ '{target_col}' column not found!")
+            else:
+                if st.button("🚀 Prepare Data & Compare Models", type="primary", key="prepare_compare"):
+                    with st.spinner('Processing...'):
+                        results, split_info = train_and_evaluate_for_target(df, target_col)
+                    
+                    if results:
+                        st.markdown("### 📊 Data Split Information")
+                        st.markdown(f"""
+                        <div style="background: #e8f4fd; border: 2px solid #1f77b4; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                            <p style="margin: 5px 0;"><b>Target Variable:</b> {split_info['target_col']}</p>
+                            <p style="margin: 5px 0;"><b>X_train shape:</b> {split_info['X_train_shape']}</p>
+                            <p style="margin: 5px 0;"><b>X_test shape:</b> {split_info['X_test_shape']}</p>
+                            <p style="margin: 5px 0;"><b>y_train shape:</b> {split_info['y_train_shape']}</p>
+                            <p style="margin: 5px 0;"><b>y_test shape:</b> {split_info['y_test_shape']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown("### 📊 Model Performance Comparison ---")
+                        metrics_data = []
+                        for name, res in results.items():
+                            metrics_data.append({
+                                'Model': name,
+                                'Accuracy': res['accuracy'],
+                                'Precision': res['precision'],
+                                'Recall': res['recall'],
+                                'F1-Score': res['f1_score']
+                            })
+                        metrics_df = pd.DataFrame(metrics_data)
+                        
+                        st.dataframe(metrics_df, column_config={
+                            "Model": st.column_config.TextColumn("Model"),
+                            "Accuracy": st.column_config.NumberColumn("Accuracy", format="%.6f"),
+                            "Precision": st.column_config.NumberColumn("Precision", format="%.6f"),
+                            "Recall": st.column_config.NumberColumn("Recall", format="%.6f"),
+                            "F1-Score": st.column_config.NumberColumn("F1-Score", format="%.6f"),
+                        }, use_container_width=True)
+                        
+                        fig = px.bar(metrics_df, x='Model', y=['Accuracy','Precision','Recall','F1-Score'],
+                                    barmode='group', title='Model Performance - Risk_Type',
+                                    color_discrete_sequence=['#3498db','#e74c3c','#2ecc71','#f39c12'], height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+        
+        # ===== TAB 3: COMPARE BOTH TARGETS =====
+        with eval_tab3:
+            st.markdown("### 📊 Compare Model Performance (Both Targets)")
             st.markdown("*Compare the performance of the models for both 'Risk_Type' and 'Risk_Level'*")
             
             if st.button("🚀 Train & Compare for Both Targets", type="primary", key="compare_both"):
@@ -688,7 +772,7 @@ def main():
                     if target_col not in df.columns: continue
                     
                     with st.spinner(f'Training models for {target_col}...'):
-                        results, split_info = train_and_evaluate_for_target(df, target_col)
+                        results, _ = train_and_evaluate_for_target(df, target_col)
                         all_comparisons[target_col] = results
                 
                 for target_col, results in all_comparisons.items():
@@ -722,7 +806,6 @@ def main():
                                     color_discrete_sequence=['#3498db','#e74c3c'], height=400)
                         st.plotly_chart(fig, use_container_width=True)
                 
-                # Overall summary
                 if len(all_comparisons) > 1:
                     st.markdown("---")
                     st.markdown("## 📊 Overall Summary")
@@ -739,8 +822,8 @@ def main():
                     if summary_data:
                         st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
         
-        # ===== TAB 3: CROSS VALIDATION =====
-        with eval_tab3:
+        # ===== TAB 4: CROSS VALIDATION =====
+        with eval_tab4:
             st.markdown("### 🔄 Cross Validation Analysis")
             st.info("Evaluate model stability using stratified k-fold cross-validation.")
             
