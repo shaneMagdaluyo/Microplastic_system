@@ -553,6 +553,148 @@ def main():
                     else:
                         st.warning("⚠️ No numerical columns found to scale.")
             
+            # ===== EXPLORE RELATIONSHIP: RISK SCORE vs MP COUNT =====
+            if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
+                st.markdown("---")
+                st.markdown("### 🔬 Explore Relationship: Risk Score vs MP Count per L")
+                st.markdown("*Create a scatter plot to visualize the relationship between Risk_Score and MP_Count_per_L*")
+                
+                df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
+                df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
+                clean_df = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
+                
+                if len(clean_df) > 0:
+                    # Tabs for different views
+                    tab1, tab2, tab3 = st.tabs(["📊 Scatter Plot", "📈 With Trendline", "📋 Correlation Stats"])
+                    
+                    with tab1:
+                        st.markdown("#### 📊 Scatter Plot - MP Count vs Risk Score")
+                        fig_scatter = px.scatter(
+                            clean_df,
+                            x='MP_Count_per_L',
+                            y='Risk_Score',
+                            color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                            title='Relationship between MP Count per Liter and Risk Score',
+                            labels={
+                                'MP_Count_per_L': 'MP Count per Liter',
+                                'Risk_Score': 'Risk Score',
+                                'Risk_Level': 'Risk Level'
+                            },
+                            color_discrete_sequence=px.colors.qualitative.Set2,
+                            opacity=0.7,
+                            size_max=10
+                        )
+                        fig_scatter.update_layout(height=500)
+                        st.plotly_chart(fig_scatter, use_container_width=True)
+                        
+                        st.markdown("""
+                        **📖 How to interpret the Scatter Plot:**
+                        - Each point represents one sample
+                        - **X-axis**: MP Count per Liter (concentration of microplastics)
+                        - **Y-axis**: Risk Score (overall risk assessment)
+                        - **Color**: Risk Level category (if available)
+                        - Look for patterns: Do higher MP counts correspond to higher risk scores?
+                        """)
+                    
+                    with tab2:
+                        st.markdown("#### 📈 Scatter Plot with Trendline")
+                        try:
+                            fig_trend = px.scatter(
+                                clean_df,
+                                x='MP_Count_per_L',
+                                y='Risk_Score',
+                                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                                trendline='ols',
+                                title='MP Count vs Risk Score with Trendline',
+                                labels={
+                                    'MP_Count_per_L': 'MP Count per Liter',
+                                    'Risk_Score': 'Risk Score'
+                                },
+                                color_discrete_sequence=px.colors.qualitative.Set2,
+                                opacity=0.7
+                            )
+                            fig_trend.update_layout(height=500)
+                            st.plotly_chart(fig_trend, use_container_width=True)
+                            
+                            st.markdown("""
+                            **📖 How to interpret the Trendline:**
+                            - **OLS Trendline**: Ordinary Least Squares regression line
+                            - Shows the overall direction of the relationship
+                            - **Upward slope**: Higher MP count → Higher Risk Score (positive correlation)
+                            - **Flat slope**: No clear relationship
+                            - **Downward slope**: Higher MP count → Lower Risk Score (negative correlation)
+                            """)
+                        except:
+                            st.warning("⚠️ Could not generate trendline. Showing scatter only.")
+                            fig_scatter2 = px.scatter(
+                                clean_df,
+                                x='MP_Count_per_L',
+                                y='Risk_Score',
+                                color='Risk_Level' if 'Risk_Level' in clean_df.columns else None,
+                                title='MP Count vs Risk Score',
+                                labels={
+                                    'MP_Count_per_L': 'MP Count per Liter',
+                                    'Risk_Score': 'Risk Score'
+                                },
+                                color_discrete_sequence=px.colors.qualitative.Set2,
+                                opacity=0.7
+                            )
+                            fig_scatter2.update_layout(height=500)
+                            st.plotly_chart(fig_scatter2, use_container_width=True)
+                    
+                    with tab3:
+                        st.markdown("#### 📋 Correlation Statistics")
+                        
+                        # Calculate correlation
+                        correlation = clean_df['MP_Count_per_L'].corr(clean_df['Risk_Score'])
+                        
+                        # Statistics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**📊 Correlation Analysis**")
+                            stats_data = [
+                                ('Correlation Coefficient (r)', f'{correlation:.4f}'),
+                                ('Correlation Strength', 
+                                 'Strong Positive' if correlation > 0.7 else
+                                 'Moderate Positive' if correlation > 0.4 else
+                                 'Weak Positive' if correlation > 0 else
+                                 'Strong Negative' if correlation < -0.7 else
+                                 'Moderate Negative' if correlation < -0.4 else
+                                 'Weak Negative' if correlation < 0 else 'None'),
+                                ('R-squared (r²)', f'{correlation**2:.4f}'),
+                                ('Sample Count', f'{len(clean_df):,}'),
+                                ('Mean MP Count', f'{clean_df["MP_Count_per_L"].mean():.2f}'),
+                                ('Mean Risk Score', f'{clean_df["Risk_Score"].mean():.2f}'),
+                            ]
+                            stats_df = pd.DataFrame(stats_data, columns=['Statistic', 'Value'])
+                            st.dataframe(stats_df, use_container_width=True, hide_index=True)
+                        
+                        with col2:
+                            st.markdown("**📈 Regression Summary**")
+                            # Simple linear regression
+                            from sklearn.linear_model import LinearRegression
+                            X_reg = clean_df[['MP_Count_per_L']].values
+                            y_reg = clean_df['Risk_Score'].values
+                            reg = LinearRegression().fit(X_reg, y_reg)
+                            
+                            reg_stats = [
+                                ('Slope (β₁)', f'{reg.coef_[0]:.4f}'),
+                                ('Intercept (β₀)', f'{reg.intercept_:.4f}'),
+                                ('Interpretation', f'For every 1 unit increase in MP Count, Risk Score changes by {reg.coef_[0]:.4f}'),
+                            ]
+                            reg_df = pd.DataFrame(reg_stats, columns=['Statistic', 'Value'])
+                            st.dataframe(reg_df, use_container_width=True, hide_index=True)
+                            
+                            # Correlation gauge
+                            st.markdown("**📊 Correlation Strength Gauge**")
+                            abs_corr = abs(correlation)
+                            if correlation > 0:
+                                st.progress(abs_corr, text=f"Positive Correlation: {correlation:.3f}")
+                            elif correlation < 0:
+                                st.progress(abs_corr, text=f"Negative Correlation: {correlation:.3f}")
+                            else:
+                                st.progress(0, text="No Correlation")
+            
             # ===== RISK SCORE BY RISK LEVEL ANALYSIS =====
             if 'Risk_Score' in df.columns and 'Risk_Level' in df.columns:
                 st.markdown("---")
@@ -561,7 +703,6 @@ def main():
                 
                 df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
                 clean_df = df.dropna(subset=['Risk_Score'])
-                # Ensure Risk_Level is string type
                 clean_df['Risk_Level'] = clean_df['Risk_Level'].astype(str)
                 
                 if len(clean_df) > 0:
@@ -594,7 +735,6 @@ def main():
                         st.markdown("#### 🎻 Violin Plot - Risk Score by Risk Level")
                         fig_violin = go.Figure()
                         
-                        # FIXED: Convert to strings for safe sorting
                         risk_levels = sorted(clean_df['Risk_Level'].dropna().unique())
                         colors = px.colors.qualitative.Set2[:len(risk_levels)]
                         
