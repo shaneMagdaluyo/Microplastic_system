@@ -561,6 +561,8 @@ def main():
                 
                 df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
                 clean_df = df.dropna(subset=['Risk_Score'])
+                # Ensure Risk_Level is string type
+                clean_df['Risk_Level'] = clean_df['Risk_Level'].astype(str)
                 
                 if len(clean_df) > 0:
                     tab1, tab2, tab3 = st.tabs(["📦 Box Plot", "🎻 Violin Plot", "📊 Statistics"])
@@ -588,17 +590,16 @@ def main():
                         - **Wider box**: More variation in that risk level
                         """)
                     
-                                        with tab2:
+                    with tab2:
                         st.markdown("#### 🎻 Violin Plot - Risk Score by Risk Level")
                         fig_violin = go.Figure()
                         
-                        risk_levels = clean_df['Risk_Level'].dropna().unique()
-                        # Convert to strings for safe sorting
-                        risk_levels = sorted([str(level) for level in risk_levels])
+                        # FIXED: Convert to strings for safe sorting
+                        risk_levels = sorted(clean_df['Risk_Level'].dropna().unique())
                         colors = px.colors.qualitative.Set2[:len(risk_levels)]
                         
                         for i, level in enumerate(risk_levels):
-                            level_data = clean_df[clean_df['Risk_Level'].astype(str) == level]['Risk_Score']
+                            level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
                             fig_violin.add_trace(go.Violin(
                                 y=level_data,
                                 name=str(level),
@@ -660,8 +661,8 @@ def main():
                         st.markdown("---")
                         st.markdown("#### 🔍 Key Findings")
                         
-                            for level in risk_levels:
-                            level_data = clean_df[clean_df['Risk_Level'].astype(str) == level]['Risk_Score']
+                        for level in risk_levels:
+                            level_data = clean_df[clean_df['Risk_Level'] == level]['Risk_Score']
                             st.markdown(f"""
                             **{level} Risk Level:**
                             - Count: **{len(level_data):,}** samples
@@ -852,6 +853,7 @@ def main():
         if 'Risk_Level' in df.columns and 'Risk_Score' in df.columns:
             df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
             clean_df = df.dropna(subset=['Risk_Score'])
+            clean_df['Risk_Level'] = clean_df['Risk_Level'].astype(str)
             if len(clean_df) > 0:
                 fig_box = px.box(clean_df, x='Risk_Level', y='Risk_Score', color='Risk_Level',
                                 title='Risk Score Distribution by Risk Level')
@@ -859,7 +861,7 @@ def main():
                 st.plotly_chart(fig_box, use_container_width=True)
                 
                 st.markdown("**📊 Risk Score Statistics by Risk Level**")
-                risk_level_stats = df.groupby('Risk_Level')['Risk_Score'].agg([
+                risk_level_stats = clean_df.groupby('Risk_Level')['Risk_Score'].agg([
                     'count', 'mean', 'median', 'std', 'min', 'max'
                 ]).round(2)
                 risk_level_stats.columns = ['Count', 'Mean', 'Median', 'Std Dev', 'Min', 'Max']
