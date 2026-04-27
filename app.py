@@ -17,6 +17,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import (accuracy_score, f1_score, confusion_matrix,
                              classification_report)
+from sklearn.feature_selection import mutual_info_classif, chi2, SelectKBest
 from imblearn.over_sampling import SMOTE
 from scipy import stats
 import warnings
@@ -77,6 +78,8 @@ def init_session_state():
     if 'processed_data' not in st.session_state: st.session_state.processed_data = None
     if 'models' not in st.session_state: st.session_state.models = {}
     if 'feature_importance' not in st.session_state: st.session_state.feature_importance = None
+    if 'mutual_info' not in st.session_state: st.session_state.mutual_info = None
+    if 'chi2_scores' not in st.session_state: st.session_state.chi2_scores = None
     if 'best_model' not in st.session_state: st.session_state.best_model = None
     if 'preprocessing_log' not in st.session_state: st.session_state.preprocessing_log = []
     if 'trained' not in st.session_state: st.session_state.trained = False
@@ -188,15 +191,9 @@ def cap_outliers_iqr(df, columns):
             IQR = Q3 - Q1
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
-            
             outliers_before = ((df_capped[col] < lower_bound) | (df_capped[col] > upper_bound)).sum()
-            
-            # Cap values
             df_capped[col] = df_capped[col].clip(lower=lower_bound, upper=upper_bound)
-            
-            outliers_after = ((df_capped[col] < lower_bound) | (df_capped[col] > upper_bound)).sum()
             log_messages.append(f"Capped {outliers_before} outliers in '{col}' (lower={lower_bound:.2f}, upper={upper_bound:.2f})")
-    
     return df_capped, log_messages
 
 def encode_categorical(df):
@@ -221,13 +218,10 @@ def one_hot_encode(df):
     try:
         categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
         cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
-        
         if len(cols_to_encode) == 0:
             return df, [], []
-        
         df_encoded = pd.get_dummies(df, columns=cols_to_encode, drop_first=False)
         new_cols = [col for col in df_encoded.columns if col not in df.columns]
-        
         return df_encoded, new_cols, cols_to_encode
     except Exception as e:
         st.error(f"Error in one-hot encoding: {str(e)}")
@@ -292,16 +286,38 @@ def apply_log_transform(df, columns):
         if df_transformed[col].dtype in ['float64', 'int64']:
             skew_before = df_transformed[col].skew()
             if abs(skew_before) > 0.5:
-                # Shift data to positive if needed
                 min_val = df_transformed[col].min()
                 shift = 0
                 if min_val <= 0:
                     shift = abs(min_val) + 1
-                
                 df_transformed[col] = np.log1p(df_transformed[col] + shift)
                 skew_after = df_transformed[col].skew()
                 log_messages.append(f"Log transformed '{col}': Skewness {skew_before:.4f} → {skew_after:.4f}")
     return df_transformed, log_messages
+
+def calculate_mutual_info(X, y):
+    """Calculate Mutual Information scores for features."""
+    mi_scores = mutual_info_classif(X, y, random_state=42)
+    mi_df = pd.DataFrame({'Feature': X.columns, 'Mutual_Info': mi_scores})
+    mi_df = mi_df.sort_values('Mutual_Info', ascending=False)
+    return mi_df
+
+def calculate_chi2(X, y):
+    """Calculate Chi-squared scores for features."""
+    # Chi2 requires non-negative values
+    X_scaled = X - X.min() + 1
+    chi2_scores, p_values = chi2(X_scaled, y)
+    chi2_df = pd.DataFrame({'Feature': X.columns, 'Chi2_Score': chi2_scores, 'P_Value': p_values})
+    chi2_df = chi2_df.sort_values('Chi2_Score', ascending=False)
+    return chi2_df
+
+def calculate_rf_importance(X, y):
+    """Calculate Random Forest feature importance."""
+    rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    rf.fit(X, y)
+    rf_df = pd.DataFrame({'Feature': X.columns, 'Importance': rf.feature_importances_})
+    rf_df = rf_df.sort_values('Importance', ascending=False)
+    return rf_df
 
 def plot_distribution(data, column, title):
     """Create distribution plot."""
@@ -558,7 +574,7 @@ def main():
             with c3: st.metric("Numeric Cols", len(df.select_dtypes(include=['float64','int64']).columns))
             with c4: st.metric("Categorical Cols", len(df.select_dtypes(include=['object']).columns))
     
-    # ==================== PREPROCESSING (COMPLETE PIPELINE) ====================
+    # ==================== PREPROCESSING ====================
     elif section == "🔧 Preprocessing":
         st.markdown('<p class="section-header">🔧 Data Preprocessing</p>', unsafe_allow_html=True)
         
@@ -568,24 +584,15 @@ def main():
         
         df = st.session_state.data.copy()
         
-        # Tabs for different preprocessing tasks
         prep_tab1, prep_tab2, prep_tab3, prep_tab4, prep_tab5 = st.tabs([
             "📏 Feature Scaling", "🔄 Categorical Encoding", "🎯 Outlier Capping", 
             "📊 Skewness & Transform", "📋 Summary & Next Steps"
         ])
         
-        # ===== TAB 1: FEATURE SCALING =====
         with prep_tab1:
             st.markdown("### 📏 Perform Feature Scaling")
-            st.markdown("*Apply StandardScaler to numerical columns (mean=0, std=1)*")
-            
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
-            
-            if len(cols_to_scale) > 0:
-                st.markdown(f"**Numerical columns to scale ({len(cols_to_scale)}):** {', '.join(cols_to_scale[:10])}...")
-            else:
-                st.info("No numerical columns found.")
             
             if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary", key="scale_tab"):
                 with st.spinner('Applying StandardScaler...'):
@@ -593,84 +600,39 @@ def main():
                         scaler = StandardScaler()
                         scaled_data = scaler.fit_transform(df[cols_to_scale].fillna(df[cols_to_scale].median()))
                         scaled_df = pd.DataFrame(scaled_data, columns=cols_to_scale)
-                        
                         st.session_state.scaler = scaler
-                        st.session_state.scaled_columns = cols_to_scale
                         st.session_state.scaled_data = scaled_df
-                        
                         st.success(f"✅ Numerical columns scaled successfully! Mean=0, Std=1")
-                        
                         st.markdown("**First 5 rows of scaled numerical data:**")
-                        st.dataframe(
-                            scaled_df.head(),
-                            column_config={col: st.column_config.NumberColumn(col, format="%.6f") for col in cols_to_scale},
-                            use_container_width=True,
-                        )
-                        
-                        with st.expander("📊 Scaling Verification (Before vs After)"):
-                            stats_list = []
-                            for col in cols_to_scale[:8]:
-                                stats_list.append({
-                                    'Column': col,
-                                    'Mean Before': f"{df[col].mean():.4f}",
-                                    'Std Before': f"{df[col].std():.4f}",
-                                    'Mean After': f"{scaled_df[col].mean():.6f}",
-                                    'Std After': f"{scaled_df[col].std():.6f}",
-                                })
-                            st.dataframe(pd.DataFrame(stats_list), use_container_width=True, hide_index=True)
+                        st.dataframe(scaled_df.head(), column_config={col: st.column_config.NumberColumn(col, format="%.6f") for col in cols_to_scale}, use_container_width=True)
         
-        # ===== TAB 2: CATEGORICAL ENCODING =====
         with prep_tab2:
             st.markdown("### 🔄 Encode Categorical Variables")
-            st.markdown("*Apply One-Hot Encoding to categorical columns*")
-            
             categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
             cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
-            
             if len(cols_to_encode) > 0:
-                st.markdown(f"**Categorical columns found ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
-            else:
-                st.info("No categorical columns found.")
+                st.markdown(f"**Categorical columns ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
             
             if st.button("🔄 Apply One-Hot Encoding", type="primary", key="encode_tab"):
                 with st.spinner('Applying One-Hot Encoding...'):
                     if len(cols_to_encode) > 0:
-                        encoded_df, new_cols, original_cols = one_hot_encode(df)
+                        encoded_df, new_cols, _ = one_hot_encode(df)
                         st.session_state.encoded_data = encoded_df
-                        
                         st.success(f"✅ One-Hot Encoding applied! Created {len(new_cols)} new columns.")
                         st.markdown(f"**Original shape:** {df.shape} → **Encoded shape:** {encoded_df.shape}")
-                        
-                        st.markdown("**First 5 rows after one-hot encoding:**")
                         display_cols = list(df.columns[:3]) + new_cols[:8] if len(new_cols) > 8 else list(df.columns[:3]) + new_cols
                         display_cols = [c for c in display_cols if c in encoded_df.columns]
                         st.dataframe(encoded_df[display_cols].head(), use_container_width=True)
-                        
-                        with st.expander("📋 All New One-Hot Encoded Columns"):
-                            st.write(f"**{len(new_cols)} new columns created:**")
-                            st.write(new_cols)
         
-        # ===== TAB 3: OUTLIER CAPPING =====
         with prep_tab3:
             st.markdown("### 🎯 Address Outliers")
-            st.markdown("*Cap outliers using IQR method (Q1 - 1.5×IQR to Q3 + 1.5×IQR)*")
-            
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_outliers = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
-            
-            # Show current outliers
             if len(cols_for_outliers) > 0:
                 outlier_info = detect_outliers(df, cols_for_outliers)
-                st.markdown("**Current outliers in numerical columns:**")
-                outlier_summary = []
-                for col, info in outlier_info.items():
-                    outlier_summary.append({
-                        'Column': col,
-                        'Outliers': info['count'],
-                        'Percentage': f"{info['percentage']:.1f}%",
-                        'Lower Bound': f"{info['lower_bound']:.2f}",
-                        'Upper Bound': f"{info['upper_bound']:.2f}"
-                    })
+                outlier_summary = [{'Column':col,'Outliers':info['count'],'Percentage':f"{info['percentage']:.1f}%",
+                                   'Lower':f"{info['lower_bound']:.2f}",'Upper':f"{info['upper_bound']:.2f}"} 
+                                  for col,info in outlier_info.items()]
                 st.dataframe(pd.DataFrame(outlier_summary), use_container_width=True, hide_index=True)
             
             if st.button("🎯 Cap Outliers (IQR Method)", type="primary", key="outlier_tab"):
@@ -678,97 +640,47 @@ def main():
                     if len(cols_for_outliers) > 0:
                         df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
                         st.session_state.processed_data = df_capped
-                        
                         st.success(f"✅ Outliers capped using IQR method!")
-                        for log in cap_logs:
-                            st.write(f"- {log}")
-                        
-                        # Show after stats
-                        st.markdown("**After capping - remaining outliers:**")
-                        outlier_after = detect_outliers(df_capped, cols_for_outliers)
-                        after_summary = []
-                        for col, info in outlier_after.items():
-                            after_summary.append({'Column': col, 'Remaining Outliers': info['count']})
-                        st.dataframe(pd.DataFrame(after_summary), use_container_width=True, hide_index=True)
+                        for log in cap_logs: st.write(f"- {log}")
         
-        # ===== TAB 4: SKEWNESS & TRANSFORMATION =====
         with prep_tab4:
             st.markdown("### 📊 Skewness Analysis & Log Transformation")
-            st.markdown("*Analyze skewness and apply log transformation to skewed columns (|skew| > 0.5)*")
-            
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_skew = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
-            
             if len(cols_for_skew) > 0:
-                # Show skewness analysis
                 skew_df = analyze_skewness(df, cols_for_skew)
-                st.markdown("**Skewness Analysis of Numerical Columns:**")
                 st.dataframe(skew_df, use_container_width=True, hide_index=True)
-                
                 skewed_cols = skew_df[skew_df['Abs Skewness'] > 0.5]['Column'].tolist()
                 if len(skewed_cols) > 0:
-                    st.markdown(f"**Skewed columns (|skew| > 0.5):** {', '.join(skewed_cols)}")
-                else:
-                    st.info("No columns with significant skewness found.")
+                    st.markdown(f"**Skewed columns:** {', '.join(skewed_cols)}")
             
             if st.button("📊 Apply Log Transformation", type="primary", key="skew_tab"):
                 with st.spinner('Applying log transformation...'):
                     if len(cols_for_skew) > 0:
                         df_transformed, transform_logs = apply_log_transform(df, cols_for_skew)
                         st.session_state.processed_data = df_transformed
-                        
-                        st.success(f"✅ Log transformation applied to skewed columns!")
-                        for log in transform_logs:
-                            st.write(f"- {log}")
-                        
-                        # Show after transformation
-                        st.markdown("**Skewness after log transformation:**")
-                        skew_after_df = analyze_skewness(df_transformed, cols_for_skew)
-                        st.dataframe(skew_after_df, use_container_width=True, hide_index=True)
+                        st.success(f"✅ Log transformation applied!")
+                        for log in transform_logs: st.write(f"- {log}")
         
-        # ===== TAB 5: SUMMARY & NEXT STEPS =====
         with prep_tab5:
             st.markdown("### 📋 Data Analysis Key Findings & Next Steps")
-            
-            # Collect all preprocessing actions
-            actions_performed = []
-            
+            actions = []
             if st.session_state.get('scaled_data') is not None:
-                actions_performed.append("✅ **Feature Scaling**: Numerical columns were successfully scaled using StandardScaler (mean=0, std=1).")
-            
+                actions.append("✅ **Feature Scaling**: Numerical columns scaled using StandardScaler (mean=0, std=1).")
             if st.session_state.get('encoded_data') is not None:
-                actions_performed.append("✅ **Categorical Encoding**: Categorical variables were encoded using one-hot encoding, significantly increasing columns.")
+                actions.append("✅ **Categorical Encoding**: One-hot encoding applied, significantly increasing columns.")
+            if st.session_state.get('processed_data') is not None:
+                actions.append("✅ **Outlier Capping**: Outliers addressed using IQR method.")
             
-            if st.session_state.get('processed_data') is not None and st.session_state.get('scaler') is None:
-                actions_performed.append("✅ **Outlier Capping**: Outliers in numerical columns were addressed using IQR method by capping values at bounds.")
-            
-            # Skewness analysis
-            numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            cols_for_skew = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
-            if len(cols_for_skew) > 0:
-                skew_df = analyze_skewness(df, cols_for_skew)
-                skewed_cols = skew_df[skew_df['Abs Skewness'] > 0.5]['Column'].tolist()
-                if len(skewed_cols) > 0:
-                    actions_performed.append(f"✅ **Skewness Analysis**: Found {len(skewed_cols)} skewed columns: {', '.join(skewed_cols)}. Log transformation applied.")
-            
-            if len(actions_performed) == 0:
+            if len(actions) == 0:
                 st.info("Run preprocessing steps to see the summary.")
             else:
-                st.markdown("### 🔑 Key Findings")
-                for action in actions_performed:
-                    st.markdown(action)
-                
+                for action in actions: st.markdown(action)
                 st.markdown("---")
-                st.markdown("### 🚀 Insights & Next Steps")
-                st.markdown("""
-                - The preprocessing steps have prepared the dataset for subsequent modeling.
-                - Outliers have been handled, numerical features scaled, categorical variables encoded, and skewed distributions transformed.
-                - **The dataset is now ready for model training and evaluation.**
-                - Proceed to **🛠️ Feature Selection & Relevance** for EDA and feature importance analysis.
-                - Then go to **🤖 Modeling** to train and evaluate classification models.
-                """)
-
-    # ==================== FEATURE SELECTION & RELEVANCE ====================
+                st.markdown("### 🚀 Next Steps")
+                st.markdown("The dataset is now ready. Proceed to **🛠️ Feature Selection & Relevance** or **🤖 Modeling**.")
+    
+    # ==================== FEATURE SELECTION & RELEVANCE (WITH MI, CHI2, RF) ====================
     elif section == "🛠️ Feature Selection & Relevance":
         st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
         
@@ -776,6 +688,7 @@ def main():
         if data is None: st.warning("⚠️ Load data first!"); return
         df = data.copy()
         
+        # EDA Section
         st.markdown("### 📈 Exploratory Data Analysis")
         
         if 'Risk_Score' in df.columns:
@@ -828,28 +741,97 @@ def main():
                 stats.columns = ['Count','Mean','Median','Std Dev','Min','Max']
                 st.dataframe(stats, use_container_width=True)
         
+        # ===== FEATURE ENGINEERING WITH MI, CHI2, RF =====
         st.markdown("---")
-        st.markdown("### 🎯 Feature Engineering")
-        target = st.selectbox("Target Variable", df.columns.tolist(),
-                             index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
-        nums = df.select_dtypes(include=['float64','int64','int32']).columns.tolist()
-        if target in nums: nums.remove(target)
-        if len(nums) > 1:
-            fig,_ = plot_correlation_heatmap(df, nums)
-            st.plotly_chart(fig, use_container_width=True)
-        if st.button("Calculate Feature Importance", type="primary"):
-            X = df[nums].fillna(df[nums].median()).dropna(axis=1)
-            y = df[target]
-            if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
-            rf = RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)
-            rf.fit(X, y)
-            imp = pd.DataFrame({'feature':X.columns, 'importance':rf.feature_importances_}).sort_values('importance', ascending=True)
-            st.session_state.feature_importance = imp
-            fig = px.bar(imp.tail(15), x='importance', y='feature', orientation='h', title='Top 15 Features', height=400)
-            st.plotly_chart(fig, use_container_width=True)
-            top = imp.nlargest(10,'importance')['feature'].tolist()
-            st.session_state.selected_features = top
-            st.success(f"✅ Top {len(top)} features selected")
+        st.markdown("### 🎯 Feature Selection Methods")
+        
+        target_col = st.selectbox("Select Target Variable", df.columns.tolist(),
+                                  index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
+        
+        numeric_cols = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
+        if target_col in numeric_cols: numeric_cols.remove(target_col)
+        
+        # Correlation Analysis
+        st.markdown("#### 📊 Correlation Analysis")
+        if len(numeric_cols) > 1:
+            with st.spinner('Computing correlation matrix...'):
+                fig_corr, _ = plot_correlation_heatmap(df, numeric_cols)
+                st.plotly_chart(fig_corr, use_container_width=True)
+        
+        # Feature Selection Methods
+        st.markdown("#### 🌲 Feature Selection Results")
+        
+        if st.button("Calculate All Feature Importance Metrics", type="primary", use_container_width=True):
+            with st.spinner('Calculating feature importance...'):
+                # Prepare data
+                X = df[numeric_cols].copy()
+                y = df[target_col].copy()
+                
+                # Handle missing
+                X = X.fillna(X.median())
+                
+                # Encode target if categorical
+                if y.dtype == 'object':
+                    y = LabelEncoder().fit_transform(y)
+                
+                # Ensure no NaN
+                X = X.dropna(axis=1, how='any')
+                valid_cols = X.columns.tolist()
+                
+                if len(valid_cols) == 0:
+                    st.error("No valid features after cleaning")
+                else:
+                    # Calculate all three methods
+                    mi_df = calculate_mutual_info(X, y)
+                    chi2_df = calculate_chi2(X, y)
+                    rf_df = calculate_rf_importance(X, y)
+                    
+                    # Store in session state
+                    st.session_state.feature_importance = rf_df
+                    st.session_state.mutual_info = mi_df
+                    st.session_state.chi2_scores = chi2_df
+                    
+                    # Display results in tabs
+                    ft1, ft2, ft3 = st.tabs([
+                        "🌲 Random Forest Importance", 
+                        "📊 Mutual Information", 
+                        "🔢 Chi-squared Test"
+                    ])
+                    
+                    with ft1:
+                        st.markdown("**Top 20 features based on RandomForest Feature Importances:**")
+                        top20_rf = rf_df.head(20)
+                        fig_rf = px.bar(top20_rf, x='Importance', y='Feature', orientation='h',
+                                       title='Top 20 Features - Random Forest Importance',
+                                       color='Importance', color_continuous_scale='Viridis')
+                        fig_rf.update_layout(height=500)
+                        st.plotly_chart(fig_rf, use_container_width=True)
+                        st.dataframe(top20_rf, use_container_width=True, hide_index=True)
+                        
+                        # Select top features
+                        top_features = rf_df.head(10)['Feature'].tolist()
+                        st.session_state.selected_features = top_features
+                        st.success(f"✅ Selected top {len(top_features)} features from Random Forest")
+                    
+                    with ft2:
+                        st.markdown("**Top 20 features based on Mutual Information:**")
+                        top20_mi = mi_df.head(20)
+                        fig_mi = px.bar(top20_mi, x='Mutual_Info', y='Feature', orientation='h',
+                                       title='Top 20 Features - Mutual Information',
+                                       color='Mutual_Info', color_continuous_scale='Viridis')
+                        fig_mi.update_layout(height=500)
+                        st.plotly_chart(fig_mi, use_container_width=True)
+                        st.dataframe(top20_mi, use_container_width=True, hide_index=True)
+                    
+                    with ft3:
+                        st.markdown("**Top 20 features based on Chi-squared Test:**")
+                        top20_chi2 = chi2_df.head(20)
+                        fig_chi2 = px.bar(top20_chi2, x='Chi2_Score', y='Feature', orientation='h',
+                                         title='Top 20 Features - Chi-squared Test',
+                                         color='Chi2_Score', color_continuous_scale='Viridis')
+                        fig_chi2.update_layout(height=500)
+                        st.plotly_chart(fig_chi2, use_container_width=True)
+                        st.dataframe(top20_chi2, use_container_width=True, hide_index=True)
     
     # ==================== MODELING ====================
     elif section == "🤖 Modeling":
