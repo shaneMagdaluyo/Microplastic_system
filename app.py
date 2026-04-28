@@ -38,7 +38,6 @@ st.markdown("""
 <style>
     .main-header { font-size: 2.5rem; font-weight: 700; color: #1f77b4; text-align: center; margin-bottom: 2rem; }
     .section-header { font-size: 1.8rem; font-weight: 600; color: #2c3e50; margin-top: 1rem; margin-bottom: 1rem; }
-    .subsection-header { font-size: 1.4rem; font-weight: 500; color: #34495e; margin-top: 0.8rem; }
     .stButton > button { width: 100%; background-color: #1f77b4; color: white; font-weight: 600; border-radius: 8px; padding: 0.5rem 1rem; }
     .stButton > button:hover { background-color: #2980b9; border-color: #2980b9; }
     
@@ -46,33 +45,6 @@ st.markdown("""
     .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown div { color: #2c3e50 !important; }
     div[data-testid="stExpander"] p { color: #2c3e50 !important; }
     div[data-testid="stExpander"] li { color: #2c3e50 !important; }
-    
-    /* Explanation box - blue left border */
-    .explain-box {
-        background-color: #e8f4fd;
-        border-left: 5px solid #1f77b4;
-        padding: 15px 20px;
-        margin: 15px 0;
-        border-radius: 5px;
-    }
-    
-    /* Success box - green left border */
-    .success-box {
-        background-color: #d4edda;
-        border-left: 5px solid #27ae60;
-        padding: 15px 20px;
-        margin: 15px 0;
-        border-radius: 5px;
-    }
-    
-    /* Info box - blue border */
-    .info-box {
-        background-color: #e8f4fd;
-        border: 2px solid #1f77b4;
-        padding: 15px 20px;
-        margin: 15px 0;
-        border-radius: 10px;
-    }
     
     .metric-explain { font-size: 0.9rem; color: #666; font-style: italic; }
 </style>
@@ -95,8 +67,12 @@ def init_session_state():
     if 'selected_features' not in st.session_state: st.session_state.selected_features = None
     if 'scaler' not in st.session_state: st.session_state.scaler = None
     if 'scaled_data' not in st.session_state: st.session_state.scaled_data = None
+    if 'scaled_columns' not in st.session_state: st.session_state.scaled_columns = None
     if 'encoded_data' not in st.session_state: st.session_state.encoded_data = None
     if 'encoded_shape' not in st.session_state: st.session_state.encoded_shape = None
+    if 'evaluation_ran' not in st.session_state: st.session_state.evaluation_ran = False
+    if 'comparison_ran' not in st.session_state: st.session_state.comparison_ran = False
+    if 'cv_ran' not in st.session_state: st.session_state.cv_ran = False
 
 init_session_state()
 
@@ -351,8 +327,6 @@ def main():
             - **Generate sample data** to explore the dashboard's capabilities
             - **Preview your data** to understand its structure
             - **Apply initial scaling** to see how StandardScaler transforms numerical columns
-            
-            **Why this matters:** Before any analysis, you need to load and understand your data.
             """)
         
         c1, c2 = st.columns([2, 1])
@@ -370,13 +344,7 @@ def main():
             df = st.session_state.data
             st.markdown("---")
             st.markdown("### 📋 Dataset Preview")
-            
-            st.info("""
-            **📖 Understanding the Dataset Preview:**
-            • **Samples:** The number of rows (observations) in your dataset
-            • **Features:** The number of columns (variables) available for analysis
-            • **Missing Values:** Gaps in data that need to be addressed during preprocessing
-            """)
+            st.info("**📖 Understanding the Dataset Preview:**\n• **Samples:** Number of rows (observations)\n• **Features:** Number of columns (variables)\n• **Missing Values:** Gaps in data that need preprocessing")
             
             c1,c2,c3 = st.columns(3)
             with c1: st.metric("Samples", df.shape[0])
@@ -387,12 +355,7 @@ def main():
             # Feature Scaling Preview
             st.markdown("---")
             st.markdown("### 📏 Feature Scaling Preview")
-            
-            st.info("""
-            **📖 Why Feature Scaling?**
-            Feature scaling (StandardScaler) transforms numerical columns to have **mean=0** and **standard deviation=1**.
-            This is essential because machine learning algorithms perform better when features are on the same scale.
-            """)
+            st.info("**📖 Why Feature Scaling?**\nStandardScaler transforms numerical columns to **mean=0** and **std=1**. This is essential because ML algorithms perform better when features are on the same scale.")
             
             if st.button("🔧 Apply StandardScaler", type="primary", key="scale_home"):
                 with st.spinner('Scaling...'):
@@ -403,6 +366,8 @@ def main():
                         sd = scaler.fit_transform(df[cols].fillna(df[cols].median()))
                         sdf = pd.DataFrame(sd, columns=cols)
                         st.session_state.scaler = scaler
+                        st.session_state.scaled_columns = cols
+                        st.session_state.scaled_data = sdf
                         st.success(f"✅ {len(cols)} columns scaled! Mean=0, Std=1")
                         st.dataframe(sdf.head(), column_config={c: st.column_config.NumberColumn(c,format="%.6f") for c in cols}, use_container_width=True)
             
@@ -410,12 +375,7 @@ def main():
             if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
                 st.markdown("---")
                 st.markdown("### 🔬 Risk Score vs MP Count per L")
-                
-                st.info("""
-                **📖 Why analyze this relationship?**
-                This explores the relationship between **Microplastic Count per Liter** and **Risk Score**.
-                Understanding this helps determine if MP Count is a strong predictor of Risk Score.
-                """)
+                st.info("**📖 Why analyze this?**\nExplores relationship between **MP Count per Liter** and **Risk Score** to determine if MP Count predicts Risk Score.")
                 
                 df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
                 df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
@@ -433,12 +393,7 @@ def main():
             if 'Risk_Score' in df.columns and 'Risk_Level' in df.columns:
                 st.markdown("---")
                 st.markdown("### 📊 Risk Score by Risk Level")
-                
-                st.info("""
-                **📖 Why investigate Risk Score by Risk Level?**
-                Box plots show the distribution of Risk Scores across different Risk Level categories,
-                revealing whether different risk levels have distinct risk score ranges.
-                """)
+                st.info("**📖 Why investigate this?**\nBox plots show Risk Score distribution across Risk Level categories, revealing if different levels have distinct score ranges.")
                 
                 clean = df.dropna(subset=['Risk_Score'])
                 clean['Risk_Level'] = clean['Risk_Level'].astype(str)
@@ -464,15 +419,7 @@ def main():
             st.markdown("""
             **Purpose of Preprocessing:**
             Data preprocessing transforms raw data into a clean, structured format suitable for machine learning.
-            
-            **Key Steps:**
-            1. **Feature Scaling**: Standardizes numerical values to mean=0, std=1
-            2. **Categorical Encoding**: Converts text categories to numerical format
-            3. **Outlier Capping**: Limits extreme values to reduce their impact
-            4. **Skewness Transformation**: Normalizes skewed distributions
-            
-            **Why this matters:** Machine learning models require numerical, well-scaled data.
-            Without preprocessing, models may perform poorly or fail entirely.
+            **Key Steps:** Feature Scaling, Categorical Encoding, Outlier Capping, Skewness Transformation.
             """)
         
         if st.session_state.data is None:
@@ -488,58 +435,44 @@ def main():
         
         with prep_tab1:
             st.markdown("### 📏 Perform Feature Scaling")
-            st.info("""
-            **📖 What is Feature Scaling?**
-            **StandardScaler** transforms each numerical feature to have **mean=0** and **standard deviation=1**.
-            This prevents features with larger ranges from dominating the model.
-            """)
+            st.info("**📖 StandardScaler** transforms features to **mean=0, std=1** preventing features with larger ranges from dominating the model.")
             
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
             
             if st.button("🔧 Apply Feature Scaling (StandardScaler)", type="primary", key="scale_tab"):
-                with st.spinner('Applying StandardScaler...'):
+                with st.spinner('Applying...'):
                     if len(cols_to_scale) > 0:
                         scaler = StandardScaler()
                         scaled_data = scaler.fit_transform(df[cols_to_scale].fillna(df[cols_to_scale].median()))
                         scaled_df = pd.DataFrame(scaled_data, columns=cols_to_scale)
                         st.session_state.scaler = scaler
+                        st.session_state.scaled_columns = cols_to_scale
                         st.session_state.scaled_data = scaled_df
-                        st.success(f"✅ {len(cols_to_scale)} columns scaled! Mean=0, Std=1")
-                        st.markdown("**First 5 rows of scaled numerical data:**")
+                        st.success(f"✅ {len(cols_to_scale)} columns scaled!")
                         st.dataframe(scaled_df.head(), column_config={col: st.column_config.NumberColumn(col, format="%.6f") for col in cols_to_scale}, use_container_width=True)
         
         with prep_tab2:
             st.markdown("### 🔄 Encode Categorical Variables")
-            st.info("""
-            **📖 What is One-Hot Encoding?**
-            Creates binary (0/1) columns for each category. This is necessary because machine learning models require numerical input.
-            **Note:** This significantly increases the number of columns in your dataset.
-            """)
+            st.info("**📖 One-Hot Encoding** creates binary columns for each category. ML models require numerical input.")
             
             categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
             cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
             if len(cols_to_encode) > 0:
-                st.markdown(f"**Categorical columns identified ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
+                st.markdown(f"**Categorical columns ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
             
             if st.button("🔄 Apply One-Hot Encoding", type="primary", key="encode_tab"):
-                with st.spinner('Applying One-Hot Encoding...'):
+                with st.spinner('Applying...'):
                     if len(cols_to_encode) > 0:
                         encoded_df, new_cols, _, encoded_shape = one_hot_encode(df)
                         st.session_state.encoded_data = encoded_df
                         st.session_state.encoded_shape = encoded_shape
-                        st.success(f"✅ One-Hot Encoding applied! Created {len(new_cols)} new columns.")
-                        st.markdown(f"**Original shape:** {df.shape} → **Encoded shape:** {encoded_shape}")
-                        st.markdown("**First 5 rows of the DataFrame after one-hot encoding:**")
+                        st.success(f"✅ Created {len(new_cols)} new columns! Shape: {encoded_shape}")
                         st.dataframe(encoded_df.head(), use_container_width=True)
         
         with prep_tab3:
             st.markdown("### 🎯 Address Outliers")
-            st.info("""
-            **📖 What is Outlier Capping?**
-            Outliers are extreme values that can significantly skew statistical analysis and model training.
-            The **IQR Method** caps values beyond Q1-1.5×IQR and Q3+1.5×IQR.
-            """)
+            st.info("**📖 Outlier Capping** limits extreme values using IQR method (Q1-1.5×IQR to Q3+1.5×IQR).")
             
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_outliers = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
@@ -549,20 +482,15 @@ def main():
                 st.dataframe(pd.DataFrame(outlier_summary), use_container_width=True, hide_index=True)
             
             if st.button("🎯 Cap Outliers (IQR Method)", type="primary", key="outlier_tab"):
-                with st.spinner('Capping outliers...'):
-                    if len(cols_for_outliers) > 0:
-                        df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
-                        st.session_state.processed_data = df_capped
-                        st.success(f"✅ Outliers capped!")
-                        for log in cap_logs: st.write(f"- {log}")
+                if len(cols_for_outliers) > 0:
+                    df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
+                    st.session_state.processed_data = df_capped
+                    st.success(f"✅ Outliers capped!")
+                    for log in cap_logs: st.write(f"- {log}")
         
         with prep_tab4:
             st.markdown("### 📊 Skewness Analysis & Log Transformation")
-            st.info("""
-            **📖 What is Skewness?**
-            Skewness measures the asymmetry of a distribution. A skewed distribution has a long tail on one side.
-            **Log Transformation** reduces right-skewness by compressing large values.
-            """)
+            st.info("**📖 Skewness** measures distribution asymmetry. **Log transformation** reduces right-skewness.")
             
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_skew = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
@@ -570,33 +498,23 @@ def main():
                 skew_df = analyze_skewness(df, cols_for_skew)
                 st.dataframe(skew_df, use_container_width=True, hide_index=True)
                 skewed_cols = skew_df[skew_df['Abs Skewness'] > 0.5]['Column'].tolist()
-                if len(skewed_cols) > 0:
-                    st.markdown(f"**Skewed columns (|skew| > 0.5):** {', '.join(skewed_cols)}")
+                if len(skewed_cols) > 0: st.markdown(f"**Skewed columns:** {', '.join(skewed_cols)}")
             
             if st.button("📊 Apply Log Transformation", type="primary", key="skew_tab"):
-                with st.spinner('Applying log transformation...'):
-                    if len(cols_for_skew) > 0:
-                        df_transformed, transform_logs = apply_log_transform(df, cols_for_skew)
-                        st.session_state.processed_data = df_transformed
-                        st.success(f"✅ Log transformation applied!")
-                        for log in transform_logs: st.write(f"- {log}")
+                if len(cols_for_skew) > 0:
+                    df_transformed, _ = apply_log_transform(df, cols_for_skew)
+                    st.session_state.processed_data = df_transformed
+                    st.success(f"✅ Log transformation applied!")
         
         with prep_tab5:
             st.markdown("### 📋 Summary & Next Steps")
             actions = []
-            if st.session_state.get('scaled_data') is not None: actions.append("✅ **Feature Scaling**: Numerical columns scaled using StandardScaler.")
-            if st.session_state.get('encoded_data') is not None:
-                shape = st.session_state.get('encoded_shape', 'N/A')
-                actions.append(f"✅ **Categorical Encoding**: One-hot encoding applied. Shape: {shape}")
-            if st.session_state.get('processed_data') is not None: actions.append("✅ **Outlier Capping**: Outliers addressed using IQR method.")
-            
-            if len(actions) == 0:
-                st.info("Run preprocessing steps to see the summary.")
-            else:
-                for action in actions: st.markdown(action)
-                st.markdown("---")
-                st.markdown("### 🚀 Next Steps")
-                st.markdown("The dataset is now ready. Proceed to **🛠️ Feature Selection & Relevance** or **📊 Cross Validation & Evaluation**.")
+            if st.session_state.get('scaled_data') is not None: actions.append("✅ Feature Scaling applied")
+            if st.session_state.get('encoded_data') is not None: actions.append("✅ Categorical Encoding applied")
+            if st.session_state.get('processed_data') is not None: actions.append("✅ Outliers capped")
+            if actions:
+                for a in actions: st.markdown(a)
+                st.markdown("---\n### 🚀 Next Steps\nProceed to **🛠️ Feature Selection & Relevance** or **📊 Cross Validation & Evaluation**.")
     
     # ==================== FEATURE SELECTION & RELEVANCE ====================
     elif section == "🛠️ Feature Selection & Relevance":
@@ -604,16 +522,10 @@ def main():
         
         with st.expander("ℹ️ About Feature Selection", expanded=False):
             st.markdown("""
-            **Purpose of Feature Selection:**
-            Feature selection identifies the most important variables for predicting the target.
-            
-            **Three Methods Used:**
-            1. **Mutual Information**: Measures the dependency between features and target
-            2. **Chi-squared Test**: Tests the independence between categorical features and target
-            3. **Random Forest Importance**: Uses tree-based model to rank feature importance
-            
-            **Why this matters:** Selecting the right features reduces noise, speeds up training,
-            and improves model interpretability.
+            **Purpose:** Identifies most important variables for prediction using:
+            1. **Mutual Information** - Measures dependency between features and target
+            2. **Chi-squared Test** - Tests statistical relationship
+            3. **Random Forest Importance** - Shows contribution to predictions
             """)
         
         data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
@@ -651,13 +563,7 @@ def main():
         
         st.markdown("---")
         st.markdown("### 🎯 Feature Selection Methods")
-        st.info("""
-        **📖 Understanding Feature Selection Methods:**
-        • **Mutual Information:** Measures how much knowing a feature reduces uncertainty about the target
-        • **Chi-squared Test:** Tests if there's a statistically significant relationship between feature and target
-        • **Random Forest Importance:** Shows how much each feature contributes to accurate predictions
-        **Higher scores = More important features**
-        """)
+        st.info("**📖 Higher scores = More important features**")
         
         target_col = st.selectbox("Select Target Variable", df.columns.tolist(),
                                   index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
@@ -685,30 +591,24 @@ def main():
                 ft1, ft2, ft3 = st.tabs(["🌲 Random Forest", "📊 Mutual Information", "🔢 Chi-squared"])
                 
                 with ft1:
-                    st.markdown("**Top 20 features based on RandomForest Feature Importances:**")
-                    st.markdown("*Higher importance means the feature contributes more to accurate predictions*")
+                    st.markdown("**Top 20 features - RandomForest Feature Importances:**")
                     fig = px.bar(rf_df.head(20), x='Importance', y='Feature', orientation='h',
-                               title='Top 20 Features - Random Forest Importance',
-                               color='Importance', color_continuous_scale='Viridis', height=500)
+                               title='Top 20 Features - Random Forest', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with ft2:
-                    st.markdown("**Top 20 features based on Mutual Information:**")
-                    st.markdown("*Higher Mutual Information means the feature has stronger dependency with the target*")
+                    st.markdown("**Top 20 features - Mutual Information:**")
                     fig = px.bar(mi_df.head(20), x='Mutual_Info', y='Feature', orientation='h',
-                               title='Top 20 Features - Mutual Information',
-                               color='Mutual_Info', color_continuous_scale='Viridis', height=500)
+                               title='Top 20 Features - Mutual Information', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with ft3:
-                    st.markdown("**Top 20 features based on Chi-squared Test:**")
-                    st.markdown("*Higher Chi2 score indicates stronger statistical relationship with the target*")
+                    st.markdown("**Top 20 features - Chi-squared Test:**")
                     fig = px.bar(chi2_df.head(20), x='Chi2_Score', y='Feature', orientation='h',
-                               title='Top 20 Features - Chi-squared Test',
-                               color='Chi2_Score', color_continuous_scale='Viridis', height=500)
+                               title='Top 20 Features - Chi-squared Test', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
-                st.success(f"✅ Feature selection completed! Top features identified.")
+                st.success(f"✅ Feature selection completed!")
     
     # ==================== MODELING ====================
     elif section == "🤖 Modeling":
@@ -771,39 +671,28 @@ def main():
         with st.expander("ℹ️ About Model Evaluation", expanded=False):
             st.markdown("""
             **Purpose of Model Evaluation:**
-            After training models, we need to evaluate how well they perform on unseen data.
-            
-            **Key Metrics Explained:**
-            - **Accuracy**: Overall percentage of correct predictions
-            - **Precision**: How many predicted positives are actually positive (minimizes false alarms)
-            - **Recall**: How many actual positives were correctly identified (minimizes missed cases)
-            - **F1-Score**: Harmonic mean of Precision and Recall (balanced measure)
-            
-            **Cross Validation**: Tests model stability by training on different data splits
-            
-            **Why this matters:** These metrics help you choose the best model for your specific needs.
+            - **Accuracy**: Overall correct predictions
+            - **Precision**: Correct positive predictions
+            - **Recall**: Actual positives found
+            - **F1-Score**: Balance of precision & recall
+            - **Cross Validation**: Tests model stability across data splits
             """)
         
         data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
         if data is None: st.warning("⚠️ Load data first!"); return
         df = data.copy()
         
-        eval_tab1, eval_tab2, eval_tab3 = st.tabs([
+        eval_tab1, eval_tab2, eval_tab3, eval_tab4 = st.tabs([
             "📊 Evaluate Models", 
             "📊 Compare Both Targets",
-            "🔄 Cross Validation"
+            "🔄 Cross Validation",
+            "📋 Overall Pipeline Summary"
         ])
         
         # ===== TAB 1: EVALUATE MODELS =====
         with eval_tab1:
             st.markdown("### 📊 Evaluate the Models")
-            st.info("""
-            **📖 What this section does:**
-            • **Trains models** on the training data (80% of dataset)
-            • **Evaluates performance** on the testing data (20% held out)
-            • **Calculates metrics** using 'weighted' averaging for multi-class problems
-            **Weighted averaging** accounts for class imbalance by weighting each class's metric by its support (number of samples).
-            """)
+            st.info("**📖 Trains models on 80% data, evaluates on 20% held-out test data using weighted averaging for multi-class metrics.**")
             
             target_col = 'Risk_Type'
             if target_col not in df.columns:
@@ -812,29 +701,22 @@ def main():
                 if st.button("🚀 Evaluate Models", type="primary", key="eval_detail"):
                     with st.spinner('Training and evaluating models...'):
                         results, split_info = train_and_evaluate_detailed(df, target_col)
+                        st.session_state.evaluation_ran = True
+                        st.session_state.last_eval_results = results
                     
                     if results:
                         st.markdown("---")
                         st.markdown("### 📊 Data Split Information")
-                        st.info("""
-                        **📖 Understanding the Data Split:**
-                        • **Training Set (80%)**: Used to teach the model patterns in the data
-                        • **Testing Set (20%)**: Used to evaluate how well the model generalizes to unseen data
-                        • This split prevents **overfitting** - where a model memorizes training data but fails on new data
-                        """)
+                        st.info("**📖 Training Set (80%)** teaches the model. **Testing Set (20%)** evaluates generalization. Prevents overfitting.")
                         
-                        st.markdown(f"""
-                        **Target Variable:** {split_info['target_col']} | 
-                        **X_train:** {split_info['X_train_shape']} | **X_test:** {split_info['X_test_shape']} |
-                        **y_train:** {split_info['y_train_shape']} | **y_test:** {split_info['y_test_shape']}
-                        """)
+                        st.markdown(f"**Target:** {split_info['target_col']} | **X_train:** {split_info['X_train_shape']} | **X_test:** {split_info['X_test_shape']}")
                         
                         st.markdown("---")
                         
                         model_descriptions = {
-                            'Logistic Regression': 'A linear model that estimates probabilities using a logistic function. Works well for linearly separable data.',
-                            'RandomForestClassifier': 'An ensemble of decision trees that reduces overfitting by averaging multiple trees trained on different data subsets.',
-                            'GradientBoostingClassifier': 'Builds trees sequentially, where each new tree corrects errors made by previous trees. Often achieves high accuracy.'
+                            'Logistic Regression': 'Linear model estimating probabilities. Works well for linearly separable data.',
+                            'RandomForestClassifier': 'Ensemble of decision trees. Reduces overfitting by averaging multiple trees.',
+                            'GradientBoostingClassifier': 'Builds trees sequentially, each correcting errors of previous trees. High accuracy.'
                         }
                         
                         for model_name in ['Logistic Regression', 'RandomForestClassifier', 'GradientBoostingClassifier']:
@@ -842,22 +724,16 @@ def main():
                                 res = results[model_name]
                                 st.markdown(f"### # Evaluate {model_name} Model")
                                 st.markdown(f"*{model_descriptions.get(model_name, '')}*")
-                                st.markdown(f"**Accuracy:** {res['accuracy']:.4f} — *Overall correct predictions*")
-                                st.markdown(f"**Precision:** {res['precision']:.4f} — *How many predicted positives were correct*")
-                                st.markdown(f"**Recall:** {res['recall']:.4f} — *How many actual positives were found*")
-                                st.markdown(f"**F1-Score:** {res['f1_score']:.4f} — *Balance between precision and recall*")
+                                st.markdown(f"**Accuracy:** {res['accuracy']:.4f} — Overall correct predictions")
+                                st.markdown(f"**Precision:** {res['precision']:.4f} — Correct positive predictions")
+                                st.markdown(f"**Recall:** {res['recall']:.4f} — Actual positives found")
+                                st.markdown(f"**F1-Score:** {res['f1_score']:.4f} — Balance of precision & recall")
                                 st.markdown("---")
                                 st.markdown("")
                         
                         # Comparison Table
-                        st.markdown("### 📊 Model Performance Comparison")
-                        st.info("""
-                        **📖 How to interpret this comparison table:**
-                        • **Higher values are better** for all metrics (closer to 1.0 = better)
-                        • **Accuracy**: Best when classes are balanced
-                        • **F1-Score**: Better metric when classes are imbalanced
-                        • Choose the model that best balances all metrics for your specific needs
-                        """)
+                        st.markdown("### Model Performance Comparison")
+                        st.info("**📖 Higher values = better. Accuracy** best for balanced classes. **F1-Score** better for imbalanced classes.")
                         
                         metrics_data = []
                         for name, res in results.items():
@@ -876,7 +752,7 @@ def main():
                         }, use_container_width=True)
                         
                         fig = px.bar(metrics_df, x='Model', y=['Accuracy','Precision','Recall','F1-Score'],
-                                    barmode='group', title='Model Performance Metrics Comparison',
+                                    barmode='group', title='Model Performance Metrics',
                                     color_discrete_sequence=['#3498db','#e74c3c','#2ecc71','#f39c12'], height=400)
                         st.plotly_chart(fig, use_container_width=True)
                         
@@ -885,29 +761,15 @@ def main():
                         
                         st.markdown(f"""
                         <div style="background-color: #d4edda; border-left: 5px solid #27ae60; padding: 15px 20px; margin: 15px 0; border-radius: 5px;">
-                            <p style="margin: 5px 0; color: #155724; font-size: 1.1rem;">
-                                Based on <b>Accuracy</b>, the best performing model is: <b>{best_acc['Model']}</b> with Accuracy: <b>{best_acc['Accuracy']:.4f}</b>
-                            </p>
-                            <p style="margin: 5px 0; color: #155724; font-size: 1.1rem;">
-                                Based on <b>F1-Score</b>, the best performing model is: <b>{best_f1['Model']}</b> with F1-Score: <b>{best_f1['F1-Score']:.4f}</b>
-                            </p>
-                            <p style="margin: 10px 0 0 0; color: #666;">
-                                <b>Recommendation:</b> If your data has balanced classes, use Accuracy to choose. 
-                                If classes are imbalanced, F1-Score is a better indicator of model quality.
-                            </p>
+                            <p style="margin: 5px 0; color: #155724;">Based on <b>Accuracy</b>, best: <b>{best_acc['Model']}</b> ({best_acc['Accuracy']:.4f})</p>
+                            <p style="margin: 5px 0; color: #155724;">Based on <b>F1-Score</b>, best: <b>{best_f1['Model']}</b> ({best_f1['F1-Score']:.4f})</p>
                         </div>
                         """, unsafe_allow_html=True)
         
         # ===== TAB 2: COMPARE BOTH TARGETS =====
         with eval_tab2:
             st.markdown("### 📊 Compare Model Performance (Both Targets)")
-            st.info("""
-            **📖 Why compare both Risk_Type and Risk_Level?**
-            • Different targets may have different predictability
-            • Some models may perform better on one target than another
-            • This comparison helps you understand which prediction task is more feasible
-            • **Risk_Level** (Low/Medium/High/Critical) may be easier to predict than **Risk_Type** (Type_A/B/C)
-            """)
+            st.info("**📖 Compares Risk_Type and Risk_Level to see which prediction task is more feasible.**")
             
             if st.button("🚀 Train & Compare for Both Targets", type="primary", key="compare_both"):
                 all_comparisons = {}
@@ -917,6 +779,9 @@ def main():
                     with st.spinner(f'Training for {target_col}...'):
                         results, _ = train_and_evaluate_detailed(df, target_col)
                         all_comparisons[target_col] = results
+                
+                st.session_state.comparison_ran = True
+                st.session_state.last_comparison = all_comparisons
                 
                 for target_col, results in all_comparisons.items():
                     st.markdown("---")
@@ -968,14 +833,7 @@ def main():
         # ===== TAB 3: CROSS VALIDATION =====
         with eval_tab3:
             st.markdown("### 🔄 Cross Validation Analysis")
-            st.info("""
-            **📖 What is Cross Validation?**
-            Cross Validation (CV) evaluates model stability by training on different subsets of data.
-            • **K-Fold CV**: Splits data into K parts, trains K times on K-1 parts, tests on the remaining part
-            • **Stratified CV**: Preserves class distribution in each fold
-            • **Mean ± Std**: Shows the expected performance range
-            • **Lower Std**: More consistent performance across different data splits
-            """)
+            st.info("**📖 K-Fold CV evaluates model stability. Lower Std = more consistent performance.**")
             
             target = st.selectbox("Target Variable for CV", df.columns.tolist(),
                                  index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
@@ -1006,10 +864,13 @@ def main():
                                           'Mean F1':round(f1.mean(),4),'Std F1':round(f1.std(),4)})
                     except: pass
                 
+                st.session_state.cv_ran = True
+                st.session_state.last_cv_results = cv_results
+                
                 if cv_results:
                     cv_df = pd.DataFrame(cv_results)
                     st.markdown("#### 📊 Cross Validation Results")
-                    st.markdown("*Lower Std means more consistent performance across different data splits*")
+                    st.markdown("*Lower Std = more consistent performance across data splits*")
                     st.dataframe(cv_df, use_container_width=True, hide_index=True)
                     best_cv = cv_df.loc[cv_df['Mean F1'].idxmax()]
                     st.success(f"🏆 Best CV Model: **{best_cv['Model']}** (Mean F1: {best_cv['Mean F1']:.4f} ±{best_cv['Std F1']:.4f})")
@@ -1018,9 +879,170 @@ def main():
                     for name, scores in all_scores.items():
                         fig_cv.add_trace(go.Box(y=scores, name=name, boxmean='sd'))
                     fig_cv.update_layout(
-                        title=f'Cross Validation F1 Scores ({folds}-Fold Stratified)<br><sub>Box shows spread of scores across folds</sub>',
-                        yaxis_title='F1 Score (Weighted)', height=400)
+                        title=f'Cross Validation F1 Scores ({folds}-Fold)<br><sub>Box shows spread of scores across folds</sub>',
+                        yaxis_title='F1 Score', height=400)
                     st.plotly_chart(fig_cv, use_container_width=True)
+        
+        # ===== TAB 4: OVERALL PIPELINE SUMMARY =====
+        with eval_tab4:
+            st.markdown("### 📋 Overall Pipeline Summary")
+            st.info("**📖 This table provides a comprehensive overview of ALL processing steps performed across the entire dashboard, tracking what was done, results, and key findings.**")
+            
+            if st.button("🔄 Generate Pipeline Summary", type="primary", key="pipeline_summary", use_container_width=True):
+                
+                pipeline_data = []
+                
+                # STAGE 1: DATA LOADING
+                if st.session_state.data is not None:
+                    df = st.session_state.data
+                    pipeline_data.append({
+                        'Stage': '1. Data Loading',
+                        'Step': 'Dataset Loaded',
+                        'Status': '✅ Completed',
+                        'Details': f'Shape: {df.shape[0]} rows × {df.shape[1]} columns',
+                        'Key Findings': f'{df.shape[0]} samples with {df.shape[1]} features'
+                    })
+                    missing_pct = (df.isnull().sum().sum()/(df.shape[0]*df.shape[1]))*100
+                    pipeline_data.append({
+                        'Stage': '1. Data Loading',
+                        'Step': 'Missing Values Analysis',
+                        'Status': '✅ Completed',
+                        'Details': f'{df.isnull().sum().sum()} missing ({missing_pct:.2f}%)',
+                        'Key Findings': 'Significant missing data' if missing_pct > 5 else 'Minimal missing data'
+                    })
+                    pipeline_data.append({
+                        'Stage': '1. Data Loading',
+                        'Step': 'Data Types Identified',
+                        'Status': '✅ Completed',
+                        'Details': f'Numeric: {len(df.select_dtypes(include=["float64","int64"]).columns)}, Categorical: {len(df.select_dtypes(include=["object"]).columns)}',
+                        'Key Findings': f'{len(df.select_dtypes(include=["object"]).columns)} columns need encoding'
+                    })
+                else:
+                    pipeline_data.append({
+                        'Stage': '1. Data Loading',
+                        'Step': 'Dataset',
+                        'Status': '❌ Not Loaded',
+                        'Details': 'No data available',
+                        'Key Findings': 'Upload or generate data first'
+                    })
+                
+                # STAGE 2: PREPROCESSING
+                pipeline_data.append({
+                    'Stage': '2. Preprocessing',
+                    'Step': 'Feature Scaling (StandardScaler)',
+                    'Status': '✅ Completed' if st.session_state.get('scaled_data') is not None else '⬜ Not Run',
+                    'Details': f'{len(st.session_state.get("scaled_columns", []))} columns scaled (mean=0, std=1)' if st.session_state.get('scaled_data') is not None else 'Not yet applied',
+                    'Key Findings': 'Features normalized' if st.session_state.get('scaled_data') is not None else 'Run to normalize features'
+                })
+                
+                pipeline_data.append({
+                    'Stage': '2. Preprocessing',
+                    'Step': 'Categorical Encoding (One-Hot)',
+                    'Status': '✅ Completed' if st.session_state.get('encoded_data') is not None else '⬜ Not Run',
+                    'Details': f'Shape after encoding: {st.session_state.get("encoded_shape", "N/A")}' if st.session_state.get('encoded_data') is not None else 'Not yet applied',
+                    'Key Findings': 'Categories converted to binary columns' if st.session_state.get('encoded_data') is not None else 'Run to convert text to numbers'
+                })
+                
+                pipeline_data.append({
+                    'Stage': '2. Preprocessing',
+                    'Step': 'Outlier Capping (IQR)',
+                    'Status': '✅ Completed' if st.session_state.get('processed_data') is not None and st.session_state.get('scaled_data') is None else '⬜ Not Run',
+                    'Details': 'Extreme values capped to IQR bounds' if st.session_state.get('processed_data') is not None else 'Not yet applied',
+                    'Key Findings': 'Outliers reduced' if st.session_state.get('processed_data') is not None else 'Run to handle extreme values'
+                })
+                
+                # STAGE 3: FEATURE ENGINEERING
+                pipeline_data.append({
+                    'Stage': '3. Feature Selection',
+                    'Step': 'Feature Importance Analysis',
+                    'Status': '✅ Completed' if st.session_state.get('feature_importance') is not None else '⬜ Not Run',
+                    'Details': f'Top features identified via MI, Chi2, RF' if st.session_state.get('feature_importance') is not None else 'Not yet run',
+                    'Key Findings': f'{len(st.session_state.get("selected_features", []))} top features selected' if st.session_state.get('selected_features') is not None else 'Run to identify important features'
+                })
+                
+                # STAGE 4: MODEL TRAINING
+                pipeline_data.append({
+                    'Stage': '4. Model Training',
+                    'Step': 'Models Trained',
+                    'Status': '✅ Completed' if st.session_state.get('trained') else '⬜ Not Run',
+                    'Details': f'{len(st.session_state.get("models", {}))} models trained' if st.session_state.get('trained') else 'Not yet trained',
+                    'Key Findings': 'LR, RF, GBC trained' if st.session_state.get('trained') else 'Run Modeling section'
+                })
+                
+                # STAGE 5: EVALUATION
+                pipeline_data.append({
+                    'Stage': '5. Model Evaluation',
+                    'Step': 'Individual Model Evaluation',
+                    'Status': '✅ Completed' if st.session_state.get('evaluation_ran') else '⬜ Not Run',
+                    'Details': 'Accuracy, Precision, Recall, F1 calculated' if st.session_state.get('evaluation_ran') else 'Not yet evaluated',
+                    'Key Findings': 'See Evaluate Models tab for results' if st.session_state.get('evaluation_ran') else 'Run Evaluate Models'
+                })
+                
+                pipeline_data.append({
+                    'Stage': '5. Model Evaluation',
+                    'Step': 'Target Comparison (Risk_Type vs Risk_Level)',
+                    'Status': '✅ Completed' if st.session_state.get('comparison_ran') else '⬜ Not Run',
+                    'Details': 'Both targets evaluated' if st.session_state.get('comparison_ran') else 'Not yet compared',
+                    'Key Findings': 'See Compare Both Targets tab' if st.session_state.get('comparison_ran') else 'Run comparison'
+                })
+                
+                pipeline_data.append({
+                    'Stage': '5. Model Evaluation',
+                    'Step': 'Cross Validation',
+                    'Status': '✅ Completed' if st.session_state.get('cv_ran') else '⬜ Not Run',
+                    'Details': 'K-Fold CV with stability metrics' if st.session_state.get('cv_ran') else 'Not yet run',
+                    'Key Findings': 'See Cross Validation tab' if st.session_state.get('cv_ran') else 'Run CV for stability check'
+                })
+                
+                # Display pipeline table
+                pipeline_df = pd.DataFrame(pipeline_data)
+                
+                st.markdown("### 📊 Complete Analysis Pipeline Overview")
+                
+                # Color-coded status
+                def color_status(val):
+                    if '✅' in str(val):
+                        return 'background-color: #d4edda; color: #155724; font-weight: bold'
+                    elif '❌' in str(val):
+                        return 'background-color: #f8d7da; color: #721c24; font-weight: bold'
+                    return 'background-color: #fff3cd; color: #856404'
+                
+                styled_df = pipeline_df.style.applymap(color_status, subset=['Status'])
+                
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "Stage": st.column_config.TextColumn("Stage", width="small"),
+                        "Step": st.column_config.TextColumn("Step", width="medium"),
+                        "Status": st.column_config.TextColumn("Status", width="small"),
+                        "Details": st.column_config.TextColumn("Details", width="large"),
+                        "Key Findings": st.column_config.TextColumn("Key Findings", width="large"),
+                    },
+                    use_container_width=True,
+                    height=500,
+                )
+                
+                # Summary counts
+                completed = sum(1 for d in pipeline_data if '✅' in d['Status'])
+                not_run = sum(1 for d in pipeline_data if '⬜' in d['Status'])
+                failed = sum(1 for d in pipeline_data if '❌' in d['Status'])
+                
+                st.markdown("---")
+                st.markdown("### 📊 Pipeline Progress")
+                c1,c2,c3 = st.columns(3)
+                with c1: st.metric("✅ Completed", completed)
+                with c2: st.metric("⬜ Pending", not_run)
+                with c3: st.metric("❌ Failed", failed)
+                
+                # Progress bar
+                total_steps = len(pipeline_data)
+                progress_pct = (completed / total_steps) * 100 if total_steps > 0 else 0
+                st.progress(int(progress_pct), text=f"Overall Progress: {progress_pct:.0f}% ({completed}/{total_steps} steps completed)")
+                
+                if not_run > 0:
+                    st.info(f"💡 **{not_run} step(s)** still pending. Run the corresponding sections to complete the full analysis pipeline.")
+                elif completed == total_steps:
+                    st.success("🎉 **All pipeline steps completed!** The analysis is ready for interpretation and reporting.")
 
 
 if __name__ == "__main__":
