@@ -33,7 +33,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better UI
+# Custom CSS - FIXED
 st.markdown("""
 <style>
     .main-header { font-size: 2.5rem; font-weight: 700; color: #1f77b4; text-align: center; margin-bottom: 2rem; }
@@ -41,7 +41,39 @@ st.markdown("""
     .subsection-header { font-size: 1.4rem; font-weight: 500; color: #34495e; margin-top: 0.8rem; }
     .stButton > button { width: 100%; background-color: #1f77b4; color: white; font-weight: 600; border-radius: 8px; padding: 0.5rem 1rem; }
     .stButton > button:hover { background-color: #2980b9; border-color: #2980b9; }
-    .explanation-box { background-color: #f0f8ff; border-left: 4px solid #1f77b4; padding: 15px; margin: 15px 0; border-radius: 5px; }
+    
+    /* Force dark text everywhere */
+    .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown div { color: #2c3e50 !important; }
+    div[data-testid="stExpander"] p { color: #2c3e50 !important; }
+    div[data-testid="stExpander"] li { color: #2c3e50 !important; }
+    
+    /* Explanation box - blue left border */
+    .explain-box {
+        background-color: #e8f4fd;
+        border-left: 5px solid #1f77b4;
+        padding: 15px 20px;
+        margin: 15px 0;
+        border-radius: 5px;
+    }
+    
+    /* Success box - green left border */
+    .success-box {
+        background-color: #d4edda;
+        border-left: 5px solid #27ae60;
+        padding: 15px 20px;
+        margin: 15px 0;
+        border-radius: 5px;
+    }
+    
+    /* Info box - blue border */
+    .info-box {
+        background-color: #e8f4fd;
+        border: 2px solid #1f77b4;
+        padding: 15px 20px;
+        margin: 15px 0;
+        border-radius: 10px;
+    }
+    
     .metric-explain { font-size: 0.9rem; color: #666; font-style: italic; }
 </style>
 """, unsafe_allow_html=True)
@@ -304,7 +336,7 @@ def main():
     st.sidebar.markdown("### 📌 Status")
     if st.session_state.data is not None: st.sidebar.success("✅ Data Loaded")
     else: st.sidebar.warning("⚠️ No Data")
-    if st.session_state.trained: st.sidebar.success(f"✅ Models Trained ({len(st.session_state.models)})")
+    if st.session_state.trained: st.sidebar.success(f"✅ Models Trained")
     else: st.sidebar.warning("⚠️ Models Not Trained")
     
     # ==================== HOME ====================
@@ -315,7 +347,7 @@ def main():
             st.markdown("""
             **Purpose of the Home Page:**
             This is the starting point of your analysis. Here you can:
-            - **Upload your dataset** (CSV or Excel format) containing microplastic risk data
+            - **Upload your dataset** (CSV or Excel format)
             - **Generate sample data** to explore the dashboard's capabilities
             - **Preview your data** to understand its structure
             - **Apply initial scaling** to see how StandardScaler transforms numerical columns
@@ -337,16 +369,14 @@ def main():
         if st.session_state.data is not None:
             df = st.session_state.data
             st.markdown("---")
-            st.markdown('<p class="subsection-header">📋 Dataset Preview</p>', unsafe_allow_html=True)
+            st.markdown("### 📋 Dataset Preview")
             
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 Understanding the Dataset Preview:</b><br>
-            - <b>Samples:</b> The number of rows (observations) in your dataset<br>
-            - <b>Features:</b> The number of columns (variables) available for analysis<br>
-            - <b>Missing Values:</b> Gaps in data that need to be addressed during preprocessing
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("""
+            **📖 Understanding the Dataset Preview:**
+            • **Samples:** The number of rows (observations) in your dataset
+            • **Features:** The number of columns (variables) available for analysis
+            • **Missing Values:** Gaps in data that need to be addressed during preprocessing
+            """)
             
             c1,c2,c3 = st.columns(3)
             with c1: st.metric("Samples", df.shape[0])
@@ -358,13 +388,11 @@ def main():
             st.markdown("---")
             st.markdown("### 📏 Feature Scaling Preview")
             
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 Why Feature Scaling?</b><br>
-            Feature scaling (StandardScaler) transforms numerical columns to have <b>mean=0</b> and <b>standard deviation=1</b>.
+            st.info("""
+            **📖 Why Feature Scaling?**
+            Feature scaling (StandardScaler) transforms numerical columns to have **mean=0** and **standard deviation=1**.
             This is essential because machine learning algorithms perform better when features are on the same scale.
-            </div>
-            """, unsafe_allow_html=True)
+            """)
             
             if st.button("🔧 Apply StandardScaler", type="primary", key="scale_home"):
                 with st.spinner('Scaling...'):
@@ -383,13 +411,11 @@ def main():
                 st.markdown("---")
                 st.markdown("### 🔬 Risk Score vs MP Count per L")
                 
-                st.markdown("""
-                <div class="explanation-box">
-                <b>📖 Why analyze this relationship?</b><br>
-                This explores the relationship between <b>Microplastic Count per Liter</b> and <b>Risk Score</b>.
+                st.info("""
+                **📖 Why analyze this relationship?**
+                This explores the relationship between **Microplastic Count per Liter** and **Risk Score**.
                 Understanding this helps determine if MP Count is a strong predictor of Risk Score.
-                </div>
-                """, unsafe_allow_html=True)
+                """)
                 
                 df['MP_Count_per_L'] = pd.to_numeric(df['MP_Count_per_L'], errors='coerce')
                 df['Risk_Score'] = pd.to_numeric(df['Risk_Score'], errors='coerce')
@@ -408,13 +434,11 @@ def main():
                 st.markdown("---")
                 st.markdown("### 📊 Risk Score by Risk Level")
                 
-                st.markdown("""
-                <div class="explanation-box">
-                <b>📖 Why investigate Risk Score by Risk Level?</b><br>
+                st.info("""
+                **📖 Why investigate Risk Score by Risk Level?**
                 Box plots show the distribution of Risk Scores across different Risk Level categories,
                 revealing whether different risk levels have distinct risk score ranges.
-                </div>
-                """, unsafe_allow_html=True)
+                """)
                 
                 clean = df.dropna(subset=['Risk_Score'])
                 clean['Risk_Level'] = clean['Risk_Level'].astype(str)
@@ -436,6 +460,21 @@ def main():
     elif section == "🔧 Preprocessing":
         st.markdown('<p class="section-header">🔧 Data Preprocessing</p>', unsafe_allow_html=True)
         
+        with st.expander("ℹ️ About Preprocessing", expanded=False):
+            st.markdown("""
+            **Purpose of Preprocessing:**
+            Data preprocessing transforms raw data into a clean, structured format suitable for machine learning.
+            
+            **Key Steps:**
+            1. **Feature Scaling**: Standardizes numerical values to mean=0, std=1
+            2. **Categorical Encoding**: Converts text categories to numerical format
+            3. **Outlier Capping**: Limits extreme values to reduce their impact
+            4. **Skewness Transformation**: Normalizes skewed distributions
+            
+            **Why this matters:** Machine learning models require numerical, well-scaled data.
+            Without preprocessing, models may perform poorly or fail entirely.
+            """)
+        
         if st.session_state.data is None:
             st.warning("⚠️ Please upload a dataset first!")
             return
@@ -449,13 +488,11 @@ def main():
         
         with prep_tab1:
             st.markdown("### 📏 Perform Feature Scaling")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 What is Feature Scaling?</b><br>
-            <b>StandardScaler</b> transforms each numerical feature to have <b>mean=0</b> and <b>standard deviation=1</b>.
+            st.info("""
+            **📖 What is Feature Scaling?**
+            **StandardScaler** transforms each numerical feature to have **mean=0** and **standard deviation=1**.
             This prevents features with larger ranges from dominating the model.
-            </div>
-            """, unsafe_allow_html=True)
+            """)
             
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_to_scale = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
@@ -469,39 +506,40 @@ def main():
                         st.session_state.scaler = scaler
                         st.session_state.scaled_data = scaled_df
                         st.success(f"✅ {len(cols_to_scale)} columns scaled! Mean=0, Std=1")
+                        st.markdown("**First 5 rows of scaled numerical data:**")
                         st.dataframe(scaled_df.head(), column_config={col: st.column_config.NumberColumn(col, format="%.6f") for col in cols_to_scale}, use_container_width=True)
         
         with prep_tab2:
             st.markdown("### 🔄 Encode Categorical Variables")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 What is One-Hot Encoding?</b><br>
+            st.info("""
+            **📖 What is One-Hot Encoding?**
             Creates binary (0/1) columns for each category. This is necessary because machine learning models require numerical input.
-            </div>
-            """, unsafe_allow_html=True)
+            **Note:** This significantly increases the number of columns in your dataset.
+            """)
             
             categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
             cols_to_encode = [col for col in categorical_cols if 'ID' not in col and 'Sample' not in col]
             if len(cols_to_encode) > 0:
-                st.markdown(f"**Categorical columns ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
+                st.markdown(f"**Categorical columns identified ({len(cols_to_encode)}):** {', '.join(cols_to_encode)}")
             
             if st.button("🔄 Apply One-Hot Encoding", type="primary", key="encode_tab"):
-                with st.spinner('Applying...'):
+                with st.spinner('Applying One-Hot Encoding...'):
                     if len(cols_to_encode) > 0:
                         encoded_df, new_cols, _, encoded_shape = one_hot_encode(df)
                         st.session_state.encoded_data = encoded_df
                         st.session_state.encoded_shape = encoded_shape
-                        st.success(f"✅ Created {len(new_cols)} new columns! Shape: {encoded_shape}")
+                        st.success(f"✅ One-Hot Encoding applied! Created {len(new_cols)} new columns.")
+                        st.markdown(f"**Original shape:** {df.shape} → **Encoded shape:** {encoded_shape}")
+                        st.markdown("**First 5 rows of the DataFrame after one-hot encoding:**")
                         st.dataframe(encoded_df.head(), use_container_width=True)
         
         with prep_tab3:
             st.markdown("### 🎯 Address Outliers")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 What is Outlier Capping?</b><br>
-            Outliers are extreme values that can skew analysis. The IQR method caps values beyond Q1-1.5×IQR and Q3+1.5×IQR.
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("""
+            **📖 What is Outlier Capping?**
+            Outliers are extreme values that can significantly skew statistical analysis and model training.
+            The **IQR Method** caps values beyond Q1-1.5×IQR and Q3+1.5×IQR.
+            """)
             
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_outliers = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
@@ -511,45 +549,72 @@ def main():
                 st.dataframe(pd.DataFrame(outlier_summary), use_container_width=True, hide_index=True)
             
             if st.button("🎯 Cap Outliers (IQR Method)", type="primary", key="outlier_tab"):
-                if len(cols_for_outliers) > 0:
-                    df_capped, _ = cap_outliers_iqr(df, cols_for_outliers)
-                    st.session_state.processed_data = df_capped
-                    st.success(f"✅ Outliers capped!")
+                with st.spinner('Capping outliers...'):
+                    if len(cols_for_outliers) > 0:
+                        df_capped, cap_logs = cap_outliers_iqr(df, cols_for_outliers)
+                        st.session_state.processed_data = df_capped
+                        st.success(f"✅ Outliers capped!")
+                        for log in cap_logs: st.write(f"- {log}")
         
         with prep_tab4:
             st.markdown("### 📊 Skewness Analysis & Log Transformation")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 What is Skewness?</b><br>
-            Skewness measures distribution asymmetry. Log transformation reduces right-skewness by compressing large values.
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("""
+            **📖 What is Skewness?**
+            Skewness measures the asymmetry of a distribution. A skewed distribution has a long tail on one side.
+            **Log Transformation** reduces right-skewness by compressing large values.
+            """)
             
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
             cols_for_skew = [col for col in numeric_cols if 'ID' not in col and 'Sample' not in col]
             if len(cols_for_skew) > 0:
                 skew_df = analyze_skewness(df, cols_for_skew)
                 st.dataframe(skew_df, use_container_width=True, hide_index=True)
+                skewed_cols = skew_df[skew_df['Abs Skewness'] > 0.5]['Column'].tolist()
+                if len(skewed_cols) > 0:
+                    st.markdown(f"**Skewed columns (|skew| > 0.5):** {', '.join(skewed_cols)}")
             
             if st.button("📊 Apply Log Transformation", type="primary", key="skew_tab"):
-                if len(cols_for_skew) > 0:
-                    df_transformed, _ = apply_log_transform(df, cols_for_skew)
-                    st.session_state.processed_data = df_transformed
-                    st.success(f"✅ Log transformation applied!")
+                with st.spinner('Applying log transformation...'):
+                    if len(cols_for_skew) > 0:
+                        df_transformed, transform_logs = apply_log_transform(df, cols_for_skew)
+                        st.session_state.processed_data = df_transformed
+                        st.success(f"✅ Log transformation applied!")
+                        for log in transform_logs: st.write(f"- {log}")
         
         with prep_tab5:
             st.markdown("### 📋 Summary & Next Steps")
             actions = []
-            if st.session_state.get('scaled_data') is not None: actions.append("✅ Feature Scaling applied")
-            if st.session_state.get('encoded_data') is not None: actions.append("✅ Categorical Encoding applied")
-            if st.session_state.get('processed_data') is not None: actions.append("✅ Outliers capped")
-            if actions:
-                for a in actions: st.markdown(a)
-                st.markdown("---\n### 🚀 Next Steps\nProceed to **🛠️ Feature Selection & Relevance** or **📊 Cross Validation & Evaluation**.")
+            if st.session_state.get('scaled_data') is not None: actions.append("✅ **Feature Scaling**: Numerical columns scaled using StandardScaler.")
+            if st.session_state.get('encoded_data') is not None:
+                shape = st.session_state.get('encoded_shape', 'N/A')
+                actions.append(f"✅ **Categorical Encoding**: One-hot encoding applied. Shape: {shape}")
+            if st.session_state.get('processed_data') is not None: actions.append("✅ **Outlier Capping**: Outliers addressed using IQR method.")
+            
+            if len(actions) == 0:
+                st.info("Run preprocessing steps to see the summary.")
+            else:
+                for action in actions: st.markdown(action)
+                st.markdown("---")
+                st.markdown("### 🚀 Next Steps")
+                st.markdown("The dataset is now ready. Proceed to **🛠️ Feature Selection & Relevance** or **📊 Cross Validation & Evaluation**.")
     
     # ==================== FEATURE SELECTION & RELEVANCE ====================
     elif section == "🛠️ Feature Selection & Relevance":
         st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
+        
+        with st.expander("ℹ️ About Feature Selection", expanded=False):
+            st.markdown("""
+            **Purpose of Feature Selection:**
+            Feature selection identifies the most important variables for predicting the target.
+            
+            **Three Methods Used:**
+            1. **Mutual Information**: Measures the dependency between features and target
+            2. **Chi-squared Test**: Tests the independence between categorical features and target
+            3. **Random Forest Importance**: Uses tree-based model to rank feature importance
+            
+            **Why this matters:** Selecting the right features reduces noise, speeds up training,
+            and improves model interpretability.
+            """)
         
         data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
         if data is None: st.warning("⚠️ Load data first!"); return
@@ -562,17 +627,37 @@ def main():
             if len(clean) > 0:
                 st.plotly_chart(plot_distribution(df, 'Risk_Score', 'Risk Score Distribution'), use_container_width=True)
         
+        if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
+            st.markdown("---")
+            st.markdown("#### 🔬 MP Count vs Risk Score")
+            clean = df.dropna(subset=['MP_Count_per_L','Risk_Score'])
+            if not clean.empty:
+                try:
+                    fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score',
+                                    color='Risk_Level' if 'Risk_Level' in clean.columns else None,
+                                    trendline='ols', title='MP Count vs Risk Score')
+                except:
+                    fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score', title='MP Count vs Risk Score')
+                st.plotly_chart(fig, use_container_width=True)
+        
+        if 'Risk_Level' in df.columns and 'Risk_Score' in df.columns:
+            st.markdown("---")
+            st.markdown("#### 📊 Risk Score by Risk Level")
+            clean = df.dropna(subset=['Risk_Score'])
+            clean['Risk_Level'] = clean['Risk_Level'].astype(str)
+            if len(clean) > 0:
+                fig = px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level', title='Risk Score by Risk Level')
+                st.plotly_chart(fig, use_container_width=True)
+        
         st.markdown("---")
         st.markdown("### 🎯 Feature Selection Methods")
-        st.markdown("""
-        <div class="explanation-box">
-        <b>📖 Understanding Feature Selection:</b><br>
-        • <b>Mutual Information:</b> Measures dependency between features and target<br>
-        • <b>Chi-squared Test:</b> Tests statistical relationship<br>
-        • <b>Random Forest Importance:</b> Shows contribution to predictions<br>
-        <b>Higher scores = More important features</b>
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("""
+        **📖 Understanding Feature Selection Methods:**
+        • **Mutual Information:** Measures how much knowing a feature reduces uncertainty about the target
+        • **Chi-squared Test:** Tests if there's a statistically significant relationship between feature and target
+        • **Random Forest Importance:** Shows how much each feature contributes to accurate predictions
+        **Higher scores = More important features**
+        """)
         
         target_col = st.selectbox("Select Target Variable", df.columns.tolist(),
                                   index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
@@ -600,27 +685,30 @@ def main():
                 ft1, ft2, ft3 = st.tabs(["🌲 Random Forest", "📊 Mutual Information", "🔢 Chi-squared"])
                 
                 with ft1:
-                    st.markdown("**Top 20 features - RandomForest Feature Importances:**")
-                    st.markdown("*Higher importance = contributes more to predictions*")
+                    st.markdown("**Top 20 features based on RandomForest Feature Importances:**")
+                    st.markdown("*Higher importance means the feature contributes more to accurate predictions*")
                     fig = px.bar(rf_df.head(20), x='Importance', y='Feature', orientation='h',
-                               title='Top 20 Features - Random Forest', height=500)
+                               title='Top 20 Features - Random Forest Importance',
+                               color='Importance', color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with ft2:
-                    st.markdown("**Top 20 features - Mutual Information:**")
-                    st.markdown("*Higher MI = stronger dependency with target*")
+                    st.markdown("**Top 20 features based on Mutual Information:**")
+                    st.markdown("*Higher Mutual Information means the feature has stronger dependency with the target*")
                     fig = px.bar(mi_df.head(20), x='Mutual_Info', y='Feature', orientation='h',
-                               title='Top 20 Features - Mutual Information', height=500)
+                               title='Top 20 Features - Mutual Information',
+                               color='Mutual_Info', color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with ft3:
-                    st.markdown("**Top 20 features - Chi-squared Test:**")
-                    st.markdown("*Higher Chi2 = stronger statistical relationship*")
+                    st.markdown("**Top 20 features based on Chi-squared Test:**")
+                    st.markdown("*Higher Chi2 score indicates stronger statistical relationship with the target*")
                     fig = px.bar(chi2_df.head(20), x='Chi2_Score', y='Feature', orientation='h',
-                               title='Top 20 Features - Chi-squared Test', height=500)
+                               title='Top 20 Features - Chi-squared Test',
+                               color='Chi2_Score', color_continuous_scale='Viridis', height=500)
                     st.plotly_chart(fig, use_container_width=True)
                 
-                st.success(f"✅ Feature selection completed!")
+                st.success(f"✅ Feature selection completed! Top features identified.")
     
     # ==================== MODELING ====================
     elif section == "🤖 Modeling":
@@ -683,15 +771,17 @@ def main():
         with st.expander("ℹ️ About Model Evaluation", expanded=False):
             st.markdown("""
             **Purpose of Model Evaluation:**
-            After training models, we evaluate how well they perform on unseen data.
+            After training models, we need to evaluate how well they perform on unseen data.
             
-            **Key Metrics:**
-            - **Accuracy**: Overall correct predictions
-            - **Precision**: How many predicted positives are correct
-            - **Recall**: How many actual positives were found
-            - **F1-Score**: Balance between precision and recall
+            **Key Metrics Explained:**
+            - **Accuracy**: Overall percentage of correct predictions
+            - **Precision**: How many predicted positives are actually positive (minimizes false alarms)
+            - **Recall**: How many actual positives were correctly identified (minimizes missed cases)
+            - **F1-Score**: Harmonic mean of Precision and Recall (balanced measure)
             
-            **Cross Validation**: Tests model stability across different data splits.
+            **Cross Validation**: Tests model stability by training on different data splits
+            
+            **Why this matters:** These metrics help you choose the best model for your specific needs.
             """)
         
         data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
@@ -707,14 +797,13 @@ def main():
         # ===== TAB 1: EVALUATE MODELS =====
         with eval_tab1:
             st.markdown("### 📊 Evaluate the Models")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 What this section does:</b><br>
-            • <b>Trains models</b> on 80% of data<br>
-            • <b>Evaluates</b> on 20% held-out test data<br>
-            • Uses <b>weighted averaging</b> for multi-class metrics
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("""
+            **📖 What this section does:**
+            • **Trains models** on the training data (80% of dataset)
+            • **Evaluates performance** on the testing data (20% held out)
+            • **Calculates metrics** using 'weighted' averaging for multi-class problems
+            **Weighted averaging** accounts for class imbalance by weighting each class's metric by its support (number of samples).
+            """)
             
             target_col = 'Risk_Type'
             if target_col not in df.columns:
@@ -727,21 +816,25 @@ def main():
                     if results:
                         st.markdown("---")
                         st.markdown("### 📊 Data Split Information")
+                        st.info("""
+                        **📖 Understanding the Data Split:**
+                        • **Training Set (80%)**: Used to teach the model patterns in the data
+                        • **Testing Set (20%)**: Used to evaluate how well the model generalizes to unseen data
+                        • This split prevents **overfitting** - where a model memorizes training data but fails on new data
+                        """)
+                        
                         st.markdown(f"""
-                        <div style="background: #e8f4fd; border: 2px solid #1f77b4; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                            <p><b>Target:</b> {split_info['target_col']}</p>
-                            <p><b>X_train:</b> {split_info['X_train_shape']} | <b>X_test:</b> {split_info['X_test_shape']}</p>
-                            <p><b>y_train:</b> {split_info['y_train_shape']} | <b>y_test:</b> {split_info['y_test_shape']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        **Target Variable:** {split_info['target_col']} | 
+                        **X_train:** {split_info['X_train_shape']} | **X_test:** {split_info['X_test_shape']} |
+                        **y_train:** {split_info['y_train_shape']} | **y_test:** {split_info['y_test_shape']}
+                        """)
                         
                         st.markdown("---")
                         
-                        # Evaluate each model
                         model_descriptions = {
                             'Logistic Regression': 'A linear model that estimates probabilities using a logistic function. Works well for linearly separable data.',
-                            'RandomForestClassifier': 'An ensemble of decision trees that reduces overfitting by averaging multiple trees.',
-                            'GradientBoostingClassifier': 'Builds trees sequentially, each correcting errors of previous trees. Often achieves high accuracy.'
+                            'RandomForestClassifier': 'An ensemble of decision trees that reduces overfitting by averaging multiple trees trained on different data subsets.',
+                            'GradientBoostingClassifier': 'Builds trees sequentially, where each new tree corrects errors made by previous trees. Often achieves high accuracy.'
                         }
                         
                         for model_name in ['Logistic Regression', 'RandomForestClassifier', 'GradientBoostingClassifier']:
@@ -749,23 +842,22 @@ def main():
                                 res = results[model_name]
                                 st.markdown(f"### # Evaluate {model_name} Model")
                                 st.markdown(f"*{model_descriptions.get(model_name, '')}*")
-                                st.markdown(f"**Accuracy:** {res['accuracy']:.4f} <span class='metric-explain'>- Overall correct predictions</span>")
-                                st.markdown(f"**Precision:** {res['precision']:.4f} <span class='metric-explain'>- Correct positive predictions</span>")
-                                st.markdown(f"**Recall:** {res['recall']:.4f} <span class='metric-explain'>- Actual positives found</span>")
-                                st.markdown(f"**F1-Score:** {res['f1_score']:.4f} <span class='metric-explain'>- Balance of precision & recall</span>")
+                                st.markdown(f"**Accuracy:** {res['accuracy']:.4f} — *Overall correct predictions*")
+                                st.markdown(f"**Precision:** {res['precision']:.4f} — *How many predicted positives were correct*")
+                                st.markdown(f"**Recall:** {res['recall']:.4f} — *How many actual positives were found*")
+                                st.markdown(f"**F1-Score:** {res['f1_score']:.4f} — *Balance between precision and recall*")
                                 st.markdown("---")
                                 st.markdown("")
                         
                         # Comparison Table
-                        st.markdown("### 📊 Model Performance Comparison ---")
-                        st.markdown("""
-                        <div class="explanation-box">
-                        <b>📖 How to interpret:</b><br>
-                        • <b>Higher values = better</b> for all metrics (closer to 1.0)<br>
-                        • <b>Accuracy</b>: Best when classes are balanced<br>
-                        • <b>F1-Score</b>: Better when classes are imbalanced
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.markdown("### 📊 Model Performance Comparison")
+                        st.info("""
+                        **📖 How to interpret this comparison table:**
+                        • **Higher values are better** for all metrics (closer to 1.0 = better)
+                        • **Accuracy**: Best when classes are balanced
+                        • **F1-Score**: Better metric when classes are imbalanced
+                        • Choose the model that best balances all metrics for your specific needs
+                        """)
                         
                         metrics_data = []
                         for name, res in results.items():
@@ -784,28 +876,38 @@ def main():
                         }, use_container_width=True)
                         
                         fig = px.bar(metrics_df, x='Model', y=['Accuracy','Precision','Recall','F1-Score'],
-                                    barmode='group', title='Model Performance Metrics',
+                                    barmode='group', title='Model Performance Metrics Comparison',
                                     color_discrete_sequence=['#3498db','#e74c3c','#2ecc71','#f39c12'], height=400)
                         st.plotly_chart(fig, use_container_width=True)
                         
                         best_acc = metrics_df.loc[metrics_df['Accuracy'].idxmax()]
                         best_f1 = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
+                        
                         st.markdown(f"""
-                        <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
-                            <p style="margin: 5px 0; color: #155724;">Based on <b>Accuracy</b>, best: <b>{best_acc['Model']}</b> ({best_acc['Accuracy']:.4f})</p>
-                            <p style="margin: 5px 0; color: #155724;">Based on <b>F1-Score</b>, best: <b>{best_f1['Model']}</b> ({best_f1['F1-Score']:.4f})</p>
+                        <div style="background-color: #d4edda; border-left: 5px solid #27ae60; padding: 15px 20px; margin: 15px 0; border-radius: 5px;">
+                            <p style="margin: 5px 0; color: #155724; font-size: 1.1rem;">
+                                Based on <b>Accuracy</b>, the best performing model is: <b>{best_acc['Model']}</b> with Accuracy: <b>{best_acc['Accuracy']:.4f}</b>
+                            </p>
+                            <p style="margin: 5px 0; color: #155724; font-size: 1.1rem;">
+                                Based on <b>F1-Score</b>, the best performing model is: <b>{best_f1['Model']}</b> with F1-Score: <b>{best_f1['F1-Score']:.4f}</b>
+                            </p>
+                            <p style="margin: 10px 0 0 0; color: #666;">
+                                <b>Recommendation:</b> If your data has balanced classes, use Accuracy to choose. 
+                                If classes are imbalanced, F1-Score is a better indicator of model quality.
+                            </p>
                         </div>
                         """, unsafe_allow_html=True)
         
         # ===== TAB 2: COMPARE BOTH TARGETS =====
         with eval_tab2:
             st.markdown("### 📊 Compare Model Performance (Both Targets)")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 Why compare both targets?</b><br>
-            Different targets may have different predictability. This helps you understand which prediction task is more feasible.
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("""
+            **📖 Why compare both Risk_Type and Risk_Level?**
+            • Different targets may have different predictability
+            • Some models may perform better on one target than another
+            • This comparison helps you understand which prediction task is more feasible
+            • **Risk_Level** (Low/Medium/High/Critical) may be easier to predict than **Risk_Type** (Type_A/B/C)
+            """)
             
             if st.button("🚀 Train & Compare for Both Targets", type="primary", key="compare_both"):
                 all_comparisons = {}
@@ -830,7 +932,7 @@ def main():
                         best_f1 = metrics_df.loc[metrics_df['F1-Score'].idxmax()]
                         
                         st.markdown(f"""
-                        <div style="background: #d4edda; border: 2px solid #27ae60; border-radius: 10px; padding: 20px; margin: 15px 0;">
+                        <div style="background-color: #d4edda; border-left: 5px solid #27ae60; padding: 15px 20px; margin: 15px 0; border-radius: 5px;">
                             <p style="margin: 5px 0; color: #155724;">Best <b>Accuracy</b>: <b>{best_acc['Model']}</b> ({best_acc['Accuracy']:.4f})</p>
                             <p style="margin: 5px 0; color: #155724;">Best <b>F1-Score</b>: <b>{best_f1['Model']}</b> ({best_f1['F1-Score']:.4f})</p>
                         </div>
@@ -866,15 +968,14 @@ def main():
         # ===== TAB 3: CROSS VALIDATION =====
         with eval_tab3:
             st.markdown("### 🔄 Cross Validation Analysis")
-            st.markdown("""
-            <div class="explanation-box">
-            <b>📖 What is Cross Validation?</b><br>
-            Evaluates model stability by training on different data subsets.<br>
-            • <b>K-Fold:</b> Splits data into K parts, trains K times<br>
-            • <b>Mean ± Std:</b> Shows expected performance range<br>
-            • <b>Lower Std:</b> More consistent performance
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("""
+            **📖 What is Cross Validation?**
+            Cross Validation (CV) evaluates model stability by training on different subsets of data.
+            • **K-Fold CV**: Splits data into K parts, trains K times on K-1 parts, tests on the remaining part
+            • **Stratified CV**: Preserves class distribution in each fold
+            • **Mean ± Std**: Shows the expected performance range
+            • **Lower Std**: More consistent performance across different data splits
+            """)
             
             target = st.selectbox("Target Variable for CV", df.columns.tolist(),
                                  index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
@@ -908,7 +1009,7 @@ def main():
                 if cv_results:
                     cv_df = pd.DataFrame(cv_results)
                     st.markdown("#### 📊 Cross Validation Results")
-                    st.markdown("*Lower Std = more consistent performance across data splits*")
+                    st.markdown("*Lower Std means more consistent performance across different data splits*")
                     st.dataframe(cv_df, use_container_width=True, hide_index=True)
                     best_cv = cv_df.loc[cv_df['Mean F1'].idxmax()]
                     st.success(f"🏆 Best CV Model: **{best_cv['Model']}** (Mean F1: {best_cv['Mean F1']:.4f} ±{best_cv['Std F1']:.4f})")
@@ -917,8 +1018,8 @@ def main():
                     for name, scores in all_scores.items():
                         fig_cv.add_trace(go.Box(y=scores, name=name, boxmean='sd'))
                     fig_cv.update_layout(
-                        title=f'Cross Validation F1 Scores ({folds}-Fold)<br><sub>Box shows spread of scores across folds</sub>',
-                        yaxis_title='F1 Score', height=400)
+                        title=f'Cross Validation F1 Scores ({folds}-Fold Stratified)<br><sub>Box shows spread of scores across folds</sub>',
+                        yaxis_title='F1 Score (Weighted)', height=400)
                     st.plotly_chart(fig_cv, use_container_width=True)
 
 
