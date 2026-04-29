@@ -671,29 +671,44 @@ def main():
             with st.spinner('Calculating...'):
                 X = df[nums].copy()
                 y = df[target].copy()
+                mask = y.notna()
+                X = X[mask]
+                y = y[mask]
                 X = X.fillna(X.median())
-                if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
+                if y.dtype == 'object': 
+                    y = LabelEncoder().fit_transform(y)
+                else:
+                    y = pd.qcut(y, q=4, labels=False, duplicates='drop')
                 X = X.dropna(axis=1, how='any')
                 
-                mi_df = calculate_mutual_info(X, y)
-                chi2_df = calculate_chi2(X, y)
-                rf_df = calculate_rf_importance(X, y)
+                # Calculate scores as Series
+                mi_scores = mutual_info_classif(X, y, random_state=42)
+                mi_series = pd.Series(mi_scores, index=X.columns).sort_values(ascending=False)
                 
-                st.session_state.feature_importance = rf_df
-                st.session_state.mutual_info = mi_df
-                st.session_state.chi2_scores = chi2_df
-                st.session_state.selected_features = rf_df.head(10)['Feature'].tolist()
+                X_chi2 = X - X.min() + 1
+                chi2_scores, _ = chi2(X_chi2, y)
+                chi2_series = pd.Series(chi2_scores, index=X.columns).sort_values(ascending=False)
                 
-                ft1, ft2, ft3 = st.tabs(["🌲 Random Forest", "📊 Mutual Information", "🔢 Chi-squared"])
-                with ft1: 
-                    st.plotly_chart(px.bar(rf_df.head(20), x='Importance', y='Feature', orientation='h', 
-                                          title='RF Feature Importance', height=500), use_container_width=True)
-                with ft2: 
-                    st.plotly_chart(px.bar(mi_df.head(20), x='Mutual_Info', y='Feature', orientation='h', 
-                                          title='Mutual Information Scores', height=500), use_container_width=True)
-                with ft3: 
-                    st.plotly_chart(px.bar(chi2_df.head(20), x='Chi2_Score', y='Feature', orientation='h', 
-                                          title='Chi-squared Scores', height=500), use_container_width=True)
+                rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+                rf.fit(X, y)
+                rf_series = pd.Series(rf.feature_importances_, index=X.columns).sort_values(ascending=False)
+                
+                st.session_state.selected_features = rf_series.head(10).index.tolist()
+                
+                ft1, ft2, ft3 = st.tabs(["📊 Mutual Information", "🔢 Chi-squared", "🌲 Random Forest"])
+                
+                with ft1:
+                    st.markdown("**Top 20 features based on Mutual Information:**")
+                    st.text("Mutual Information Scores\n" + mi_series.head(20).to_string())
+                
+                with ft2:
+                    st.markdown("**Top 20 features based on Chi-squared Test:**")
+                    st.text("Chi-squared Scores\n" + chi2_series.head(20).to_string())
+                
+                with ft3:
+                    st.markdown("**Top 20 features based on RandomForest Feature Importances:**")
+                    st.text("Feature Importances\n" + rf_series.head(20).to_string())
+                
                 st.success("✅ Feature selection completed!")
     
     # ==================== MODELING ====================
