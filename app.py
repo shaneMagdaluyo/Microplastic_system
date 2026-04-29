@@ -31,8 +31,6 @@ st.markdown("""
     .section-header { font-size: 1.8rem; font-weight: 600; color: #2c3e50; margin-top: 1rem; margin-bottom: 1rem; }
     .stButton > button { width: 100%; background-color: #1f77b4; color: white; font-weight: 600; border-radius: 8px; padding: 0.5rem 1rem; }
     .stButton > button:hover { background-color: #2980b9; border-color: #2980b9; }
-    .success-box { padding: 1rem; border-radius: 8px; background-color: #d4edda; border: 1px solid #c3e6cb; margin: 1rem 0; }
-    .info-box { padding: 1rem; border-radius: 8px; background-color: #d1ecf1; border: 1px solid #bee5eb; margin: 1rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -40,8 +38,6 @@ def init_session_state():
     """Initialize all session state variables"""
     if 'data' not in st.session_state: st.session_state.data = None
     if 'processed_data' not in st.session_state: st.session_state.processed_data = None
-    if 'outlier_stats_after' not in st.session_state: st.session_state.outlier_stats_after = None
-    if 'outlier_columns' not in st.session_state: st.session_state.outlier_columns = []
     if 'models' not in st.session_state: st.session_state.models = {}
     if 'feature_importance' not in st.session_state: st.session_state.feature_importance = None
     if 'mutual_info' not in st.session_state: st.session_state.mutual_info = None
@@ -82,21 +78,21 @@ def load_dataset(uploaded_file):
         return None
 
 def generate_sample_data():
-    """Generate sample microplastic dataset"""
+    """Generate sample microplastic dataset with outliers"""
     np.random.seed(42)
     n = 1000
     
     data = {
         'Sample_ID': [f'MP_{i:04d}' for i in range(n)],
-        'MP_Count_per_L': np.random.poisson(lam=50, size=n).astype(float),
+        'MP_Count_per_L': np.random.normal(2, 1.5, n),
         'Particle_Size_um': np.random.normal(100, 30, n),
-        'Microplastic_Size_mm_midpoint': np.random.normal(2.5, 1.5, n),
+        'Microplastic_Size_mm_midpoint': np.random.normal(2.5, 2.0, n),
         'Density_midpoint': np.random.normal(1.0, 0.1, n),
         'Polymer_Type': np.random.choice(['PE','PP','PS','PET','PVC','Nylon'], n),
         'Water_Source': np.random.choice(['River','Lake','Ocean','Groundwater','Tap'], n),
         'pH': np.random.normal(7, 0.5, n), 
         'Temperature_C': np.random.normal(20, 5, n),
-        'Risk_Score': np.random.uniform(0, 100, n),
+        'Risk_Score': np.random.uniform(0, 1.5, n),
         'Risk_Level': np.random.choice(['Low','Medium','High','Critical'], n, p=[0.3,0.35,0.25,0.1]),
         'Risk_Type': np.random.choice(['Type_A','Type_B','Type_C'], n, p=[0.5,0.3,0.2]),
         'Location': np.random.choice(['Urban','Rural','Industrial','Coastal'], n),
@@ -111,69 +107,19 @@ def generate_sample_data():
     for col in ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']:
         outlier_indices = np.random.choice(n, size=int(n*0.05), replace=False)
         if col == 'MP_Count_per_L':
-            df.loc[outlier_indices, col] = np.random.uniform(150, 250, len(outlier_indices))
+            df.loc[outlier_indices, col] = np.random.uniform(8, 15, len(outlier_indices))
         elif col == 'Risk_Score':
-            df.loc[outlier_indices, col] = np.random.uniform(150, 200, len(outlier_indices))
+            df.loc[outlier_indices, col] = np.random.uniform(2, 3, len(outlier_indices))
         elif col == 'Microplastic_Size_mm_midpoint':
             df.loc[outlier_indices, col] = np.random.uniform(10, 20, len(outlier_indices))
         elif col == 'Density_midpoint':
             df.loc[outlier_indices, col] = np.random.uniform(1.5, 2.0, len(outlier_indices))
     
-    # Add some missing values (this will cause count to be less than 1000)
+    # Add some missing values (to get count less than 1000)
     for col in ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']:
-        df.loc[np.random.random(n) < 0.077, col] = np.nan  # ~7.7% missing to get ~923 count
+        df.loc[np.random.random(n) < 0.077, col] = np.nan
     
     return df
-
-def detect_outliers_iqr(df, columns):
-    """Detect outliers using IQR method"""
-    outlier_info = {}
-    for col in columns:
-        if df[col].dtype in ['float64', 'int64']:
-            clean_data = df[col].dropna()
-            if len(clean_data) == 0:
-                continue
-                
-            Q1 = clean_data.quantile(0.25)
-            Q3 = clean_data.quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            
-            outliers = clean_data[(clean_data < lower_bound) | (clean_data > upper_bound)]
-            
-            outlier_info[col] = {
-                'Q1': Q1,
-                'Q3': Q3,
-                'IQR': IQR,
-                'lower_bound': lower_bound,
-                'upper_bound': upper_bound,
-                'count': len(outliers),
-                'percentage': (len(outliers) / len(clean_data)) * 100
-            }
-    return outlier_info
-
-def cap_outliers_iqr(df, columns):
-    """Cap outliers using IQR method and return statistics after capping"""
-    df_capped = df.copy()
-    
-    # Cap outliers for each column
-    for col in columns:
-        if df_capped[col].dtype in ['float64', 'int64']:
-            Q1 = df_capped[col].quantile(0.25)
-            Q3 = df_capped[col].quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            
-            # Cap the outliers
-            df_capped[col] = df_capped[col].clip(lower=lower_bound, upper=upper_bound)
-    
-    # Get statistics after capping using describe()
-    # This gives exactly the format: count, mean, std, min, 25%, 50%, 75%, max
-    stats_after = df_capped[columns].describe()
-    
-    return df_capped, stats_after
 
 def one_hot_encode(df):
     """Perform one-hot encoding"""
@@ -354,8 +300,6 @@ def main():
                 with c2: st.metric("Duplicates", df.duplicated().sum())
                 with c3: st.metric("Numeric Cols", len(df.select_dtypes(include=['float64','int64']).columns))
                 with c4: st.metric("Categorical Cols", len(df.select_dtypes(include=['object']).columns))
-                st.markdown("---")
-                st.markdown("**Descriptive Statistics:**")
                 st.dataframe(df.describe(), use_container_width=True)
     
     # ==================== PREPROCESSING ====================
@@ -413,81 +357,56 @@ def main():
         with p3:
             st.markdown("### 🎯 Address Outliers in Numerical Columns")
             st.markdown("""
-            <div class="info-box">
-            <strong>📌 IQR Method:</strong> Outliers are identified using the Interquartile Range (IQR) method.<br>
-            <strong>Bounds:</strong> Lower = Q1 - 1.5×IQR, Upper = Q3 + 1.5×IQR<br>
-            <strong>Action:</strong> Values outside these bounds will be capped to the nearest bound.
-            </div>
-            """, unsafe_allow_html=True)
+            **📌 IQR Method:** Outliers are capped using Q1 - 1.5×IQR and Q3 + 1.5×IQR bounds.
+            """)
             
-            # Select numerical columns
-            nums = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            cols_out = [c for c in nums if 'ID' not in c and 'Sample' not in c]
+            # Define the numerical columns to process
+            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
             
-            if len(cols_out) > 0:
-                # Default columns to process
-                default_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
-                available_defaults = [c for c in default_cols if c in cols_out]
+            # Check which columns exist in the dataframe
+            available_cols = [col for col in numerical_cols if col in df.columns]
+            
+            if len(available_cols) > 0:
+                st.markdown(f"**Processing columns:** {', '.join(available_cols)}")
                 
-                selected_cols = st.multiselect(
-                    "Select columns for outlier handling:",
-                    cols_out,
-                    default=available_defaults if available_defaults else cols_out[:4]
-                )
+                # Show before statistics
+                st.markdown("#### Before Outlier Handling")
+                st.dataframe(df[available_cols].describe(), use_container_width=True)
                 
-                if len(selected_cols) > 0:
-                    # Show current outliers
-                    st.markdown("#### Current Outliers Detected")
-                    outlier_info = detect_outliers_iqr(df, selected_cols)
-                    
-                    outlier_data = []
-                    for col, info in outlier_info.items():
-                        outlier_data.append({
-                            'Column': col,
-                            'Q1': f"{info['Q1']:.4f}",
-                            'Q3': f"{info['Q3']:.4f}",
-                            'IQR': f"{info['IQR']:.4f}",
-                            'Lower Bound': f"{info['lower_bound']:.4f}",
-                            'Upper Bound': f"{info['upper_bound']:.4f}",
-                            'Outliers': info['count'],
-                            '%': f"{info['percentage']:.1f}%"
-                        })
-                    
-                    st.dataframe(pd.DataFrame(outlier_data), use_container_width=True, hide_index=True)
-                    
-                    # Apply outlier capping
-                    if st.button("🎯 Cap Outliers (IQR Method)", type="primary"):
-                        with st.spinner('Capping outliers...'):
-                            # Cap outliers and get statistics after
-                            df_capped, stats_after = cap_outliers_iqr(df, selected_cols)
-                            
-                            # Store in session state
-                            st.session_state.processed_data = df_capped
-                            st.session_state.outlier_stats_after = stats_after
-                            st.session_state.outlier_columns = selected_cols
-                            
-                            st.markdown("""
-                            <div class="success-box">
-                            <strong>✅ Outliers handled successfully!</strong><br>
-                            Values outside IQR bounds have been capped to the nearest bound.
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Display descriptive statistics after handling outliers
-                            # THIS IS THE EXACT TABLE FORMAT YOU WANTED
-                            st.markdown("### Descriptive statistics after handling outliers:")
-                            
-                            # describe() gives exactly: count, mean, std, min, 25%, 50%, 75%, max as rows
-                            # and columns as the variable names on top
-                            stats_display = stats_after.round(6)
-                            
-                            # Display the table
-                            st.dataframe(stats_display, use_container_width=True)
-                            
-                            # Also show as a styled static table
-                            st.markdown("---")
-                            st.markdown("**Formatted Table:**")
-                            st.table(stats_display)
+                if st.button("🎯 Cap Outliers (IQR Method)", type="primary"):
+                    with st.spinner('Handling outliers...'):
+                        # EXACT IMPLEMENTATION AS REQUESTED
+                        # Define the numerical columns
+                        numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+                        
+                        # Handle outliers using the IQR method (capping)
+                        for col in numerical_cols:
+                            if col in df.columns:
+                                Q1 = df[col].quantile(0.25)
+                                Q3 = df[col].quantile(0.75)
+                                IQR = Q3 - Q1
+                                
+                                lower_bound = Q1 - 1.5 * IQR
+                                upper_bound = Q3 + 1.5 * IQR
+                                
+                                # Cap the outliers
+                                df[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
+                        
+                        # Store processed data
+                        st.session_state.processed_data = df
+                        
+                        st.success("✅ Outliers handled successfully!")
+                        
+                        # Display descriptive statistics after outlier handling
+                        st.markdown("### Descriptive statistics after handling outliers:")
+                        st.dataframe(df[numerical_cols].describe(), use_container_width=True)
+                        
+                        # Show distributions after capping
+                        st.markdown("### 📈 Distributions After Outlier Handling")
+                        for col in available_cols:
+                            st.plotly_chart(plot_distribution(df, col, f'{col} (After Capping)'), use_container_width=True)
+            else:
+                st.warning("None of the specified numerical columns found in the dataset.")
         
         with p4:
             st.markdown("### 📊 Skewness Analysis & Log Transform")
@@ -509,7 +428,6 @@ def main():
                             st.session_state.processed_data = transformed_df
                             st.success("✅ Log transform applied!")
                             
-                            # Show new skewness
                             new_skew = analyze_skewness(transformed_df, skewed_cols)
                             st.dataframe(new_skew, use_container_width=True, hide_index=True)
         
@@ -521,20 +439,21 @@ def main():
                 actions.append("✅ Feature Scaling applied")
             if st.session_state.get('encoded_data') is not None: 
                 actions.append("✅ Categorical Encoding applied")
-            if len(st.session_state.get('outlier_columns', [])) > 0: 
-                actions.append(f"✅ Outliers handled in {len(st.session_state.outlier_columns)} columns")
             if st.session_state.get('processed_data') is not None: 
-                actions.append("✅ Log transform applied")
+                actions.append("✅ Outliers handled / Log transform applied")
             
             if actions:
                 for a in actions: 
                     st.markdown(a)
                 
-                # Show the outlier stats table if available
-                if st.session_state.get('outlier_stats_after') is not None:
-                    st.markdown("---")
-                    st.markdown("### Descriptive statistics after handling outliers:")
-                    st.dataframe(st.session_state.outlier_stats_after.round(6), use_container_width=True)
+                # Show the outlier stats table if available from processed data
+                if st.session_state.get('processed_data') is not None:
+                    numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+                    available_cols = [col for col in numerical_cols if col in st.session_state.processed_data.columns]
+                    if available_cols:
+                        st.markdown("---")
+                        st.markdown("### Descriptive statistics after handling outliers:")
+                        st.dataframe(st.session_state.processed_data[available_cols].describe(), use_container_width=True)
                 
                 st.markdown("---")
                 st.markdown("### 🚀 Next Steps")
@@ -802,8 +721,8 @@ def main():
                      'Details': f'{len(st.session_state.get("scaled_columns", []))} cols'},
                     {'Stage': '2. Preproc', 'Step': 'Encoding', 'Status': '✅' if st.session_state.get('encoded_data') is not None else '⬜', 
                      'Details': f'{st.session_state.get("encoded_shape", "N/A")}'},
-                    {'Stage': '2. Preproc', 'Step': 'Outliers', 'Status': '✅' if len(st.session_state.get('outlier_columns', [])) > 0 else '⬜', 
-                     'Details': f'{len(st.session_state.get("outlier_columns", []))} columns'},
+                    {'Stage': '2. Preproc', 'Step': 'Outliers', 'Status': '✅' if st.session_state.get('processed_data') is not None else '⬜', 
+                     'Details': 'IQR capping'},
                     {'Stage': '3. Features', 'Step': 'Importance', 'Status': '✅' if st.session_state.get('feature_importance') is not None else '⬜', 
                      'Details': 'MI, Chi2, RF'},
                     {'Stage': '4. Models', 'Step': 'Trained', 'Status': '✅' if st.session_state.get('trained') else '⬜', 
