@@ -748,8 +748,14 @@ def main():
                 # Calculate skewness before transformation
                 skewness_before = df[available_cols].skew()
                 
+                # Convert to DataFrame for table display
+                skew_before_df = pd.DataFrame({
+                    'Column': skewness_before.index,
+                    'Skewness': skewness_before.values
+                })
+                
                 st.markdown("**Skewness before transformation:**")
-                st.text(str(skewness_before))
+                st.dataframe(skew_before_df, use_container_width=True, hide_index=True)
                 
                 if st.button("📊 Apply Log Transform to Skewed Columns", type="primary", key="skew_tab"):
                     # Apply log transformation
@@ -764,10 +770,16 @@ def main():
                     # Calculate skewness after transformation
                     skewness_after = df_transformed[available_cols].skew()
                     
+                    # Convert to DataFrame for table display
+                    skew_after_df = pd.DataFrame({
+                        'Column': skewness_after.index,
+                        'Skewness': skewness_after.values
+                    })
+                    
                     st.success("✅ Log transform applied to numerical columns!")
                     
                     st.markdown("**Skewness after transformation:**")
-                    st.text(str(skewness_after))
+                    st.dataframe(skew_after_df, use_container_width=True, hide_index=True)
         with p5:
             st.markdown("### 📋 Preprocessing Summary")
             actions = []
