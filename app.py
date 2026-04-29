@@ -822,10 +822,79 @@ def main():
                 st.plotly_chart(px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level', 
                                       title='Risk Score by Risk Level'), use_container_width=True)
         
+    # ==================== FEATURE SELECTION ====================
+    elif section == "🛠️ Feature Selection & Relevance":
+        st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
+        data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
+        if data is None: 
+            st.warning("⚠️ Load data first!")
+            return
+        
+        df = data.copy()
+        
+        # Goal Clarification
+        st.markdown("### 🎯 Understand the Goal")
+        st.markdown("Clarify the target variable for classification/prediction and the type of model you intend to build.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            target = st.selectbox(
+                "Select Target Variable:", 
+                df.columns.tolist(),
+                index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0
+            )
+        
+        with col2:
+            model_type = st.selectbox(
+                "Select Model Type:",
+                ["Classification", "Regression"],
+                index=0 if df[target].dtype == 'object' or df[target].nunique() < 10 else 1
+            )
+        
+        # Show target variable info
+        st.markdown("---")
+        st.markdown(f"**Target Variable:** `{target}`")
+        
+        if df[target].dtype == 'object':
+            st.markdown(f"**Type:** Categorical ({df[target].nunique()} unique values)")
+            st.markdown(f"**Categories:** {', '.join(df[target].dropna().unique().astype(str))}")
+            st.markdown(f"**Model Type:** Classification")
+        else:
+            st.markdown(f"**Type:** Numerical")
+            st.markdown(f"**Range:** {df[target].min():.4f} to {df[target].max():.4f}")
+            st.markdown(f"**Model Type:** {model_type}")
+        
+        st.markdown("---")
+        
+        # EDA
+        st.markdown("### 📈 Exploratory Data Analysis")
+        
+        if 'Risk_Score' in df.columns:
+            clean = df['Risk_Score'].dropna()
+            if len(clean) > 0: 
+                st.plotly_chart(plot_distribution(df, 'Risk_Score', 'Risk Score Distribution'), use_container_width=True)
+        
+        if 'MP_Count_per_L' in df.columns and 'Risk_Score' in df.columns:
+            clean = df.dropna(subset=['MP_Count_per_L', 'Risk_Score'])
+            if not clean.empty:
+                try: 
+                    fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score', 
+                                   color='Risk_Level' if 'Risk_Level' in clean.columns else None, 
+                                   trendline='ols', title='MP Count vs Risk Score')
+                except: 
+                    fig = px.scatter(clean, x='MP_Count_per_L', y='Risk_Score', title='MP Count vs Risk Score')
+                st.plotly_chart(fig, use_container_width=True)
+        
+        if 'Risk_Level' in df.columns and 'Risk_Score' in df.columns:
+            clean = df.dropna(subset=['Risk_Score'])
+            clean['Risk_Level'] = clean['Risk_Level'].astype(str)
+            if len(clean) > 0: 
+                st.plotly_chart(px.box(clean, x='Risk_Level', y='Risk_Score', color='Risk_Level', 
+                                      title='Risk Score by Risk Level'), use_container_width=True)
+        
         st.markdown("---")
         st.markdown("### 🎯 Feature Selection")
-        target = st.selectbox("Target Variable", df.columns.tolist(), 
-                             index=df.columns.tolist().index('Risk_Type') if 'Risk_Type' in df.columns else 0)
+        
         nums = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
         if target in nums: 
             nums.remove(target)
