@@ -671,8 +671,15 @@ def main():
             with st.spinner('Calculating...'):
                 X = df[nums].copy()
                 y = df[target].copy()
+                mask = y.notna()
+                X = X[mask]
+                y = y[mask]
                 X = X.fillna(X.median())
-                if y.dtype == 'object': y = LabelEncoder().fit_transform(y)
+                if y.dtype == 'object': 
+                    y = LabelEncoder().fit_transform(y)
+                else:
+                    # If continuous target, convert to discrete for classification-based methods
+                    y = pd.qcut(y, q=4, labels=False, duplicates='drop')
                 X = X.dropna(axis=1, how='any')
                 
                 mi_df = calculate_mutual_info(X, y)
