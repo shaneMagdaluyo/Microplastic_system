@@ -562,30 +562,40 @@ def main():
         
         with p1:
             st.markdown("### 📏 Perform Feature Scaling")
-            nums = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            cols = [c for c in nums if 'ID' not in c and 'Sample' not in c]
             
-            if len(cols) > 0:
-                st.markdown(f"**Numeric columns available for scaling ({len(cols)}):**")
-                st.write(", ".join(cols[:10]) + ("..." if len(cols) > 10 else ""))
+            # Define the specific numerical columns to scale
+            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+            
+            # Filter to only include columns that exist in the dataframe
+            available_cols = [col for col in numerical_cols if col in df.columns]
+            
+            if len(available_cols) > 0:
+                st.markdown(f"**Numerical columns to be scaled:** {', '.join(available_cols)}")
                 
                 if st.button("🔧 Apply StandardScaler", type="primary", key="scale_tab"):
                     with st.spinner('Applying StandardScaler...'):
                         try:
+                            # Instantiate the scaler
                             scaler = StandardScaler()
-                            sd = scaler.fit_transform(df[cols].fillna(df[cols].median()))
-                            sdf = pd.DataFrame(sd, columns=cols)
-                            st.session_state.scaler = scaler
-                            st.session_state.scaled_columns = cols
-                            st.session_state.scaled_data = sdf
-                            st.success(f"✅ Successfully scaled {len(cols)} columns!")
                             
-                            st.markdown("#### Scaled Data Preview")
-                            st.dataframe(sdf.head(), 
-                                       column_config={c: st.column_config.NumberColumn(c, format="%.6f") for c in cols[:5]}, 
-                                       use_container_width=True)
+                            # Fit and transform the numerical data
+                            df[available_cols] = scaler.fit_transform(df[available_cols].fillna(df[available_cols].median()))
+                            
+                            # Store the processed data and scaler
+                            st.session_state.processed_data = df
+                            st.session_state.scaler = scaler
+                            st.session_state.scaled_columns = available_cols
+                            
+                            st.success(f"✅ Successfully scaled {len(available_cols)} columns!")
+                            
+                            # Display the first 5 rows of scaled numerical data
+                            st.markdown("### First 5 rows of scaled numerical data:")
+                            st.dataframe(df[available_cols].head(), use_container_width=True)
+                            
                         except Exception as e:
                             st.error(f"Scaling failed: {e}")
+            else:
+                st.warning("None of the specified numerical columns were found in the dataset.")
         
         with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
@@ -695,7 +705,8 @@ def main():
                                 stats_df = pd.DataFrame(stats_table_data).round(6)
                                 st.dataframe(stats_df, use_container_width=True)
                                 
-                                # Show outlier count reduction                                st.markdown("### 📊 Outlier Count Comparison")
+                                # Show outlier count reduction
+                                st.markdown("### 📊 Outlier Count Comparison")
                                 comp_data = []
                                 for col in selected_cols:
                                     if col in outlier_counts:
@@ -751,8 +762,6 @@ def main():
                 actions.append("✅ Categorical Encoding applied")
             if st.session_state.get('processed_data') is not None and len(st.session_state.get('outlier_columns_processed', [])) > 0: 
                 actions.append(f"✅ Outliers handled in {len(st.session_state.outlier_columns_processed)} columns")
-            if st.session_state.get('processed_data') is not None: 
-                actions.append("✅ Log transform applied to skewed columns")
             
             if actions:
                 for a in actions: 
@@ -1071,9 +1080,9 @@ def main():
                 pd_data.append({
                     'Stage': '2. Preprocessing',
                     'Step': 'Feature Scaling',
-                    'Status': '✅' if st.session_state.get('scaled_data') is not None else '⬜',
+                    'Status': '✅' if st.session_state.get('scaled_data') is not None or len(st.session_state.get('scaled_columns', [])) > 0 else '⬜',
                     'Details': f'{len(st.session_state.get("scaled_columns", []))} columns scaled' 
-                    if st.session_state.get('scaled_data') is not None else 'Not applied'
+                    if st.session_state.get('scaled_data') is not None or len(st.session_state.get('scaled_columns', [])) > 0 else 'Not applied'
                 })
                 
                 pd_data.append({
