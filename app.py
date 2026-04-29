@@ -737,7 +737,7 @@ def main():
             st.markdown("### 📊 Skewness Analysis & Log Transform")
             
             # Define the numerical columns to check for skewness
-            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']  # <-- HERE ARE YOUR 4 COLUMNS
             
             # Check which columns exist in the dataframe
             available_cols = [col for col in numerical_cols if col in df.columns]
@@ -749,7 +749,7 @@ def main():
                 skewness_before = df[available_cols].skew()
                 
                 st.markdown("**Skewness before transformation:**")
-                st.dataframe(skewness_before.rename('Skewness').to_frame().T)
+                st.dataframe(skewness_before.rename('Skewness').to_frame().T)  # <-- DISPLAYS THE 4 COLUMNS WITH SKEWNESS
                 
                 if st.button("📊 Apply Log Transform to Skewed Columns", type="primary", key="skew_tab"):
                     # Apply log transformation
@@ -767,7 +767,7 @@ def main():
                     st.success("✅ Log transform applied to numerical columns!")
                     
                     st.markdown("**Skewness after transformation:**")
-                    st.dataframe(skewness_after.rename('Skewness').to_frame().T)
+                    st.dataframe(skewness_after.rename('Skewness').to_frame().T)  # <-- DISPLAYS THE 4 COLUMNS AFTER TRANSFORM
         
         with p5:
             st.markdown("### 📋 Preprocessing Summary")
