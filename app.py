@@ -823,6 +823,7 @@ def main():
                                       title='Risk Score by Risk Level'), use_container_width=True)
         
     # ==================== FEATURE SELECTION ====================
+    # ==================== FEATURE SELECTION ====================
     elif section == "🛠️ Feature Selection & Relevance":
         st.markdown('<p class="section-header">🛠️ Feature Selection & Relevance</p>', unsafe_allow_html=True)
         data = st.session_state.processed_data if st.session_state.processed_data is not None else st.session_state.data
@@ -866,6 +867,109 @@ def main():
         
         st.markdown("---")
         
+        # Explore Feature Selection Methods
+        st.markdown("### 📚 Explore Feature Selection Methods")
+        st.markdown("Discuss and select appropriate feature selection or ranking methods based on the data type and the goal.")
+        
+        method_tabs = st.tabs(["📋 Overview", "🔍 Filter Methods", "🔄 Wrapper Methods", "🌲 Embedded Methods"])
+        
+        with method_tabs[0]:
+            st.markdown("#### Feature Selection Methods Overview")
+            st.markdown("""
+            Feature selection helps identify the most relevant features for your model. The three main approaches are:
+            
+            **1. Filter Methods**
+            - Rank features based on statistical scores
+            - Fast and independent of the model
+            - Examples: Mutual Information, Chi-Squared, Correlation
+            
+            **2. Wrapper Methods**
+            - Evaluate feature subsets using model performance
+            - More accurate but computationally expensive
+            - Examples: Recursive Feature Elimination (RFE), Forward/Backward Selection
+            
+            **3. Embedded Methods**
+            - Feature selection built into the model training process
+            - Balance between filter and wrapper methods
+            - Examples: Random Forest Importance, Lasso Regression
+            """)
+        
+        with method_tabs[1]:
+            st.markdown("#### 🔍 Filter Methods")
+            st.markdown("""
+            **Filter methods** evaluate features independently of any machine learning model.
+            
+            **Advantages:**
+            - Fast computation
+            - Model agnostic
+            - Good for high-dimensional data
+            
+            **Disadvantages:**
+            - May miss feature interactions
+            - No feedback from model performance
+            
+            **When to use:**
+            - Large datasets where speed is important
+            - Initial screening before using other methods
+            - When you want to understand individual feature relationships
+            
+            **Selected for this analysis:**
+            - **Mutual Information**: Captures non-linear relationships between features and target
+            - **Chi-Squared**: Tests independence between categorical features and target
+            """)
+            
+            st.success("✅ Filter methods are well-suited for this microplastic risk analysis due to mixed data types and need for interpretability.")
+        
+        with method_tabs[2]:
+            st.markdown("#### 🔄 Wrapper Methods")
+            st.markdown("""
+            **Wrapper methods** evaluate feature subsets based on model performance.
+            
+            **Advantages:**
+            - Model-specific optimization
+            - Captures feature interactions
+            - Often finds better feature subsets
+            
+            **Disadvantages:**
+            - Computationally expensive
+            - Can overfit on small datasets
+            - Slow with many features
+            
+            **When to use:**
+            - Smaller feature sets
+            - When model performance is critical
+            - When you have computational resources
+            
+            **Not selected for initial analysis** due to computational cost and number of features after encoding.
+            """)
+        
+        with method_tabs[3]:
+            st.markdown("#### 🌲 Embedded Methods")
+            st.markdown("""
+            **Embedded methods** perform feature selection during model training.
+            
+            **Advantages:**
+            - More efficient than wrapper methods
+            - Model-specific feature importance
+            - Good balance of speed and accuracy
+            
+            **Disadvantages:**
+            - Specific to the model used
+            - May not generalize to other models
+            
+            **When to use:**
+            - When you have a specific model in mind
+            - Good for tree-based models (Random Forest, Gradient Boosting)
+            - When you want built-in feature selection
+            
+            **Selected for this analysis:**
+            - **Random Forest Importance**: Provides reliable feature importance for classification tasks
+            """)
+            
+            st.success("✅ Embedded methods (Random Forest) will be used as the primary feature selection technique.")
+        
+        st.markdown("---")
+        
         # EDA
         st.markdown("### 📈 Exploratory Data Analysis")
         
@@ -893,13 +997,24 @@ def main():
                                       title='Risk Score by Risk Level'), use_container_width=True)
         
         st.markdown("---")
-        st.markdown("### 🎯 Feature Selection")
+        st.markdown("### 🎯 Apply Feature Selection")
+        
+        # Selected methods summary
+        st.markdown("""
+        <div style='background-color: #d4edda; padding: 1rem; border-radius: 8px; border: 1px solid #c3e6cb;'>
+        <strong>✅ Selected Methods for this Analysis:</strong><br>
+        • <strong>Filter Methods:</strong> Mutual Information & Chi-Squared<br>
+        • <strong>Embedded Methods:</strong> Random Forest Importance
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("")
         
         nums = df.select_dtypes(include=['float64', 'int64', 'int32']).columns.tolist()
         if target in nums: 
             nums.remove(target)
         
-        if st.button("Calculate Feature Importance", type="primary", use_container_width=True):
+        if st.button("🚀 Calculate Feature Importance", type="primary", use_container_width=True):
             with st.spinner('Calculating feature importance...'):
                 X = df[nums].copy()
                 y = df[target].copy()
