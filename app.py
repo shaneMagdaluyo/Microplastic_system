@@ -563,23 +563,24 @@ def main():
         with p1:
             st.markdown("### 📏 Perform Feature Scaling")
             
-            # Instantiate the scaler
-            scaler = StandardScaler()
-            
-            # Select the numerical columns
-            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
-            
-            # Fit and transform the numerical data
-            df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
-            
-            # Store in session state
-            st.session_state.processed_data = df
-            st.session_state.scaler = scaler
-            st.session_state.scaled_columns = numerical_cols
-            
-            # Display the first few rows of the scaled numerical data
-            st.markdown("First 5 rows of scaled numerical data:")
-            st.dataframe(df[numerical_cols].head())
+            if st.button("🔧 Apply StandardScaler", type="primary"):
+                # Instantiate the scaler
+                scaler = StandardScaler()
+                
+                # Select the numerical columns
+                numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+                
+                # Fit and transform the numerical data
+                df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
+                
+                # Store in session state
+                st.session_state.processed_data = df
+                st.session_state.scaler = scaler
+                st.session_state.scaled_columns = numerical_cols
+                
+                # Display the first few rows of the scaled numerical data
+                st.markdown("First 5 rows of scaled numerical data:")
+                st.dataframe(df[numerical_cols].head())
         
         with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
