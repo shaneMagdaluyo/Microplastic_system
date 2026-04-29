@@ -828,7 +828,9 @@ def main():
             st.markdown(f"**Model Type:** Classification")
         else:
             st.markdown(f"**Type:** Numerical")
-            st.markdown(f"**Range:** {df[target].min():.4f} to {df[target].max():.4f}")
+            clean_target = df[target].dropna()
+            if len(clean_target) > 0:
+                st.markdown(f"**Range:** {clean_target.min():.4f} to {clean_target.max():.4f}")
             st.markdown(f"**Model Type:** {model_type}")
         
         st.markdown("---")
