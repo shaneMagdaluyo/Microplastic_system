@@ -822,17 +822,19 @@ def main():
         st.markdown("---")
         st.markdown(f"**Target Variable:** `{target}`")
         
-        if df[target].dtype == 'object':
+                if df[target].dtype == 'object' or df[target].nunique() < 10:
             st.markdown(f"**Type:** Categorical ({df[target].nunique()} unique values)")
             st.markdown(f"**Categories:** {', '.join(df[target].dropna().unique().astype(str))}")
             st.markdown(f"**Model Type:** Classification")
         else:
             st.markdown(f"**Type:** Numerical")
-            clean_target = df[target].dropna()
-            if len(clean_target) > 0:
-                st.markdown(f"**Range:** {clean_target.min():.4f} to {clean_target.max():.4f}")
+            try:
+                clean_target = pd.to_numeric(df[target], errors='coerce').dropna()
+                if len(clean_target) > 0:
+                    st.markdown(f"**Range:** {clean_target.min():.4f} to {clean_target.max():.4f}")
+            except:
+                pass
             st.markdown(f"**Model Type:** {model_type}")
-        
         st.markdown("---")
         
         # Explore Feature Selection Methods
