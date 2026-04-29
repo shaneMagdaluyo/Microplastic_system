@@ -590,7 +590,7 @@ def main():
                     st.markdown("First 5 rows of scaled numerical data:")
                     st.dataframe(df[available_cols].head())
         
-         with p2:
+            with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
             
             # Define the categorical columns to encode
