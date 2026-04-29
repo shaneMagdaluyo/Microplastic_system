@@ -590,7 +590,54 @@ def main():
                     st.markdown("First 5 rows of scaled numerical data:")
                     st.dataframe(df[available_cols].head())
         
-            with p2:
+              # ==================== PREPROCESSING ====================
+    elif section == "🔧 Preprocessing":
+        st.markdown('<p class="section-header">🔧 Data Preprocessing</p>', unsafe_allow_html=True)
+        if st.session_state.data is None: 
+            st.warning("⚠️ Please upload data first!")
+            return
+        
+        df = st.session_state.data.copy()
+        
+        p1, p2, p3, p4, p5 = st.tabs([
+            "📏 Feature Scaling", 
+            "🔄 Categorical Encoding", 
+            "🎯 Outlier Handling", 
+            "📊 Skewness & Transform", 
+            "📋 Summary"
+        ])
+        
+        with p1:
+            st.markdown("### 📏 Perform Feature Scaling")
+            
+            # Select the numerical columns
+            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+            
+            # Check which columns exist in the dataframe
+            available_cols = [col for col in numerical_cols if col in df.columns]
+            
+            if len(available_cols) == 0:
+                st.error(f"None of the required columns found. Available numerical columns: {df.select_dtypes(include=['float64', 'int64']).columns.tolist()}")
+            else:
+                st.markdown(f"**Columns to be scaled:** {', '.join(available_cols)}")
+                
+                if st.button("🔧 Apply StandardScaler", type="primary"):
+                    # Instantiate the scaler
+                    scaler = StandardScaler()
+                    
+                    # Fit and transform the numerical data
+                    df[available_cols] = scaler.fit_transform(df[available_cols])
+                    
+                    # Store in session state
+                    st.session_state.processed_data = df
+                    st.session_state.scaler = scaler
+                    st.session_state.scaled_columns = available_cols
+                    
+                    # Display the first few rows of the scaled numerical data
+                    st.markdown("First 5 rows of scaled numerical data:")
+                    st.dataframe(df[available_cols].head())
+        
+        with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
             
             # Define the categorical columns to encode
@@ -620,6 +667,167 @@ def main():
                     # Display the first 5 rows of the encoded data
                     st.markdown("First 5 rows of the DataFrame after one-hot encoding:")
                     st.dataframe(df_encoded.head())
+        
+        with p3:
+            st.markdown("### 🎯 Address Outliers in Numerical Columns")
+            st.markdown("""
+            <div class='outlier-box outlier-before'>
+            <strong>📌 Method:</strong> IQR (Interquartile Range) method will be used to identify and cap outliers.<br>
+            <strong>Formula:</strong> Lower bound = Q1 - 1.5×IQR, Upper bound = Q3 + 1.5×IQR<br>
+            <strong>Action:</strong> Values outside bounds will be capped to the nearest bound.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Select numerical columns for outlier handling
+            nums = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+            cols_out = [c for c in nums if 'ID' not in c and 'Sample' not in c]
+            
+            if len(cols_out) > 0:
+                # Let user select which columns to process
+                default_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+                available_defaults = [c for c in default_cols if c in cols_out]
+                
+                selected_cols = st.multiselect(
+                    "Select columns for outlier handling:",
+                    cols_out,
+                    default=available_defaults if available_defaults else cols_out[:4]
+                )
+                
+                if len(selected_cols) > 0:
+                    # Show current outlier statistics
+                    st.markdown("#### Current Outlier Detection")
+                    outlier_info = detect_outliers_detailed(df, selected_cols)
+                    
+                    outlier_summary = []
+                    for col, info in outlier_info.items():
+                        outlier_summary.append({
+                            'Column': col,
+                            'Outliers': info['outlier_count'],
+                            '%': f"{info['outlier_percentage']:.1f}%",
+                            'Lower Bound': f"{info['lower_bound']:.4f}",
+                            'Upper Bound': f"{info['upper_bound']:.4f}",
+                            'Below': info['outliers_below'],
+                            'Above': info['outliers_above']
+                        })
+                    
+                    outlier_df = pd.DataFrame(outlier_summary)
+                    st.dataframe(outlier_df, use_container_width=True, hide_index=True)
+                    
+                    # Visualize outliers
+                    st.markdown("#### Outlier Visualization")
+                    for col in selected_cols:
+                        fig = go.Figure()
+                        clean = df[col].dropna()
+                        fig.add_trace(go.Box(y=clean, name=col, boxmean='sd'))
+                        fig.update_layout(title=f'Box Plot: {col}', height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Apply outlier capping
+                    if st.button("🎯 Cap Outliers (IQR Method)", type="primary", key="outlier_tab"):
+                        with st.spinner('Capping outliers...'):
+                            try:
+                                # Apply outlier capping
+                                df_capped, stats_before, stats_after, outlier_counts = cap_outliers_iqr_detailed(df, selected_cols)
+                                
+                                # Store results
+                                st.session_state.processed_data = df_capped
+                                st.session_state.outlier_stats_before = stats_before
+                                st.session_state.outlier_stats_after = stats_after
+                                st.session_state.outlier_columns_processed = selected_cols
+                                
+                                st.success(f"✅ Successfully capped outliers in {len(selected_cols)} columns!")
+                                
+                                # Show comparison
+                                st.markdown("""
+                                <div class='outlier-box outlier-after'>
+                                <strong>✅ Outliers handled successfully!</strong><br>
+                                Values outside IQR bounds have been capped to the nearest bound.
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Display before/after statistics
+                                st.markdown("### 📊 Descriptive Statistics After Handling Outliers")
+                                
+                                # Create the exact table format you requested
+                                stats_table_data = {}
+                                for col in selected_cols:
+                                    if col in stats_after:
+                                        stats_table_data[col] = stats_after[col]
+                                
+                                stats_df = pd.DataFrame(stats_table_data).round(6)
+                                st.dataframe(stats_df, use_container_width=True)
+                                
+                                # Show outlier count reduction
+                                st.markdown("### 📊 Outlier Count Comparison")
+                                comp_data = []
+                                for col in selected_cols:
+                                    if col in outlier_counts:
+                                        comp_data.append({
+                                            'Column': col,
+                                            'Outliers Before': outlier_counts[col],
+                                            'Outliers After': 0,
+                                            'Reduction': '100%'
+                                        })
+                                
+                                comp_df = pd.DataFrame(comp_data)
+                                st.dataframe(comp_df, use_container_width=True, hide_index=True)
+                                
+                                # Show distribution after capping
+                                st.markdown("### 📈 Distribution After Outlier Handling")
+                                for col in selected_cols:
+                                    st.plotly_chart(plot_distribution(df_capped, col, f'{col} Distribution (After Capping)'), use_container_width=True)
+                                    
+                            except Exception as e:
+                                st.error(f"Outlier handling failed: {e}")
+        
+        with p4:
+            st.markdown("### 📊 Skewness Analysis & Log Transform")
+            nums = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+            cols_sk = [c for c in nums if 'ID' not in c and 'Sample' not in c]
+            
+            if len(cols_sk) > 0:
+                skew_df = analyze_skewness(df, cols_sk)
+                st.dataframe(skew_df, use_container_width=True, hide_index=True)
+                
+                skewed_cols = skew_df[skew_df['Skewed'] == 'Yes']['Column'].tolist()
+                if len(skewed_cols) > 0:
+                    st.markdown(f"**Skewed columns ({len(skewed_cols)}):** {', '.join(skewed_cols)}")
+                    
+                    if st.button("📊 Apply Log Transform to Skewed Columns", type="primary", key="skew_tab"):
+                        with st.spinner('Applying log transformation...'):
+                            current_data = st.session_state.processed_data if st.session_state.processed_data is not None else df
+                            transformed_df = apply_log_transform(current_data, skewed_cols)
+                            st.session_state.processed_data = transformed_df
+                            st.success("✅ Log transform applied to skewed columns!")
+                            
+                            st.markdown("#### Post-Transform Skewness")
+                            new_skew = analyze_skewness(transformed_df, skewed_cols)
+                            st.dataframe(new_skew, use_container_width=True, hide_index=True)
+        
+        with p5:
+            st.markdown("### 📋 Preprocessing Summary")
+            actions = []
+            
+            if st.session_state.get('scaled_columns') is not None: 
+                actions.append("✅ Feature Scaling applied")
+            if st.session_state.get('encoded_data') is not None: 
+                actions.append("✅ Categorical Encoding applied")
+            if st.session_state.get('processed_data') is not None and len(st.session_state.get('outlier_columns_processed', [])) > 0: 
+                actions.append(f"✅ Outliers handled in {len(st.session_state.outlier_columns_processed)} columns")
+            
+            if actions:
+                for a in actions: 
+                    st.markdown(a)
+                
+                # Show final data shape
+                current_data = st.session_state.processed_data if st.session_state.processed_data is not None else df
+                st.markdown(f"**Current Data Shape:** {current_data.shape}")
+                
+                st.markdown("---")
+                st.markdown("### 🚀 Next Steps")
+                st.markdown("Proceed to **🛠️ Feature Selection & Relevance** to analyze feature importance.")
+            else:
+                st.info("No preprocessing steps have been applied yet.")
         with p3:
             st.markdown("### 🎯 Address Outliers in Numerical Columns")
             st.markdown("""
