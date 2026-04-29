@@ -590,25 +590,36 @@ def main():
                     st.markdown("First 5 rows of scaled numerical data:")
                     st.dataframe(df[available_cols].head())
         
-        with p2:
+               with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
-            cats = df.select_dtypes(include=['object']).columns.tolist()
-            cols_enc = [c for c in cats if 'ID' not in c and 'Sample' not in c]
             
-            if len(cols_enc) > 0:
-                st.markdown(f"**Categorical columns to encode ({len(cols_enc)}):** {', '.join(cols_enc)}")
+            # Define the categorical columns to encode
+            categorical_cols = ['Location', 'Shape', 'Polymer_Type', 'pH', 'Salinity', 
+                               'Industrial_Activity', 'Population_Density', 'Risk_Type', 
+                               'Risk_Level', 'Author', 'Source']
+            
+            # Check which columns exist in the dataframe
+            available_cats = [col for col in categorical_cols if col in df.columns]
+            
+            if len(available_cats) == 0:
+                st.warning("None of the specified categorical columns found in the dataset.")
+            else:
+                st.markdown(f"**Categorical columns to encode ({len(available_cats)}):** {', '.join(available_cats)}")
                 
                 if st.button("🔄 Apply One-Hot Encoding", type="primary", key="encode_tab"):
-                    with st.spinner('Applying One-Hot Encoding...'):
-                        enc_df, new_cols, _, enc_shape = one_hot_encode(df)
-                        st.session_state.encoded_data = enc_df
-                        st.session_state.encoded_shape = enc_shape
-                        st.success(f"✅ Created {len(new_cols)} new columns! New shape: {enc_shape}")
-                        st.markdown("#### Encoded Data Preview")
-                        st.dataframe(enc_df.head(), use_container_width=True)
-            else:
-                st.info("No categorical columns found for encoding (excluding ID columns).")
-        
+                    # Perform one-hot encoding
+                    df_encoded = pd.get_dummies(df, columns=available_cats, drop_first=False)
+                    
+                    # Store in session state
+                    st.session_state.processed_data = df_encoded
+                    st.session_state.encoded_data = df_encoded
+                    st.session_state.encoded_shape = df_encoded.shape
+                    
+                    st.success(f"✅ One-hot encoding applied! New shape: {df_encoded.shape}")
+                    
+                    # Display the first 5 rows of the encoded data
+                    st.markdown("First 5 rows of the DataFrame after one-hot encoding:")
+                    st.dataframe(df_encoded.head())
         with p3:
             st.markdown("### 🎯 Address Outliers in Numerical Columns")
             st.markdown("""
