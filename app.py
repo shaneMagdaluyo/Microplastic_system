@@ -563,39 +563,23 @@ def main():
         with p1:
             st.markdown("### 📏 Perform Feature Scaling")
             
-            # Define the specific numerical columns to scale
+            # Instantiate the scaler
+            scaler = StandardScaler()
+            
+            # Select the numerical columns
             numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
             
-            # Filter to only include columns that exist in the dataframe
-            available_cols = [col for col in numerical_cols if col in df.columns]
+            # Fit and transform the numerical data
+            df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
             
-            if len(available_cols) > 0:
-                st.markdown(f"**Numerical columns to be scaled:** {', '.join(available_cols)}")
-                
-                if st.button("🔧 Apply StandardScaler", type="primary", key="scale_tab"):
-                    with st.spinner('Applying StandardScaler...'):
-                        try:
-                            # Instantiate the scaler
-                            scaler = StandardScaler()
-                            
-                            # Fit and transform the numerical data
-                            df[available_cols] = scaler.fit_transform(df[available_cols].fillna(df[available_cols].median()))
-                            
-                            # Store the processed data and scaler
-                            st.session_state.processed_data = df
-                            st.session_state.scaler = scaler
-                            st.session_state.scaled_columns = available_cols
-                            
-                            st.success(f"✅ Successfully scaled {len(available_cols)} columns!")
-                            
-                            # Display the first 5 rows of scaled numerical data
-                            st.markdown("### First 5 rows of scaled numerical data:")
-                            st.dataframe(df[available_cols].head(), use_container_width=True)
-                            
-                        except Exception as e:
-                            st.error(f"Scaling failed: {e}")
-            else:
-                st.warning("None of the specified numerical columns were found in the dataset.")
+            # Store in session state
+            st.session_state.processed_data = df
+            st.session_state.scaler = scaler
+            st.session_state.scaled_columns = numerical_cols
+            
+            # Display the first few rows of the scaled numerical data
+            st.markdown("First 5 rows of scaled numerical data:")
+            st.dataframe(df[numerical_cols].head())
         
         with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
@@ -756,7 +740,7 @@ def main():
             st.markdown("### 📋 Preprocessing Summary")
             actions = []
             
-            if st.session_state.get('scaled_data') is not None: 
+            if st.session_state.get('scaled_columns') is not None: 
                 actions.append("✅ Feature Scaling applied")
             if st.session_state.get('encoded_data') is not None: 
                 actions.append("✅ Categorical Encoding applied")
@@ -1080,9 +1064,9 @@ def main():
                 pd_data.append({
                     'Stage': '2. Preprocessing',
                     'Step': 'Feature Scaling',
-                    'Status': '✅' if st.session_state.get('scaled_data') is not None or len(st.session_state.get('scaled_columns', [])) > 0 else '⬜',
+                    'Status': '✅' if st.session_state.get('scaled_columns') is not None else '⬜',
                     'Details': f'{len(st.session_state.get("scaled_columns", []))} columns scaled' 
-                    if st.session_state.get('scaled_data') is not None or len(st.session_state.get('scaled_columns', [])) > 0 else 'Not applied'
+                    if st.session_state.get('scaled_columns') is not None else 'Not applied'
                 })
                 
                 pd_data.append({
