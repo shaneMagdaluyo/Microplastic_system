@@ -735,27 +735,39 @@ def main():
         
         with p4:
             st.markdown("### 📊 Skewness Analysis & Log Transform")
-            nums = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            cols_sk = [c for c in nums if 'ID' not in c and 'Sample' not in c]
             
-            if len(cols_sk) > 0:
-                skew_df = analyze_skewness(df, cols_sk)
-                st.dataframe(skew_df, use_container_width=True, hide_index=True)
+            # Define the numerical columns to check for skewness
+            numerical_cols = ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']
+            
+            # Check which columns exist in the dataframe
+            available_cols = [col for col in numerical_cols if col in df.columns]
+            
+            if len(available_cols) == 0:
+                st.warning("None of the specified numerical columns found in the dataset.")
+            else:
+                # Calculate skewness before transformation
+                skewness_before = df[available_cols].skew()
                 
-                skewed_cols = skew_df[skew_df['Skewed'] == 'Yes']['Column'].tolist()
-                if len(skewed_cols) > 0:
-                    st.markdown(f"**Skewed columns ({len(skewed_cols)}):** {', '.join(skewed_cols)}")
+                st.markdown("**Skewness before transformation:**")
+                st.dataframe(skewness_before.rename('Skewness').to_frame().T)
+                
+                if st.button("📊 Apply Log Transform to Skewed Columns", type="primary", key="skew_tab"):
+                    # Apply log transformation
+                    df_transformed = df.copy()
+                    for col in available_cols:
+                        shift = abs(df_transformed[col].min()) + 1 if df_transformed[col].min() <= 0 else 0
+                        df_transformed[col] = np.log1p(df_transformed[col] + shift)
                     
-                    if st.button("📊 Apply Log Transform to Skewed Columns", type="primary", key="skew_tab"):
-                        with st.spinner('Applying log transformation...'):
-                            current_data = st.session_state.processed_data if st.session_state.processed_data is not None else df
-                            transformed_df = apply_log_transform(current_data, skewed_cols)
-                            st.session_state.processed_data = transformed_df
-                            st.success("✅ Log transform applied to skewed columns!")
-                            
-                            st.markdown("#### Post-Transform Skewness")
-                            new_skew = analyze_skewness(transformed_df, skewed_cols)
-                            st.dataframe(new_skew, use_container_width=True, hide_index=True)
+                    # Store in session state
+                    st.session_state.processed_data = df_transformed
+                    
+                    # Calculate skewness after transformation
+                    skewness_after = df_transformed[available_cols].skew()
+                    
+                    st.success("✅ Log transform applied to numerical columns!")
+                    
+                    st.markdown("**Skewness after transformation:**")
+                    st.dataframe(skewness_after.rename('Skewness').to_frame().T)
         
         with p5:
             st.markdown("### 📋 Preprocessing Summary")
