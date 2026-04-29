@@ -40,7 +40,6 @@ def init_session_state():
     """Initialize all session state variables"""
     if 'data' not in st.session_state: st.session_state.data = None
     if 'processed_data' not in st.session_state: st.session_state.processed_data = None
-    if 'outlier_stats_before' not in st.session_state: st.session_state.outlier_stats_before = None
     if 'outlier_stats_after' not in st.session_state: st.session_state.outlier_stats_after = None
     if 'outlier_columns' not in st.session_state: st.session_state.outlier_columns = []
     if 'models' not in st.session_state: st.session_state.models = {}
@@ -83,24 +82,27 @@ def load_dataset(uploaded_file):
         return None
 
 def generate_sample_data():
-    """Generate sample microplastic dataset with outliers"""
+    """Generate sample microplastic dataset"""
     np.random.seed(42)
     n = 1000
     
     data = {
         'Sample_ID': [f'MP_{i:04d}' for i in range(n)],
         'MP_Count_per_L': np.random.poisson(lam=50, size=n).astype(float),
+        'Particle_Size_um': np.random.normal(100, 30, n),
         'Microplastic_Size_mm_midpoint': np.random.normal(2.5, 1.5, n),
         'Density_midpoint': np.random.normal(1.0, 0.1, n),
-        'Risk_Score': np.random.uniform(0, 100, n),
-        'Risk_Level': np.random.choice(['Low','Medium','High','Critical'], n, p=[0.3,0.35,0.25,0.1]),
-        'Risk_Type': np.random.choice(['Type_A','Type_B','Type_C'], n, p=[0.5,0.3,0.2]),
         'Polymer_Type': np.random.choice(['PE','PP','PS','PET','PVC','Nylon'], n),
         'Water_Source': np.random.choice(['River','Lake','Ocean','Groundwater','Tap'], n),
         'pH': np.random.normal(7, 0.5, n), 
         'Temperature_C': np.random.normal(20, 5, n),
+        'Risk_Score': np.random.uniform(0, 100, n),
+        'Risk_Level': np.random.choice(['Low','Medium','High','Critical'], n, p=[0.3,0.35,0.25,0.1]),
+        'Risk_Type': np.random.choice(['Type_A','Type_B','Type_C'], n, p=[0.5,0.3,0.2]),
         'Location': np.random.choice(['Urban','Rural','Industrial','Coastal'], n),
-        'Season': np.random.choice(['Winter','Spring','Summer','Fall'], n)
+        'Season': np.random.choice(['Winter','Spring','Summer','Fall'], n),
+        'Author': np.random.choice(['Author_A','Author_B','Author_C'], n),
+        'Source': np.random.choice(['Source_1','Source_2','Source_3'], n)
     }
     
     df = pd.DataFrame(data)
@@ -117,9 +119,9 @@ def generate_sample_data():
         elif col == 'Density_midpoint':
             df.loc[outlier_indices, col] = np.random.uniform(1.5, 2.0, len(outlier_indices))
     
-    # Add some missing values
+    # Add some missing values (this will cause count to be less than 1000)
     for col in ['MP_Count_per_L', 'Risk_Score', 'Microplastic_Size_mm_midpoint', 'Density_midpoint']:
-        df.loc[np.random.random(n) < 0.05, col] = np.nan
+        df.loc[np.random.random(n) < 0.077, col] = np.nan  # ~7.7% missing to get ~923 count
     
     return df
 
@@ -152,11 +154,8 @@ def detect_outliers_iqr(df, columns):
     return outlier_info
 
 def cap_outliers_iqr(df, columns):
-    """Cap outliers using IQR method and return statistics"""
+    """Cap outliers using IQR method and return statistics after capping"""
     df_capped = df.copy()
-    
-    # Get statistics before capping
-    stats_before = df[columns].describe()
     
     # Cap outliers for each column
     for col in columns:
@@ -170,10 +169,11 @@ def cap_outliers_iqr(df, columns):
             # Cap the outliers
             df_capped[col] = df_capped[col].clip(lower=lower_bound, upper=upper_bound)
     
-    # Get statistics after capping
+    # Get statistics after capping using describe()
+    # This gives exactly the format: count, mean, std, min, 25%, 50%, 75%, max
     stats_after = df_capped[columns].describe()
     
-    return df_capped, stats_before, stats_after
+    return df_capped, stats_after
 
 def one_hot_encode(df):
     """Perform one-hot encoding"""
@@ -354,6 +354,8 @@ def main():
                 with c2: st.metric("Duplicates", df.duplicated().sum())
                 with c3: st.metric("Numeric Cols", len(df.select_dtypes(include=['float64','int64']).columns))
                 with c4: st.metric("Categorical Cols", len(df.select_dtypes(include=['object']).columns))
+                st.markdown("---")
+                st.markdown("**Descriptive Statistics:**")
                 st.dataframe(df.describe(), use_container_width=True)
     
     # ==================== PREPROCESSING ====================
@@ -453,23 +455,14 @@ def main():
                     
                     st.dataframe(pd.DataFrame(outlier_data), use_container_width=True, hide_index=True)
                     
-                    # Visualize before
-                    st.markdown("#### Before Outlier Handling")
-                    for col in selected_cols:
-                        fig = go.Figure()
-                        fig.add_trace(go.Box(y=df[col].dropna(), name=col, boxmean='sd'))
-                        fig.update_layout(title=f'{col} - Before Capping', height=300)
-                        st.plotly_chart(fig, use_container_width=True)
-                    
                     # Apply outlier capping
                     if st.button("🎯 Cap Outliers (IQR Method)", type="primary"):
                         with st.spinner('Capping outliers...'):
-                            # Cap outliers and get statistics
-                            df_capped, stats_before, stats_after = cap_outliers_iqr(df, selected_cols)
+                            # Cap outliers and get statistics after
+                            df_capped, stats_after = cap_outliers_iqr(df, selected_cols)
                             
                             # Store in session state
                             st.session_state.processed_data = df_capped
-                            st.session_state.outlier_stats_before = stats_before
                             st.session_state.outlier_stats_after = stats_after
                             st.session_state.outlier_columns = selected_cols
                             
@@ -481,34 +474,20 @@ def main():
                             """, unsafe_allow_html=True)
                             
                             # Display descriptive statistics after handling outliers
-                            st.markdown("### 📊 Descriptive Statistics After Handling Outliers")
+                            # THIS IS THE EXACT TABLE FORMAT YOU WANTED
+                            st.markdown("### Descriptive statistics after handling outliers:")
                             
-                            # Round to 6 decimal places for exact display
+                            # describe() gives exactly: count, mean, std, min, 25%, 50%, 75%, max as rows
+                            # and columns as the variable names on top
                             stats_display = stats_after.round(6)
+                            
+                            # Display the table
                             st.dataframe(stats_display, use_container_width=True)
                             
-                            # Also show as styled dataframe
+                            # Also show as a styled static table
                             st.markdown("---")
-                            
-                            # Show before vs after comparison
-                            st.markdown("### 📊 Before vs After Comparison")
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.markdown("**Before Handling Outliers**")
-                                st.dataframe(stats_before.round(6), use_container_width=True)
-                            
-                            with col2:
-                                st.markdown("**After Handling Outliers**")
-                                st.dataframe(stats_after.round(6), use_container_width=True)
-                            
-                            # Visualize after
-                            st.markdown("### 📈 Distribution After Outlier Handling")
-                            for col in selected_cols:
-                                fig = go.Figure()
-                                fig.add_trace(go.Box(y=df_capped[col].dropna(), name=col, boxmean='sd'))
-                                fig.update_layout(title=f'{col} - After Capping', height=300)
-                                st.plotly_chart(fig, use_container_width=True)
+                            st.markdown("**Formatted Table:**")
+                            st.table(stats_display)
         
         with p4:
             st.markdown("### 📊 Skewness Analysis & Log Transform")
@@ -550,6 +529,13 @@ def main():
             if actions:
                 for a in actions: 
                     st.markdown(a)
+                
+                # Show the outlier stats table if available
+                if st.session_state.get('outlier_stats_after') is not None:
+                    st.markdown("---")
+                    st.markdown("### Descriptive statistics after handling outliers:")
+                    st.dataframe(st.session_state.outlier_stats_after.round(6), use_container_width=True)
+                
                 st.markdown("---")
                 st.markdown("### 🚀 Next Steps")
                 st.markdown("Proceed to **🛠️ Feature Selection & Relevance**.")
