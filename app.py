@@ -364,13 +364,9 @@ def main():
             available_cols = [col for col in numerical_cols if col in df.columns]
             if len(available_cols) > 0:
                 scaler = StandardScaler()
+                # Fill NaN with median before scaling
+                df[available_cols] = df[available_cols].fillna(df[available_cols].median())
                 df[available_cols] = scaler.fit_transform(df[available_cols])
-                st.session_state.processed_data = df
-                st.session_state.scaler = scaler
-                st.session_state.scaled_columns = available_cols
-                st.success(f"✅ Scaled {len(available_cols)} columns!")
-                st.markdown("First 5 rows of scaled numerical data:")
-                st.dataframe(df[available_cols].head())
         
         with p2:
             st.markdown("### 🔄 Encode Categorical Variables")
