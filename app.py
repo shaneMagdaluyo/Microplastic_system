@@ -560,7 +560,7 @@ def main():
             "📋 Summary"
         ])
         
-        with p1:
+         with p1:
             st.markdown("### 📏 Perform Feature Scaling")
             
             if st.button("🔧 Apply StandardScaler", type="primary"):
